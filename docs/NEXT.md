@@ -1,8 +1,9 @@
 # Next: Instructor Lab Builder (phase 8)
 
 Hand-off for the next working session (for example Claude Code on the web). Read `CLAUDE.md` and `docs/PLAN.md` first.
-State at hand-off: v0.1.0 is complete and verified on `main` (API 267, runner 16, E2E 13). This branch
-(`feat/lab-builder`) holds the first, **not yet regression-tested** step.
+State at hand-off: v0.1.0 is complete and verified on `main` (API 267, runner 16, E2E 13). On this branch
+(`feat/lab-builder`), the `package.py` refactor is verified and **milestone 36 (backend) is done**. Next up is
+**milestone 37**.
 
 ## Goal
 Instructors create, test and publish their own labs in the browser, without editing files on the server.
@@ -19,17 +20,43 @@ Instructors create, test and publish their own labs in the browser, without edit
   and shown read-only.
 
 ## Already done on this branch
-`services/api/app/labs/package.py`:
-- `pack_from_files(files)` builds and validates a pack from in-memory files
-  (`lab.yaml`, `public/…`, `private/…`, with path, size and count limits).
-- `load_pack(dir)` now delegates to it.
-- `pack_files(public_bundle, private_bundle)` does the inverse (for clone and export).
+- **Refactor verified (2026-09-26):** `pack_from_files(files)`, `load_pack(dir)` (delegates to it), `pack_files(...)`
+  (inverse) and `check_files(files)` (shared path/size/count limits) are in `services/api/app/labs/package.py`. The
+  fast API suite is unchanged (239/239). All 6 lab packs have byte-identical bundle hashes before and after, so
+  built-ins won't re-import as new versions.
+- **Milestone 36 done** (see STATUS 36, D29–D34). Main pieces:
+  - `alembic/versions/0006_lab_builder.py`
+  - `app/labs/drafts.py`: pure helpers (YAML, validation rows, scenario rules, tar.gz)
+  - `app/instructor/builder.py`: `/api/instructor/builder/...`
+  - visibility helpers in `app/auth/policy.py`: `lab_visible`, `load_lab_version_visible`, `load_own_lab`,
+    `load_draft_for`
+  - in `app/instructor/routes.py`: the `lab-versions` list with owner/shared/builtin/mine, export, share, and
+    visibility checks on create/update assignment
+  - `import_package(owner_id=…)`
+  - `tests/test_lab_builder.py` (14 tests). Fast suite: 253 passed.
+- **Not yet re-run on this branch:** the docker-marked tests (28) and `python -m app.labtest`. In the cloud
+  session that did milestone 36, image builds couldn't reach PyPI through the sandbox's TLS proxy, so the tests
+  ran on the host (Python 3.12 venv) against the compose Postgres. Run both first on a machine with a working
+  `docker compose build`.
 
-**First action:** run `scripts/test-api.sh -m "not docker"`, then the lab tests, to confirm the refactor didn't
-change behaviour.
+### API added in milestone 36 (for milestone 38's UI)
+| Route | Notes |
+|---|---|
+| `GET builder/check-types` | `check_types[]` (`type`, `service`, `params_schema`, `reads`, `supported`, `engines{usable, unusable_ops}`), `common_fields`, `services`, `engines`, `editable_files` |
+| `GET/POST builder/drafts` | POST body `{source: blank\|clone, lab_version_id?, title?, slug?}` |
+| `POST builder/drafts/import` | multipart `file` |
+| `GET/PUT/DELETE builder/drafts/{id}` | PUT body `{lab?, files?}`; the response always carries `validation {ok, errors[{message, loc, task, check, field}], content_sha256}` |
+| `GET/PUT builder/drafts/{id}/yaml` | |
+| `POST builder/drafts/{id}/validate` | |
+| `GET builder/drafts/{id}/preview` | |
+| `GET lab-versions` | |
+| `GET lab-versions/{id}/export` | |
+| `POST labs/{lab_id}/share {shared}` | |
+
+All routes are under `/api/instructor/`.
 
 ## Milestones
-### 36 Backend
+### 36 Backend ☑ (done, see above)
 - **Migration `0006`:**
   - `labs.owner_id` (NULL = built-in) and `labs.shared` (bool)
   - table `lab_drafts` with columns: `id`, `owner_id`, `slug`, `title`, `content`, `base_lab_version_id`, `status`
@@ -60,6 +87,11 @@ change behaviour.
   - `audit.record`
 
 ### 37 Test run and publish gate
+Hooks that are already in place:
+- `drafts.expectations(files, definition)` gives the scenarios to run.
+- `drafts.package(content)` gives the `LabPackage`, and `last_validation.content_sha256` is the hash to store as
+  `tested_sha256`.
+- Publish should call `import_package(db, pkg, owner_id=draft.owner_id)`.
 - Refactor `app/labtest.py` so `check_pack` accepts a `LabPackage` as well as a path.
 - `POST drafts/{id}/test` runs the empty, partial and solution scenarios in real sandboxes (background task), and
   stores the per-check results together with the content sha256 that was tested.

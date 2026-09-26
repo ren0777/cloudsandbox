@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,15 +18,21 @@ from .package import LabPackage, load_pack
 from .schema import LabDefinition, parse_definition
 
 
-async def import_package(db: AsyncSession, pkg: LabPackage) -> tuple[LabVersion, bool]:
+async def import_package(db: AsyncSession, pkg: LabPackage,
+                         owner_id: uuid.UUID | None = None) -> tuple[LabVersion, bool]:
     """Returns (version, created). Same id+version with identical content is a no-op; with different
-    content it is rejected — a changed lab needs a new version number."""
+    content it is rejected — a changed lab needs a new version number. owner_id None imports a built-in
+    mission; a lab id already owned by someone else (or built-in, for an author) is refused, so an import
+    can never add a version to another author's lab."""
     d = pkg.definition
     lab = await db.scalar(select(Lab).where(Lab.slug == d.id))
     if lab is None:
-        lab = Lab(slug=d.id, title=d.title)
+        lab = Lab(slug=d.id, title=d.title, owner_id=owner_id)
         db.add(lab)
         await db.flush()
+    elif lab.owner_id != owner_id:
+        raise ApiError("lab_owner_conflict", f"the lab id {d.id!r} is already used by another lab; "
+                       "choose a different id", 409)
     existing = await db.scalar(select(LabVersion).where(LabVersion.lab_id == lab.id,
                                                         LabVersion.version == d.version))
     if existing is not None:

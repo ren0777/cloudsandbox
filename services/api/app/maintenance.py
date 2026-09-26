@@ -11,7 +11,7 @@ from .models import APPEND_ONLY_TABLES
 
 ALL_TABLES = ("task_results", "grades", "grading_evidence", "attempts", "terminal_tickets",
               "session_events", "idempotency_keys", "lab_sessions", "student_overrides", "assignments",
-              "lab_version_bundles", "lab_versions", "labs", "enrolments", "course_staff", "courses",
+              "lab_drafts", "lab_version_bundles", "lab_versions", "labs", "enrolments", "course_staff", "courses",
               "refresh_tokens", "runners", "users", "audit_events", "user_badges")
 
 
@@ -56,6 +56,15 @@ async def wipe_demo() -> dict[str, int]:
                               "assignments a JOIN courses c ON c.id = a.course_id WHERE c.is_demo) "
                               "OR user_id IN (SELECT id FROM users WHERE is_demo)"),
         ("assignments", "DELETE FROM assignments WHERE course_id IN (SELECT id FROM courses WHERE is_demo)"),
+        # Lab Builder: demo authors' drafts and published labs go too (a demo lab assigned in a real course
+        # makes the reset fail on the foreign key rather than silently orphaning that course's assignment).
+        ("lab_drafts", "DELETE FROM lab_drafts WHERE owner_id IN (SELECT id FROM users WHERE is_demo)"),
+        ("lab_version_bundles", "DELETE FROM lab_version_bundles WHERE lab_version_id IN (SELECT v.id FROM "
+                                "lab_versions v JOIN labs l ON l.id = v.lab_id JOIN users u ON u.id = l.owner_id "
+                                "WHERE u.is_demo)"),
+        ("lab_versions", "DELETE FROM lab_versions WHERE lab_id IN (SELECT l.id FROM labs l JOIN users u "
+                         "ON u.id = l.owner_id WHERE u.is_demo)"),
+        ("labs", "DELETE FROM labs WHERE owner_id IN (SELECT id FROM users WHERE is_demo)"),
         ("enrolments", "DELETE FROM enrolments WHERE course_id IN (SELECT id FROM courses WHERE is_demo) "
                        "OR user_id IN (SELECT id FROM users WHERE is_demo)"),
         ("course_staff", "DELETE FROM course_staff WHERE course_id IN (SELECT id FROM courses WHERE is_demo) "

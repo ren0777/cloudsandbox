@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,15 +17,20 @@ from ..auth.policy import (
     Action,
     Authz,
     is_course_staff,
+    lab_visible,
     load_assignment_for_staff,
     load_attempt_for_staff,
+    load_lab_version_visible,
+    load_own_lab,
 )
 from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError, not_found
 from ..grader.grade import grade, to_json
 from ..insights import insights
-from ..labs.importer import definition_of
+from ..labs import drafts
+from ..labs.importer import definition_of, get_bundle
+from ..labs.package import pack_files
 from ..models import (
     ACTIVE_STATES,
     Assignment,
@@ -225,11 +231,50 @@ async def grant_override(assignment_id: uuid.UUID, body: OverrideIn,
 
 @router.get("/lab-versions")
 async def lab_versions(user: User = Depends(Authz(Action.lab_manage)), db: AsyncSession = Depends(get_db)):
+    """Lab versions the user may assign or clone: built-in missions, their own labs and shared labs (all for
+    admins)."""
     rows = (await db.execute(select(LabVersion, Lab).join(Lab, Lab.id == LabVersion.lab_id)
-                             .order_by(Lab.slug, LabVersion.created_at))).all()
-    return {"lab_versions": [{"id": str(v.id), "lab": lab.slug, "title": lab.title, "version": v.version,
-                              "content_sha256": v.content_sha256, "created_at": v.created_at}
+                             .where(lab_visible(user)).order_by(Lab.slug, LabVersion.created_at))).all()
+    owner_ids = {lab.owner_id for _, lab in rows if lab.owner_id}
+    names = dict((await db.execute(select(User.id, User.name).where(User.id.in_(owner_ids)))).all()) \
+        if owner_ids else {}
+    return {"lab_versions": [{"id": str(v.id), "lab": lab.slug, "lab_id": str(lab.id), "title": lab.title,
+                              "version": v.version, "content_sha256": v.content_sha256, "created_at": v.created_at,
+                              "builtin": lab.owner_id is None, "shared": lab.shared, "mine": lab.owner_id == user.id,
+                              "owner": {"id": str(lab.owner_id), "name": names.get(lab.owner_id)}
+                              if lab.owner_id else None}
                              for v, lab in rows]}
+
+
+@router.get("/lab-versions/{lab_version_id}/export")
+async def export_lab_version(lab_version_id: uuid.UUID, user: User = Depends(Authz(Action.lab_manage)),
+                             db: AsyncSession = Depends(get_db)):
+    """The complete lab pack (lab.yaml, public/ and private/) as a .tar.gz, for staff who can see the lab.
+    It contains the reference solution, so it is never offered to students (PLAN §7b)."""
+    lv, lab = await load_lab_version_visible(db, user, lab_version_id)
+    pub, priv = await get_bundle(db, lv.id, "public"), await get_bundle(db, lv.id, "private")
+    root = f"{lab.slug}-{lv.version}"
+    data = drafts.to_targz(pack_files(pub.data, priv.data), root)
+    return Response(data, media_type="application/gzip",
+                    headers={"Content-Disposition": f'attachment; filename="{root}.tar.gz"'})
+
+
+class ShareIn(BaseModel):
+    shared: bool
+
+
+@router.post("/labs/{lab_id}/share")
+async def share_lab(lab_id: uuid.UUID, body: ShareIn, user: User = Depends(Authz(Action.lab_manage)),
+                    db: AsyncSession = Depends(get_db)):
+    """Share an authored lab with every instructor (they can assign or clone it), or make it private again.
+    Assignments that already use it keep working. Built-in missions are always visible."""
+    lab = await load_own_lab(db, user, lab_id)
+    if lab.shared != body.shared:
+        audit.record(db, user, "lab.shared", lab_id=lab.id, slug=lab.slug, shared=body.shared,
+                     owner_id=lab.owner_id)
+        lab.shared = body.shared
+        await db.commit()
+    return {"id": str(lab.id), "slug": lab.slug, "shared": lab.shared}
 
 
 class AssignmentIn(BaseModel):
@@ -255,9 +300,7 @@ async def create_assignment(body: AssignmentIn, user: User = Depends(Authz(Actio
                             db: AsyncSession = Depends(get_db)):
     if await db.get(Course, body.course_id) is None or not await is_course_staff(db, user, body.course_id):
         raise not_found("course")
-    lv = await db.get(LabVersion, body.lab_version_id)
-    if lv is None:
-        raise not_found("lab version")
+    lv, _ = await load_lab_version_visible(db, user, body.lab_version_id)
     a = Assignment(course_id=body.course_id, lab_version_id=lv.id, title=body.title, open_at=body.open_at,
                    due_at=body.due_at, close_at=body.close_at, allow_late=body.allow_late,
                    max_attempts=body.max_attempts or definition_of(lv).max_attempts,
@@ -292,8 +335,9 @@ async def update_assignment(assignment_id: uuid.UUID, body: AssignmentPatch, use
     fields = body.model_dump(exclude_unset=True, exclude={"reason"})
     changes: dict[str, list] = {}
     if "lab_version_id" in fields and fields["lab_version_id"] != a.lab_version_id:
-        if fields["lab_version_id"] is None or await db.get(LabVersion, fields["lab_version_id"]) is None:
+        if fields["lab_version_id"] is None:
             raise not_found("lab version")
+        await load_lab_version_visible(db, user, fields["lab_version_id"])
         started = await db.scalar(select(LabSession.id).where(LabSession.assignment_id == a.id).limit(1))
         if started is not None:
             raise ApiError("assignment_started", "students have already started this assignment, so its lab "

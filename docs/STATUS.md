@@ -75,6 +75,16 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | R5 | Repository hygiene | ☑ | no keys/tokens/private keys tracked (only documented dev defaults); `.env`, `production.env`, `runner.env`, backups, certificates and build/test output ignored; `tsconfig.tsbuildinfo` untracked |
 | R5 | Licences | ☑ | THIRD_PARTY_NOTICES.md lists every bundled/adapted component with MIT copyright notices and the full Apache-2.0 text; CloudLabs itself is Apache-2.0 (`LICENSE`, added after the release commit) |
 
+**Phase 8: Instructor Lab Builder** (branch `feat/lab-builder`, plan in `docs/NEXT.md`)
+
+| # | Milestone | State | Verification evidence |
+|---|---|---|---|
+| 36a | `pack_from_files` / `pack_files` refactor of `labs/package.py` | ☑ | API 239/239 fast suite unchanged; all 6 lab packs give byte-identical public/private bundle hashes before and after, and `pack_files → pack_from_files` round-trips losslessly (2026-09-26) |
+| 36 | Backend: migration 0006, drafts API, validation, YAML, preview, clone/import/export, visibility + sharing | ☑ | `tests/test_lab_builder.py` 14 passed (ownership 404s, row-level errors, YAML round-trip, clone keeps private files, redacted preview, export/import round-trip + unsafe tar refusals, private-until-shared, assign/clone/export refused for invisible labs, demo reset); fast suite 253/253; 0006 downgrade → upgrade clean. Docker-marked tests and labtest not re-run in this session (see NEXT.md) |
+| 37 | Test run and publish gate | ☐ | |
+| 38 | UI (`apps/web`) + `e2e/lab-builder.spec.ts` | ☐ | |
+| 39 | Docs and full regression, merge to `main` | ☐ | |
+
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
   therefore connects all containers labelled `cloudlabs.role=control-plane` (with the matching
@@ -204,3 +214,30 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   Destroy retries network removal, and an empty network Docker refuses to remove (stale endpoint) is recorded as
   leaked (no seat, surfaced on Runtime). Line endings normalised to LF with `.gitattributes`, because Windows tooling
   had introduced CRLF, which would break shell scripts in Linux containers.
+- **D29 — Lab ownership.** `labs.owner_id` NULL = built-in mission (imported from `labs/` on disk), visible to all.
+  An authored lab is visible to its author and admins, or to every instructor once `shared`. Anything invisible
+  answers 404 (list, assign, re-pin an assignment, clone, export, share). `import_package(owner_id=…)` refuses a
+  lab id that belongs to a different owner (`lab_owner_conflict`, 409), so neither the CLI nor a publish can add a
+  version to someone else's lab or to a built-in mission. Sharing is audited (`lab.shared`) and only changes future
+  visibility: existing assignments keep working.
+- **D30 — Drafts.** A draft stores `{lab: <schema-v1 dict>, files: {path: text}}` as JSON, so YAML comments are not
+  kept, and YAML-only values such as unquoted dates are refused. YAML aliases are also refused, in lab.yaml and
+  expected.yaml, because a few KB of nested aliases would expand exponentially when serialised. Drafts save even when invalid (work in progress).
+  Every save re-validates and stores `last_validation`, with errors turned into rows (`task`, 1-based `check`,
+  `field`, or a schema/file `loc`). Only `private/{solution.sh,partial.sh,expected.yaml,notes.md}` are editable.
+  Other files from a clone or import (for example break-fix setup scripts) are carried unchanged and refused if
+  changed. Saving changed content moves a `passed`/`failed` draft back to `draft`. `testing` and `published` drafts
+  are read-only.
+- **D31 — Clone semantics.** Cloning your own lab prepares its next version (same id, next minor). Cloning anyone
+  else's lab or a built-in mission starts a new lab `<id>-<your short id>[-n]` at 1.0.0, titled "… (copy)", so a
+  clone can never collide with the original. Validation already flags an id owned by another lab, or a version
+  that is already published, before any test run.
+- **D32 — Scenario rules in validation.** `private/solution.sh` is required, `expected.yaml` defaults to
+  `{empty: 0, solution: <max score>}`, and it must keep empty at 0 and solution at full marks (owner's publish
+  gate). A partial scenario needs both `partial.sh` and a score strictly between 0 and full marks.
+- **D33 — Pack upload/export.** Export is a deterministic `.tar.gz` (`<id>-<version>/…`, mtime 0) for staff who can
+  see the lab. It includes the private bundle and is never offered to students. Import accepts `.tar`/`.tar.gz`
+  up to 2 MB with lab.yaml at the top or in one folder. Only regular UTF-8 files within the pack limits are
+  accepted (no links, devices, traversal or other top-level folders); a schema-invalid pack still becomes a draft.
+- **D34 — Demo reset** also deletes demo authors' drafts and published labs. Draft links to lab versions are
+  `ON DELETE SET NULL`, so a real instructor's clone of a demo lab survives the reset.

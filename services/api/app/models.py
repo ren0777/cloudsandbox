@@ -11,6 +11,7 @@ from decimal import Decimal
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -123,7 +124,33 @@ class Lab(Base):
     id: Mapped[uuid.UUID] = _uuid()
     slug: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Lab Builder (phase 8): NULL = built-in mission, visible to all. Otherwise private to its author (and
+    # admins) unless shared, in which case every instructor can assign or clone it.
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
+    shared: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = _now()
+
+
+class LabDraft(Base):
+    """An instructor's editable lab (phase 8). content = {"lab": <schema-v1 dict>, "files": {path: text}}.
+    Private files in it are visible only to the owner and admins, like a lab version's private bundle."""
+    __tablename__ = "lab_drafts"
+    id: Mapped[uuid.UUID] = _uuid()
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    content: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    base_lab_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("lab_versions.id", ondelete="SET NULL"))
+    status: Mapped[str] = mapped_column(String(12), nullable=False, server_default="draft")
+    last_validation: Mapped[dict | None] = mapped_column(JSONB)
+    last_test: Mapped[dict | None] = mapped_column(JSONB)
+    tested_sha256: Mapped[str | None] = mapped_column(String(64))
+    published_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("lab_versions.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(),
+                                                 onupdate=func.now(), nullable=False)
+    __table_args__ = (CheckConstraint("status IN ('draft', 'testing', 'passed', 'failed', 'published')",
+                                      name="ck_lab_drafts_status"),)
 
 
 class LabVersion(Base):

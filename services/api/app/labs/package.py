@@ -125,10 +125,8 @@ MAX_FILE_BYTES = 256 * 1024     # per file in a pack (scripts, notes, assets)
 MAX_PACK_FILES = 50
 
 
-def pack_from_files(files: dict[str, bytes]) -> LabPackage:
-    """Validate and bundle a lab pack given as {"lab.yaml": ..., "public/<path>": ..., "private/<path>": ...}.
-    Used for directories (load_pack), Lab Builder drafts and uploaded packs alike, so every source gets the
-    same schema, capability and file checks."""
+def check_files(files: dict[str, bytes]) -> list[str]:
+    """Path, size and count limits for a pack given as in-memory files."""
     errors: list[str] = []
     for name, data in files.items():
         parts = name.split("/")
@@ -142,6 +140,14 @@ def pack_from_files(files: dict[str, bytes]) -> LabPackage:
         errors.append(f"too many files (limit {MAX_PACK_FILES})")
     if "lab.yaml" not in files:
         errors.append("lab.yaml is missing")
+    return errors
+
+
+def pack_from_files(files: dict[str, bytes]) -> LabPackage:
+    """Validate and bundle a lab pack given as {"lab.yaml": ..., "public/<path>": ..., "private/<path>": ...}.
+    Used for directories (load_pack), Lab Builder drafts and uploaded packs alike, so every source gets the
+    same schema, capability and file checks."""
+    errors = check_files(files)
     if errors:
         raise LabValidationError(errors)
     text = files["lab.yaml"].decode("utf-8").replace("\r\n", "\n")

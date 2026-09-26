@@ -19,6 +19,7 @@ ACTIONS: frozenset[str] = frozenset({
     "assignment.created", "assignment.updated", "assignment.deleted",
     "deadline.extended", "attempts.granted",
     "grade.regraded",
+    "lab.draft_created", "lab.published", "lab.shared",
     "session.terminated", "session.extended",
     "runner.registered", "runner.drained", "runner.resumed", "runner.retired",
     "user.created", "user.role_changed", "user.deactivated", "user.reactivated", "user.password_reset",

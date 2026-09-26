@@ -7,12 +7,24 @@ import enum
 import uuid
 
 from fastapi import Depends, Request
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..errors import ApiError, not_found
-from ..models import Assignment, Attempt, Course, CourseStaff, Enrolment, LabSession, Role, User
+from ..models import (
+    Assignment,
+    Attempt,
+    Course,
+    CourseStaff,
+    Enrolment,
+    Lab,
+    LabDraft,
+    LabSession,
+    LabVersion,
+    Role,
+    User,
+)
 from ..obs.logging import log
 from .deps import current_user
 from .security import CSRF_COOKIE, CSRF_HEADER
@@ -165,6 +177,53 @@ async def load_attempt_for_staff(db: AsyncSession, user: User, attempt_id: uuid.
         log.warning("authz.denied", user_id=str(user.id), attempt_id=str(attempt_id))
         raise not_found("attempt")
     return a
+
+
+# ------------------------------------------------------------------ labs (Lab Builder, phase 8)
+def lab_visible(user: User) -> ColumnElement[bool]:
+    """SQL filter on Lab: built-in missions (no owner) for everyone, plus the user's own labs and labs
+    shared with all instructors. Admins see every lab."""
+    if user.role == Role.admin:
+        return true()
+    return or_(Lab.owner_id.is_(None), Lab.owner_id == user.id, Lab.shared.is_(True))
+
+
+def can_see_lab(user: User, lab: Lab) -> bool:
+    return user.role == Role.admin or lab.owner_id is None or lab.owner_id == user.id or lab.shared
+
+
+async def load_lab_version_visible(db: AsyncSession, user: User, lab_version_id: uuid.UUID) -> tuple[LabVersion, Lab]:
+    """A lab version the user may assign, clone or export (404 otherwise)."""
+    lv = await db.get(LabVersion, lab_version_id)
+    lab = await db.get(Lab, lv.lab_id) if lv is not None else None
+    if lv is None or lab is None or not can_see_lab(user, lab):
+        if lv is not None:
+            log.warning("authz.denied", user_id=str(user.id), lab_version_id=str(lab_version_id))
+        raise not_found("lab version")
+    return lv, lab
+
+
+async def load_own_lab(db: AsyncSession, user: User, lab_id: uuid.UUID) -> Lab:
+    """A lab the user may manage (share): their own, or any authored lab for an admin (404 otherwise)."""
+    lab = await db.get(Lab, lab_id)
+    if lab is None or not (lab.owner_id == user.id or (user.role == Role.admin and lab.owner_id is not None)):
+        if lab is not None:
+            log.warning("authz.denied", user_id=str(user.id), lab_id=str(lab_id))
+        raise not_found("lab")
+    return lab
+
+
+async def load_draft_for(db: AsyncSession, user: User, draft_id: uuid.UUID, for_update: bool = False) -> LabDraft:
+    """A lab draft for its owner or an admin (404 for anyone else)."""
+    q = select(LabDraft).where(LabDraft.id == draft_id)
+    if for_update:
+        q = q.with_for_update()
+    d = await db.scalar(q)
+    if d is None or (d.owner_id != user.id and user.role != Role.admin):
+        if d is not None:
+            log.warning("authz.denied", user_id=str(user.id), draft_id=str(draft_id))
+        raise not_found("draft")
+    return d
 
 
 DB = Depends(get_db)
