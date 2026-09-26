@@ -1,0 +1,9 @@
+export PS1='\[\e[38;5;208m\]cloudlabs\[\e[0m\]:\[\e[36m\]\w\[\e[0m\]$ '
+export AWS_PAGER=""
+if [ -z "${CLOUDLABS_MOTD_SHOWN:-}" ]; then
+  export CLOUDLABS_MOTD_SHOWN=1
+  echo -e "\e[1;33mCloudLabs AWS CLI environment\e[0m"
+  echo "  Commands use the standard AWS CLI syntax - the same commands work in a real AWS account."
+  echo "  The endpoint is redirected to your isolated training cloud (us-east-1). Nothing here costs money."
+  echo -e "  Try: \e[36maws s3 ls\e[0m    Help: \e[36maws s3 help\e[0m, \e[36maws s3api help\e[0m"
+fi

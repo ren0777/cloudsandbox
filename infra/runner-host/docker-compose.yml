@@ -1,0 +1,49 @@
+# CloudLabs RUNNER SERVER (one per lab server). Runs only the runner; sandboxes are created on this host's Docker.
+# See docs/DEPLOYMENT.md "Add a runner server".
+#
+#   cp runner.env.example runner.env    # set RUNNER_ID, RUNNER_SECRET, RUNNER_PUBLIC_URL, PRIVATE_IP
+#   docker compose --env-file runner.env --profile images build   # sandbox images (or load them, see docs)
+#   docker compose --env-file runner.env up -d
+#
+# Then, on the API server: RUNNER_SECRET=… docker compose exec api python -m app.runtime.fleet register <RUNNER_ID> <RUNNER_PUBLIC_URL>
+name: cloudlabs-runner
+
+services:
+  runner:
+    build: ../../services/runner
+    image: cloudlabs/runner:${CLOUDLABS_VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      RUNNER_ID: ${RUNNER_ID:?set RUNNER_ID}
+      RUNNER_SECRET: ${RUNNER_SECRET:?set RUNNER_SECRET (random, unique per runner)}
+      RUNNER_MAX_SANDBOXES: ${RUNNER_MAX_SANDBOXES:-8}
+      RUNNER_DEFAULT_EMULATOR: ${RUNNER_DEFAULT_EMULATOR:-floci}
+      RUNNER_TERMINAL_IMAGE: cloudlabs/terminal:${CLOUDLABS_VERSION:-dev}
+      # The API server is on another machine: it reaches sandboxes through this runner's gateway.
+      RUNNER_ACCESS_MODE: gateway
+      RUNNER_PUBLIC_URL: ${RUNNER_PUBLIC_URL:?set RUNNER_PUBLIC_URL, e.g. http://10.0.0.12:7070}
+    ports:
+      # bind to the PRIVATE interface only; the firewall must allow this port from the API server(s) only
+      - "${PRIVATE_IP:?set PRIVATE_IP}:7070:7070"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      cloudlabs.role: runner
+
+  # sandbox images (build once per version, or `docker load` images exported on the build machine)
+  emulator-floci:
+    profiles: ["images"]
+    build: ../../images/emulator-floci
+    image: cloudlabs/emulator-floci:${CLOUDLABS_VERSION:-dev}
+  emulator:
+    profiles: ["images"]
+    build: ../../images/emulator
+    image: cloudlabs/emulator:${CLOUDLABS_VERSION:-dev}
+  emulator-ministack:
+    profiles: ["images"]
+    build: ../../images/emulator-ministack
+    image: cloudlabs/emulator-ministack:${CLOUDLABS_VERSION:-dev}
+  terminal:
+    profiles: ["images"]
+    build: ../../images/terminal
+    image: cloudlabs/terminal:${CLOUDLABS_VERSION:-dev}

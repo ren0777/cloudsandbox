@@ -1,0 +1,67 @@
+schema_version: 1
+id: s3-basics
+version: 1.2.0
+title: "Mission 1: CloudCafé goes online"
+summary: Create and configure an S3 bucket for CloudCafé's new website.
+story: |
+  **CloudCafé**, the campus coffee start-up, wants its menu online before the lunch rush.
+  You are their first cloud engineer. Set up an Amazon S3 bucket for the website, protect it with
+  Bucket Versioning, upload the home page and tag the bucket so the finance team can track costs.
+
+  Your bucket name is personal to you: **{{ bucket }}**. Use the Region **us-east-1**.
+
+  Work the way you would in a real AWS account: in the **S3 console**, with the **AWS CLI** in the
+  terminal, or both. Open the hints only when you're stuck. Each one tells you a little more.
+services: [s3]
+runtime: {emulator: default}   # platform default engine; labs must not depend on one engine
+duration_minutes: 45
+max_attempts: 3
+variables:
+  bucket: "cafe-{{ student_short_id }}-site"
+requires:
+  - s3:CreateBucket
+  - s3:PutBucketVersioning
+  - s3:PutObject
+  - s3:PutBucketTagging
+tasks:
+  - id: create-bucket
+    title: "Create the S3 bucket {{ bucket }}"
+    description: Bucket names are globally unique, so use exactly this name, in us-east-1.
+    hints:
+      - "In the console, open **S3** and find the button that creates a new bucket."
+      - "Keep the AWS Region as us-east-1 and type the bucket name exactly as shown above."
+      - "CLI: the high-level S3 commands include one for making a bucket. Run `aws s3 help` and look for it."
+    marks: 25
+    checks:
+      - {type: s3.bucket_exists, bucket: "{{ bucket }}"}
+  - id: enable-versioning
+    title: Enable Bucket Versioning
+    description: With versioning on, S3 keeps every version of an object, so an overwrite or delete can be undone.
+    hints:
+      - "Open your bucket. Versioning is a bucket setting, so look under **Properties**."
+      - "Find the **Bucket Versioning** section, choose **Edit**, then **Enable**."
+      - "CLI: versioning is a low-level bucket operation. `aws s3api help` lists them; look for one about versioning."
+    marks: 25
+    checks:
+      - {type: s3.versioning, bucket: "{{ bucket }}", status: Enabled}
+  - id: upload-homepage
+    title: Upload the home page as index.html
+    description: Upload an HTML file named index.html to the top level of the bucket.
+    hints:
+      - "Open your bucket's **Objects** tab and choose **Upload**."
+      - "The object key must be exactly index.html, and the file must be served as a web page. Check its content type."
+      - "CLI: `aws s3 cp help` shows how to copy a local file into a bucket."
+    marks: 25
+    checks:
+      - {type: s3.object_exists, bucket: "{{ bucket }}", key: index.html, min_size: 1, weight: 2}
+      - {type: s3.object_content_type, bucket: "{{ bucket }}", key: index.html, content_type: text/html, hidden: true}
+  - id: tag-bucket
+    title: "Add the cost allocation tag project = cloudcafe"
+    description: Finance tracks spending with the tag key project and the value cloudcafe.
+    hints:
+      - "Bucket tags are a bucket setting. Look under the bucket's **Properties**."
+      - "Add a tag with key `project` and value `cloudcafe`, then save your changes."
+      - "CLI: `aws s3api put-bucket-tagging help` explains the TagSet format."
+    marks: 25
+    checks:
+      - {type: s3.bucket_tag, bucket: "{{ bucket }}", key: project, value: cloudcafe}

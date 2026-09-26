@@ -1,0 +1,3 @@
+# Keep LF everywhere (shell scripts run in Linux containers; tools on Windows must not convert).
+* text=auto eol=lf
+*.png binary

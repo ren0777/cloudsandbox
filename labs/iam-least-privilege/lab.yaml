@@ -1,0 +1,73 @@
+schema_version: 1
+id: iam-least-privilege
+version: 1.0.0
+title: "Mission 3: Least privilege for the baristas"
+summary: Give CloudCafé's baristas exactly the access they need, and nothing more.
+story: |
+  CloudCafé is hiring. Baristas need to **read** the menu files in the website bucket
+  **{{ bucket }}**, but they must never change or delete them.
+
+  Create a user group for the baristas, a user for the first barista, and a customer managed policy
+  that grants only what they need. Attach permissions to the **group**, not to the user: that's how
+  permissions stay manageable as the team grows.
+
+  Work in the **IAM console**, with the **AWS CLI**, or both. Try the **Policy simulator** to check
+  your work before you submit.
+services: [iam]
+runtime: {emulator: default}
+duration_minutes: 45
+max_attempts: 3
+variables:
+  bucket: "cafe-{{ student_short_id }}-site"
+  group: "baristas-{{ student_short_id }}"
+  user: "barista-{{ student_short_id }}"
+  policy: "menu-read-{{ student_short_id }}"
+requires:
+  - iam:CreateGroup
+  - iam:CreateUser
+  - iam:AddUserToGroup
+  - iam:CreatePolicy
+  - iam:AttachGroupPolicy
+tasks:
+  - id: create-group
+    title: "Create the user group {{ group }}"
+    description: User groups let you manage permissions for many users at once.
+    hints:
+      - "In the console, open **IAM** and go to **User groups**."
+      - "Name the group exactly as shown. You can attach permissions later."
+      - "CLI: `aws iam create-group help`."
+    marks: 20
+    checks:
+      - {type: iam.group_exists, group: "{{ group }}"}
+  - id: create-user
+    title: "Create the IAM user {{ user }} in that group"
+    description: Add the user to the group when you create it, or afterwards.
+    hints:
+      - "Open **Users** and create a user. The permissions step lets you add the user to a group."
+      - "CLI: create the user, then look at `aws iam add-user-to-group help`."
+    marks: 20
+    checks:
+      - {type: iam.user_exists, user: "{{ user }}"}
+      - {type: iam.user_in_group, user: "{{ user }}", group: "{{ group }}"}
+  - id: read-policy
+    title: "Create the policy {{ policy }} and attach it to the group"
+    description: "The policy must let the group read objects in {{ bucket }} (s3:GetObject on its objects)."
+    hints:
+      - "Open **Policies → Create policy** and use the JSON editor."
+      - "Object ARNs look like `arn:aws:s3:::BUCKET/*`. Then attach the policy to the **group**."
+      - "CLI: `aws iam create-policy help` and `aws iam attach-group-policy help`."
+    marks: 30
+    checks:
+      - {type: iam.policy_attached, principal: "group:{{ group }}", policy: "{{ policy }}"}
+      - {type: iam.policy_allows, principal: "user:{{ user }}", action: "s3:GetObject", resource: "arn:aws:s3:::{{ bucket }}/menu.html", expect: allow, weight: 2}
+  - id: least-privilege
+    title: Grant nothing more than read access
+    description: The baristas must not be able to change or delete the menu, or read other buckets.
+    hints:
+      - "Avoid wildcards like `s3:*` or `\"Resource\": \"*\"`. List only the actions you need."
+      - "Use the **Policy simulator** on your user to test s3:PutObject and s3:DeleteObject."
+    marks: 30
+    checks:
+      - {type: iam.policy_allows, principal: "user:{{ user }}", action: "s3:PutObject", resource: "arn:aws:s3:::{{ bucket }}/menu.html", expect: deny}
+      - {type: iam.policy_allows, principal: "user:{{ user }}", action: "s3:GetObject", resource: "arn:aws:s3:::payroll-records/salaries.csv", expect: deny}
+      - {type: iam.policy_allows, principal: "user:{{ user }}", action: "s3:DeleteObject", resource: "arn:aws:s3:::{{ bucket }}/menu.html", expect: deny, hidden: true}

@@ -1,0 +1,30 @@
+# MiniStack capability declaration (PLAN §8). Used ONLY by labs that pin runtime.emulator: ministack,
+# because MiniStack executes Lambda code in-process (no Docker socket). Only operations verified by the
+# contract tests are declared; everything else is unsupported on this engine.
+emulator: ministack
+engine_version: "ministack-1.5.16"
+limitations:
+  - IAM policies are not enforced - any credentials work.
+  - Function code runs inside your sandbox's emulator; each invocation takes several seconds.
+  - Only Python and Node.js runtimes are available; container-image functions are not supported.
+  - All state is in memory and is lost when the emulator restarts.
+services:
+  lambda:
+    CreateFunction: {level: supported}
+    GetFunction: {level: supported}
+    GetFunctionConfiguration: {level: supported}
+    ListFunctions: {level: supported}
+    UpdateFunctionCode: {level: supported}
+    UpdateFunctionConfiguration: {level: supported}
+    DeleteFunction: {level: supported}
+    Invoke: {level: supported}
+    CreateFunctionUrlConfig: {level: unsupported, note: "Function URLs are not simulated."}
+    PublishLayerVersion: {level: unsupported, note: "Layers are not simulated."}
+  iam:
+    CreateRole: {level: supported}
+    GetRole: {level: supported}
+    ListRoles: {level: supported}
+    DeleteRole: {level: supported}
+  s3: {}
+  dynamodb: {}
+  ec2: {}

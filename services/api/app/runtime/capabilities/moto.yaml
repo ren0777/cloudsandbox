@@ -1,0 +1,135 @@
+# Moto capability declaration (PLAN §8). Every operation a lab `requires`, a check reads, or the
+# console exposes must be listed with a support level:
+#   supported   - Moto behaves like AWS for CloudLabs purposes (verified by tests/contract)
+#   simulated   - CloudLabs implements the behaviour itself (e.g. the future IAM policy evaluator)
+#   unsupported - not usable in labs; rejected at import, hidden or labelled in the console
+emulator: moto
+engine_version: "5.2.3"
+limitations:
+  - IAM policies are not enforced - any credentials work. CloudLabs evaluates policies itself for grading and the policy simulator.
+  - The S3 static-website endpoint is not served (configuration is stored only).
+  - Presigned URLs are unreliable through the sandbox network.
+  - All state is in memory and is lost when the emulator restarts.
+  - Checksum and ACL behaviour is partial.
+  - EC2 instances are metadata-only; Lambda invocation needs Docker access (both out of slice 1).
+services:
+  s3:
+    CreateBucket: {level: supported}
+    DeleteBucket: {level: supported}
+    ListBuckets: {level: supported}
+    GetBucketVersioning: {level: supported}
+    PutBucketVersioning: {level: supported}
+    GetBucketTagging: {level: supported}
+    PutBucketTagging: {level: supported}
+    DeleteBucketTagging: {level: supported}
+    GetBucketPolicy: {level: supported}
+    PutBucketPolicy: {level: supported}
+    PutObject: {level: supported}
+    GetObject: {level: supported}
+    HeadObject: {level: supported}
+    DeleteObject: {level: supported}
+    ListObjectsV2: {level: supported}
+    GetBucketLocation: {level: supported}
+    PutPublicAccessBlock: {level: supported}
+    GetPublicAccessBlock: {level: supported}
+    DeleteBucketPolicy: {level: supported}
+    PutBucketWebsite: {level: unsupported, note: "The simulator stores the setting but does not serve a website endpoint."}
+    GeneratePresignedUrl: {level: unsupported, note: "Presigned URLs do not work across the sandbox network."}
+    PutBucketAcl: {level: unsupported, note: "ACLs are not available in the CloudLabs simulator."}
+    PutBucketEncryption: {level: unsupported, note: "Default encryption settings are not simulated."}
+    PutBucketLifecycleConfiguration: {level: unsupported, note: "Lifecycle rules, replication and inventory are not simulated."}
+    GetMetricsConfiguration: {level: unsupported, note: "CloudWatch storage and request metrics are not simulated."}
+    CreateBucketInOtherRegion: {level: unsupported, note: "The simulator only provides the us-east-1 Region."}
+  iam:
+    CreateUser: {level: supported}
+    GetUser: {level: supported}
+    ListUsers: {level: supported}
+    DeleteUser: {level: supported}
+    CreateGroup: {level: supported}
+    GetGroup: {level: supported}
+    ListGroups: {level: supported}
+    DeleteGroup: {level: supported}
+    AddUserToGroup: {level: supported}
+    RemoveUserFromGroup: {level: supported}
+    ListGroupsForUser: {level: supported}
+    CreatePolicy: {level: supported}
+    GetPolicy: {level: supported}
+    GetPolicyVersion: {level: supported}
+    ListPolicies: {level: supported}
+    DeletePolicy: {level: supported}
+    AttachUserPolicy: {level: supported}
+    DetachUserPolicy: {level: supported}
+    ListAttachedUserPolicies: {level: supported}
+    AttachGroupPolicy: {level: supported}
+    DetachGroupPolicy: {level: supported}
+    ListAttachedGroupPolicies: {level: supported}
+    AttachRolePolicy: {level: supported}
+    DetachRolePolicy: {level: supported}
+    ListAttachedRolePolicies: {level: supported}
+    PutUserPolicy: {level: supported}
+    GetUserPolicy: {level: supported}
+    ListUserPolicies: {level: supported}
+    DeleteUserPolicy: {level: supported}
+    PutGroupPolicy: {level: supported}
+    GetGroupPolicy: {level: supported}
+    ListGroupPolicies: {level: supported}
+    DeleteGroupPolicy: {level: supported}
+    PutRolePolicy: {level: supported}
+    GetRolePolicy: {level: supported}
+    ListRolePolicies: {level: supported}
+    DeleteRolePolicy: {level: supported}
+    CreateRole: {level: supported}
+    GetRole: {level: supported}
+    ListRoles: {level: supported}
+    DeleteRole: {level: supported}
+    SimulatePrincipalPolicy: {level: simulated, note: "Evaluated by the CloudLabs policy evaluator (identity-based policies; conditions are not evaluated)."}
+    PermissionsBoundary: {level: unsupported, note: "Permissions boundaries are not simulated."}
+    CreateAccessKey: {level: unsupported, note: "Sandboxes use fixed training credentials; access keys are not issued."}
+  ec2:
+    DescribeImages: {level: supported}
+    DescribeInstanceTypes: {level: supported}
+    DescribeVpcs: {level: supported}
+    DescribeSubnets: {level: supported}
+    CreateSecurityGroup: {level: supported}
+    AuthorizeSecurityGroupIngress: {level: supported}
+    RevokeSecurityGroupIngress: {level: supported}
+    DescribeSecurityGroups: {level: supported}
+    DeleteSecurityGroup: {level: supported}
+    CreateKeyPair: {level: supported}
+    DescribeKeyPairs: {level: supported}
+    DeleteKeyPair: {level: supported}
+    RunInstances: {level: supported}
+    DescribeInstances: {level: supported}
+    StartInstances: {level: supported}
+    StopInstances: {level: supported}
+    TerminateInstances: {level: supported}
+    CreateTags: {level: supported}
+    DescribeTags: {level: supported}
+    ConnectToInstance: {level: unsupported, note: "Connecting to instances (SSH / EC2 Instance Connect) is not available yet. Instances are simulated records."}
+    CreateVolume: {level: unsupported, note: "EBS volumes and storage settings are not simulated."}
+    AllocateAddress: {level: unsupported, note: "Elastic IP addresses are not simulated."}
+    DescribeInstanceStatus: {level: unsupported, note: "Status checks and monitoring are not simulated."}
+  lambda:
+    CreateFunction: {level: supported}
+    GetFunction: {level: supported}
+    GetFunctionConfiguration: {level: supported}
+    ListFunctions: {level: supported}
+    UpdateFunctionCode: {level: supported}
+    UpdateFunctionConfiguration: {level: supported}
+    DeleteFunction: {level: supported}
+    Invoke: {level: unsupported, note: "Running function code needs Docker access, which sandboxes never get. Labs that run code use the MiniStack engine."}
+  dynamodb:
+    CreateTable: {level: supported}
+    DescribeTable: {level: supported}
+    ListTables: {level: supported}
+    DeleteTable: {level: supported}
+    UpdateTable: {level: supported}
+    PutItem: {level: supported}
+    GetItem: {level: supported}
+    DeleteItem: {level: supported}
+    Scan: {level: supported}
+    Query: {level: supported}
+    TagResource: {level: supported}
+    ListTagsOfResource: {level: supported}
+    CreateGlobalSecondaryIndex: {level: unsupported, note: "Secondary indexes are not available in the CloudLabs console yet."}
+    UpdateTableEncryption: {level: unsupported, note: "Encryption at rest settings are not simulated."}

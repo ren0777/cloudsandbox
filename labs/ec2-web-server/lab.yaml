@@ -1,0 +1,79 @@
+schema_version: 1
+id: ec2-web-server
+version: 1.0.0
+title: "Mission 4: A web server for CloudCafé"
+summary: Launch an EC2 instance behind a least-privilege security group, the way a real web server is set up.
+story: |
+  CloudCafé wants its own web server for online ordering. Launch an **Amazon EC2** instance and protect it
+  with a **security group** that lets customers reach the website but only lets staff on the campus
+  network (**10.20.0.0/16**) log in with SSH.
+
+  Use a small, free-tier-eligible instance type, create a key pair for SSH, and keep costs under control:
+  don't leave extra instances running.
+
+  Your names are personal to you: security group **{{ sg }}**, key pair **{{ key }}**, instance **{{ instance }}**.
+  Work in the **EC2 console** (the **Launch instance** wizard), with the **AWS CLI**, or both.
+services: [ec2]
+runtime: {emulator: default}
+duration_minutes: 45
+max_attempts: 3
+variables:
+  sg: "cafe-web-sg-{{ student_short_id }}"
+  key: "cafe-key-{{ student_short_id }}"
+  instance: "cafe-web-{{ student_short_id }}"
+requires:
+  - ec2:CreateSecurityGroup
+  - ec2:AuthorizeSecurityGroupIngress
+  - ec2:CreateKeyPair
+  - ec2:RunInstances
+  - ec2:CreateTags
+tasks:
+  - id: web-access
+    title: "Create the security group {{ sg }} for web traffic"
+    description: Customers must reach the website over HTTP (port 80) from anywhere.
+    hints:
+      - "In the console, open **EC2 → Security Groups → Create security group**, or create it in the Launch instance wizard."
+      - "Add an inbound rule of type HTTP with source 0.0.0.0/0 (anywhere IPv4)."
+      - "CLI: `aws ec2 create-security-group help` and `aws ec2 authorize-security-group-ingress help`."
+    marks: 20
+    checks:
+      - {type: ec2.security_group_rule, group: "{{ sg }}", protocol: tcp, port: 80, cidr: 0.0.0.0/0}
+  - id: ssh-campus-only
+    title: Allow SSH only from the campus network
+    description: "Port 22 must be open to 10.20.0.0/16 and to nobody else."
+    hints:
+      - "Security groups are allow-lists: anything you don't allow is blocked."
+      - "Use a custom source of 10.20.0.0/16 for the SSH rule, not 0.0.0.0/0."
+    marks: 20
+    checks:
+      - {type: ec2.security_group_rule, group: "{{ sg }}", protocol: tcp, port: 22, cidr: 10.20.0.0/16}
+      - {type: ec2.security_group_rule, group: "{{ sg }}", protocol: tcp, port: 22, cidr: 0.0.0.0/0, expect: absent, hidden: true}
+  - id: key-pair
+    title: "Create the key pair {{ key }}"
+    description: You would use this key to log in to the instance with SSH.
+    hints:
+      - "Open **Key Pairs → Create key pair**, or create one in the Launch instance wizard."
+      - "CLI: `aws ec2 create-key-pair help`."
+    marks: 10
+    checks:
+      - {type: ec2.key_pair_exists, key: "{{ key }}"}
+  - id: launch
+    title: "Launch the instance {{ instance }}"
+    description: "A t3.micro instance using your key pair and security group, tagged Project = cloudcafe."
+    hints:
+      - "Use **Launch instance**. Name the instance exactly as shown, choose a Linux image and the t3.micro type."
+      - "Under Network settings choose **Select existing security group**, and add the Project tag."
+      - "CLI: `aws ec2 run-instances help` (look for --key-name, --security-group-ids, --tag-specifications)."
+    marks: 40
+    checks:
+      - {type: ec2.instance, name: "{{ instance }}", state: running, instance_type: t3.micro, key_name: "{{ key }}", weight: 2}
+      - {type: ec2.instance_security_group, name: "{{ instance }}", group: "{{ sg }}"}
+      - {type: ec2.instance_tag, name: "{{ instance }}", key: Project, value: cloudcafe}
+  - id: cost
+    title: Keep exactly one instance running
+    description: Every running instance costs money. Your web server should be the only one; terminate any extras.
+    hints:
+      - "Select extra instances and use **Instance state → Terminate instance**."
+    marks: 10
+    checks:
+      - {type: ec2.running_instance_count, min: 1, max: 1}

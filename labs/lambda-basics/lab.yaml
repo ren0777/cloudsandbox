@@ -1,0 +1,69 @@
+schema_version: 1
+id: lambda-basics
+version: 1.0.0
+title: "Mission 5: CloudCafé's serverless checkout"
+summary: Build a Lambda function that totals a customer's order, including tax.
+story: |
+  Orders are flowing in, and the till app needs a small backend that works out what each customer
+  owes. Nobody at CloudCafé wants to look after a server just for that, so you'll write an
+  **AWS Lambda** function: code that runs only when it is invoked.
+
+  Your function name is personal to you: **{{ function }}**. Use the Region **us-east-1**.
+
+  Work in the **Lambda console** (it has a code editor and a Test button), with the **AWS CLI**, or both.
+  Running code in the simulator takes a few seconds per invocation, so be patient with Test.
+services: [lambda]
+runtime: {emulator: ministack}
+duration_minutes: 45
+max_attempts: 3
+variables:
+  function: "cafe-{{ student_short_id }}-orders"
+requires:
+  - lambda:CreateFunction
+  - lambda:UpdateFunctionCode
+  - lambda:UpdateFunctionConfiguration
+  - lambda:Invoke
+tasks:
+  - id: create-function
+    title: "Create the function {{ function }} (Python 3.12)"
+    description: Author the function from scratch with the Python 3.12 runtime. Let the console create a new execution role for you.
+    hints:
+      - "In the console, open **Lambda**, go to **Functions** and find the button that creates a function."
+      - "Choose **Author from scratch** and pick the **Python 3.12** runtime."
+      - "CLI: `aws lambda create-function help`. You need a zip file of your code and an execution role ARN (`aws iam create-role`)."
+    marks: 25
+    checks:
+      - {type: lambda.function, name: "{{ function }}", runtime: python3.12}
+  - id: configure
+    title: Configure tax and timeout
+    description: "The tax rate may change, so keep it out of the code: set the environment variable TAX_RATE to 0.08. Also raise the timeout to at least 10 seconds."
+    hints:
+      - "Both settings are on the function's **Configuration** tab."
+      - "Environment variables are key/value pairs. The key is `TAX_RATE` and the value is `0.08`."
+      - "CLI: `aws lambda update-function-configuration help` covers --environment and --timeout."
+    marks: 20
+    checks:
+      - {type: lambda.function, name: "{{ function }}", env: {TAX_RATE: "0.08"}, timeout_min: 10}
+  - id: compute-total
+    title: Return the order total including tax
+    description: |
+      The till sends events like `{"items": [{"price": 3, "qty": 2}, {"price": 4.5, "qty": 1}]}`.
+      Your function must return `{"total": <amount>}`: the sum of price × qty, plus tax from TAX_RATE,
+      rounded to 2 decimal places. For the example above that is `{"total": 11.34}`.
+    hints:
+      - "Edit the code on the **Code** tab, then choose **Deploy** before you test. Undeployed changes don't run."
+      - "Read the tax rate with `float(os.environ[\"TAX_RATE\"])`, and loop over `event[\"items\"]`."
+      - "Use **Test** with the example event. An empty order should cost 0."
+    marks: 40
+    checks:
+      - {type: lambda.invoke_returns, name: "{{ function }}", payload: {items: [{price: 3, qty: 2}, {price: 4.5, qty: 1}]}, expect: {total: 11.34}, weight: 2}
+      - {type: lambda.invoke_returns, name: "{{ function }}", payload: {items: []}, expect: {total: 0}, hidden: true}
+  - id: memory
+    title: Give the function 256 MB of memory
+    description: Busy mornings make the function slow. Give it at least 256 MB of memory (Lambda also scales CPU with memory).
+    hints:
+      - "Memory is a general configuration setting next to the timeout."
+      - "CLI: --memory-size on `aws lambda update-function-configuration`."
+    marks: 15
+    checks:
+      - {type: lambda.function, name: "{{ function }}", memory_min: 256}

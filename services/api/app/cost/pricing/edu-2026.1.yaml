@@ -1,0 +1,33 @@
+# CloudLabs EDUCATIONAL price table. Simulated, not live AWS billing.
+# Rounded, simplified on-demand list prices for us-east-1 (Linux), published by AWS in 2025–2026 and captured
+# for teaching. No free tier, no taxes, no data transfer or request charges unless listed. Never update this
+# file in place: add a new version so that past estimates stay reproducible.
+version: edu-2026.1
+effective: "2026-01-01"
+currency: USD
+hours_per_month: 730
+ec2:
+  instance_hourly:          # per running instance-hour
+    t2.nano: 0.0058
+    t2.micro: 0.0116
+    t2.small: 0.023
+    t2.medium: 0.0464
+    t3.nano: 0.0052
+    t3.micro: 0.0104
+    t3.small: 0.0208
+    t3.medium: 0.0416
+    t3.large: 0.0832
+    m5.large: 0.096
+    c5.large: 0.085
+  unknown_type_hourly: 0.10  # types not in this table (flagged in the estimate)
+  root_volume_gb: 8          # every non-terminated instance keeps an 8 GiB gp3 root volume
+  ebs_gb_month: 0.08         # charged for running AND stopped instances
+s3:
+  storage_gb_month: 0.023    # S3 Standard
+dynamodb:
+  on_demand_storage_gb_month: 0.25
+  provisioned_rcu_hourly: 0.00013
+  provisioned_wcu_hourly: 0.00065
+  provisioned_storage_gb_month: 0.25
+lambda:
+  note: "Charged per request and per GB-second of run time; nothing while idle."

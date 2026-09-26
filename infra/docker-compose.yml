@@ -1,0 +1,144 @@
+# CloudLabs — full local stack (Windows: Docker Desktop + WSL2).
+#   docker compose -f infra/docker-compose.yml --profile images build   # sandbox images
+#   docker compose -f infra/docker-compose.yml up -d --build
+#   open http://localhost:3000
+name: cloudlabs
+
+x-api-env: &api-env
+  CL_DATABASE_URL: postgresql+asyncpg://cloudlabs_app:app@postgres:5432/cloudlabs
+  CL_DATABASE_OWNER_URL: postgresql+asyncpg://cloudlabs_owner:owner@postgres:5432/cloudlabs
+  CL_SECRET_KEY: ${CL_SECRET_KEY:-dev-only-secret-change-me-0123456789abcdef}
+  CL_RUNNER_URL: http://runner:7070
+  CL_RUNNER_ID: runner-local-1
+  CL_RUNNER_SECRET: ${CL_RUNNER_SECRET:-dev-runner-secret-change-me}
+  CL_ALLOWED_ORIGINS: '["http://localhost:3000"]'
+  CL_COOKIE_SECURE: "true"
+  CL_LABS_DIR: /labs
+  CL_DEMO_MODE: ${CL_DEMO_MODE:-true}
+  CL_DEFAULT_EMULATOR: ${CL_DEFAULT_EMULATOR:-floci}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cloudlabs"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "127.0.0.1:55432:5432"
+
+  runner:
+    build: ../services/runner
+    image: cloudlabs/runner:dev
+    environment:
+      RUNNER_ID: runner-local-1
+      RUNNER_SECRET: ${CL_RUNNER_SECRET:-dev-runner-secret-change-me}
+      RUNNER_MAX_SANDBOXES: ${RUNNER_MAX_SANDBOXES:-4}
+      RUNNER_DEFAULT_EMULATOR: ${CL_DEFAULT_EMULATOR:-floci}
+      RUNNER_TERMINAL_IMAGE: cloudlabs/terminal:dev
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      cloudlabs.role: runner
+
+  # Second runner (profile "multi"): for multi-runner tests and the load test. Own id and secret, and gateway access
+  # mode, so it behaves like a runner on another server. Register it with
+  # `RUNNER_SECRET=… python -m app.runtime.fleet register runner-local-2 http://runner2:7070`.
+  runner2:
+    profiles: ["multi"]
+    image: cloudlabs/runner:dev
+    environment:
+      RUNNER_ID: runner-local-2
+      RUNNER_SECRET: ${CL_RUNNER2_SECRET:-dev-runner2-secret-change-me}
+      # gateway mode: the API is NOT attached to this runner's sandbox networks; traffic goes through the runner,
+      # exactly as it would for a runner on another server
+      RUNNER_ACCESS_MODE: gateway
+      RUNNER_PUBLIC_URL: http://runner2:7070
+      RUNNER_MAX_SANDBOXES: ${RUNNER2_MAX_SANDBOXES:-4}
+      RUNNER_DEFAULT_EMULATOR: ${CL_DEFAULT_EMULATOR:-floci}
+      RUNNER_TERMINAL_IMAGE: cloudlabs/terminal:dev
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      cloudlabs.role: runner
+
+  api:
+    build: ../services/api
+    image: cloudlabs/api:dev
+    environment:
+      <<: *api-env
+      CL_ENV: ${CL_ENV:-demo}
+    volumes:
+      - ../labs:/labs:ro
+    labels:
+      cloudlabs.role: control-plane
+      cloudlabs.env: ${CL_ENV:-demo}
+    depends_on:
+      postgres: {condition: service_healthy}
+      runner: {condition: service_started}
+
+  web:
+    build: ../apps/web
+    image: cloudlabs/web:dev
+    environment:
+      NODE_ENV: production
+    depends_on: [api]
+
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on: [api, web]
+
+  # --- tests: same image, labelled as a control plane for env "test" so the runner attaches it to
+  # test sandboxes; uses its own database.
+  api-test:
+    profiles: ["test"]
+    image: cloudlabs/api:dev
+    environment:
+      <<: *api-env
+      CL_ENV: test
+      CL_DATABASE_URL: postgresql+asyncpg://cloudlabs_app:app@postgres:5432/cloudlabs_test
+      CL_DATABASE_OWNER_URL: postgresql+asyncpg://cloudlabs_owner:owner@postgres:5432/cloudlabs_test
+      CL_COOKIE_SECURE: "false"
+      CL_ALLOWED_ORIGINS: '["http://testserver", "http://localhost:3000"]'
+      CL_BACKGROUND_LOOPS: "false"
+      CL_DEMO_MODE: "false"
+    volumes:
+      - ../services/api:/srv
+      - ../labs:/labs:ro
+    labels:
+      cloudlabs.role: control-plane
+      cloudlabs.env: test
+    entrypoint: ["sleep", "infinity"]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  # --- sandbox images (built, never run as services)
+  emulator-image:
+    profiles: ["images"]
+    build: ../images/emulator
+    image: cloudlabs/emulator:dev
+  emulator-floci-image:
+    profiles: ["images"]
+    build: ../images/emulator-floci
+    image: cloudlabs/emulator-floci:dev
+  emulator-ministack-image:
+    profiles: ["images"]
+    build: ../images/emulator-ministack
+    image: cloudlabs/emulator-ministack:dev
+  terminal-image:
+    profiles: ["images"]
+    build: ../images/terminal
+    image: cloudlabs/terminal:dev
+
+volumes:
+  pgdata:

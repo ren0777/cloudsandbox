@@ -1,0 +1,81 @@
+schema_version: 1
+id: iam-breakfix
+version: 1.0.0
+kind: break_fix
+title: "Mission 6: The baristas are admins (break-fix)"
+summary: Someone gave the baristas full admin rights. Fix CloudCafé's IAM setup without breaking the team.
+story: |
+  **Incident report.** In a rush before opening, a manager made the baristas' user group an **administrator**
+  group "just to make things work". A former intern who left last month is still in that group, and they have
+  a policy of their own that allows everything.
+
+  Your environment already contains this broken setup. You don't need to build anything from scratch: **find
+  what is wrong and repair it.**
+
+  - The group is **{{ group }}**. The current barista is **{{ barista }}**. The former intern is **{{ intern }}**.
+  - A correct, least-privilege policy for the baristas already exists: **{{ policy }}**. It lets them
+    read and write orders in the table **{{ table }}**.
+
+  Work in the **IAM console**, with the **AWS CLI**, or both. The **Architecture** tab shows who has what, and the
+  **Policy simulator** can confirm your fix before you submit.
+services: [iam]
+runtime: {emulator: default}
+duration_minutes: 40
+max_attempts: 3
+variables:
+  group: "baristas-{{ student_short_id }}"
+  barista: "barista-{{ student_short_id }}"
+  intern: "intern-{{ student_short_id }}"
+  policy: "orders-rw-{{ student_short_id }}"
+  table: "cafe-{{ student_short_id }}-orders"
+setup:
+  script: setup.sh
+  timeout_s: 90
+requires:
+  - iam:DetachGroupPolicy
+  - iam:AttachGroupPolicy
+  - iam:RemoveUserFromGroup
+  - iam:DeleteUserPolicy
+  - iam:DeleteUser
+tasks:
+  - id: remove-admin
+    title: "Take full admin rights away from {{ group }}"
+    description: Nobody on the café floor needs to manage the whole AWS account. Remove the administrator permissions from the baristas' group.
+    hints:
+      - "Open the group in **IAM → User groups** and look at its **Permissions**."
+      - "The AWS managed policy **AdministratorAccess** allows every action on every resource. Detach it; don't delete the group."
+      - "CLI: `aws iam list-attached-group-policies` and `aws iam detach-group-policy help`."
+    marks: 30
+    checks:
+      - {type: iam.policy_attached, principal: "group:{{ group }}", policy: AdministratorAccess, expect: absent}
+      - {type: iam.policy_allows, principal: "user:{{ barista }}", action: "iam:CreateUser", resource: "*", expect: deny}
+  - id: keep-working
+    title: "Keep the baristas working"
+    description: "After your fix, {{ barista }} must still be able to record orders (PutItem) in {{ table }}, through the group, using the existing least-privilege policy."
+    hints:
+      - "Grant permissions to the **group**, not to individual users."
+      - "The policy {{ policy }} already exists. Attach it; don't write a new one."
+      - "Use the **Policy simulator** on {{ barista }} with `dynamodb:PutItem` to check."
+    marks: 30
+    checks:
+      - {type: iam.policy_attached, principal: "group:{{ group }}", policy: "{{ policy }}"}
+      - {type: iam.policy_allows, principal: "user:{{ barista }}", action: "dynamodb:PutItem", resource: "arn:aws:dynamodb:us-east-1:123456789012:table/{{ table }}"}
+  - id: offboard-intern
+    title: "Offboard the former intern {{ intern }}"
+    description: People who have left must not keep any access, whether it comes from a group or from a policy of their own.
+    hints:
+      - "Check both the intern's **groups** and the intern's **own permissions**."
+      - "An inline policy belongs to the user. Removing them from a group doesn't remove it."
+      - "Deleting the user is the cleanest option. CLI: remove group memberships and inline policies first, then `aws iam delete-user`."
+    marks: 25
+    checks:
+      - {type: iam.user_in_group, user: "{{ intern }}", group: "{{ group }}", expect: absent}
+      - {type: iam.policy_allows, principal: "user:{{ intern }}", action: "s3:DeleteBucket", resource: "arn:aws:s3:::any-bucket", expect: deny, absent_ok: true}
+  - id: least-privilege
+    title: "Least privilege"
+    description: The baristas can work with orders, but can't do anything destructive to the orders table itself.
+    hints:
+      - "Use the Policy simulator to try an action a barista should never need, such as deleting the table."
+    marks: 15
+    checks:
+      - {type: iam.policy_allows, principal: "user:{{ barista }}", action: "dynamodb:DeleteTable", resource: "arn:aws:dynamodb:us-east-1:123456789012:table/{{ table }}", expect: deny, hidden: true}

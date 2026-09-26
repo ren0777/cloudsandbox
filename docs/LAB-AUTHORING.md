@@ -1,0 +1,130 @@
+# Writing a CloudLabs lab pack
+
+A lab pack is a folder under `labs/`:
+
+```
+labs/my-lab/
+  lab.yaml            # the definition (schema_version 1) — students see a redacted view of it
+  public/             # optional: setup scripts/assets (sent to the runner; never secret)
+  private/            # solution.sh, partial.sh, expected.yaml, notes — NEVER reaches students
+```
+
+## lab.yaml (schema_version 1)
+```yaml
+schema_version: 1                 # required; unknown versions are rejected
+id: s3-basics                     # slug
+version: 1.0.0                    # semver; a changed lab needs a new version (versions are immutable)
+title: "Mission 1: CloudCafé goes online"
+summary: One line for the lab card.
+story: |                          # markdown-lite: paragraphs, **bold**, `code`; may use variables
+  Your bucket is **{{ bucket }}**.
+services: [s3]                    # s3 | dynamodb | iam | ec2 available; lambda later
+runtime: {emulator: default}      # platform default engine; name an engine only if a lab truly needs it
+duration_minutes: 45              # hard TTL (capped at 120)
+idle_minutes: 20                  # optional (clamped to 10–30)
+max_attempts: 3                   # default for new assignments
+variables:                        # rendered per student; student_short_id is built in
+  bucket: "cafe-{{ student_short_id }}-site"
+requires: [s3:CreateBucket, s3:PutBucketVersioning]   # emulator operations students need
+resources:                        # optional; clamped to admin caps
+  emulator: {memory_mib: 512}
+setup: {script: setup.sh, timeout_s: 60}             # optional, file in public/
+tasks:
+  - id: create-bucket
+    title: "Create the bucket {{ bucket }}"
+    description: Shown under the title.
+    hints: ["Terminal: aws s3 mb s3://{{ bucket }}"]
+    marks: 25
+    scoring: all                  # all (default): all checks must pass | proportional: by weight
+    checks:
+      - {type: s3.bucket_exists, bucket: "{{ bucket }}"}
+      - {type: s3.object_content_type, bucket: "{{ bucket }}", key: index.html,
+         content_type: text/html, hidden: true, weight: 1, feedback: "Custom failure message"}
+```
+
+## Available checks (slice 1)
+| Type | Params | Passes when |
+|---|---|---|
+| `s3.bucket_exists` | `bucket` | the bucket exists |
+| `s3.versioning` | `bucket`, `status` (Enabled/Suspended) | versioning status matches |
+| `s3.object_exists` | `bucket`, `key`, `min_size` | the object exists and is at least `min_size` bytes |
+| `s3.object_content_type` | `bucket`, `key`, `content_type` | the Content-Type matches |
+| `s3.bucket_tag` | `bucket`, `key`, `value` | the tag is set to the value |
+| `dynamodb.table_exists` | `table` | the table exists |
+| `dynamodb.key_schema` | `table`, `partition_key`, `partition_type` (S/N/B), `sort_key`?, `sort_type` | the primary key matches exactly (no sort key unless given) |
+| `dynamodb.billing_mode` | `table`, `mode` (PAY_PER_REQUEST/PROVISIONED) | the capacity mode matches |
+| `dynamodb.item` | `table`, `key` {attr: value}, `attributes` {attr: value} | an item with that key has those values (numbers compared canonically) |
+| `dynamodb.attribute_type` | `table`, `key`, `attribute`, `attribute_type`, `value`? | the attribute has that DynamoDB type (e.g. a quantity stored as N, not S) |
+| `dynamodb.item_count` | `table`, `min` | the table holds at least `min` items |
+
+| `iam.user_exists` / `iam.group_exists` | `user` / `group` | the identity exists |
+| `iam.user_in_group` | `user`, `group`, `expect` (present/absent) | the user is (or, with `absent`, is not) a member. A deleted user counts as absent |
+| `iam.policy_attached` | `principal` (`user:`/`group:`/`role:` + name), `policy` (name or ARN), `expect` (present/absent) | the managed policy is (or is no longer) attached to that principal |
+| `iam.role_trusts` | `role`, `service` (e.g. `lambda.amazonaws.com`) | the trust policy lets the service assume the role |
+| `iam.policy_allows` | `principal`, `action`, `resource`, `expect` (allow/deny), `absent_ok` (default false) | the **CloudLabs policy evaluator** reaches that decision (identity policies of the user + its groups, or the group/role; explicit deny wins; conditions aren't evaluated) |
+
+| `ec2.instance` | `name` (Name tag), `state` (running/stopped/any), `instance_type`?, `key_name`? | a non-terminated instance with that Name matches |
+| `ec2.instance_tag` | `name`, `key`, `value` | the instance has the tag |
+| `ec2.instance_security_group` | `name`, `group` | the instance uses the security group |
+| `ec2.security_group_rule` | `group`, `protocol`, `port`, `cidr`, `expect` (present/absent) | an inbound rule covers that port from exactly that CIDR (an "All traffic" rule covers every port) |
+| `ec2.key_pair_exists` | `key` | the key pair exists |
+| `ec2.running_instance_count` | `min`, `max` | the number of running instances is within the bounds (use `min: 1` so an empty sandbox can't pass) |
+
+| `lambda.function` | `name`, `runtime`?, `handler`?, `role_name`?, `env` {K: V}?, `memory_min`?, `timeout_min`? | the function exists with those settings |
+| `lambda.invoke_returns` | `name`, `payload` (event), `expect` | invoking the function with `payload` returns a response containing `expect` (dicts match as a subset, numbers with float tolerance) |
+
+`audit.*` is reserved and rejected with "not available yet".
+
+**Lambda labs and probes:** `lambda.invoke_returns` declares a *probe*. During evidence capture (baseline,
+progress, submit) the collector first invokes the function with each distinct payload and stores the result;
+grading then reads only the stored evidence. Invoking needs an engine that executes code, so such labs must
+pin `runtime: {emulator: ministack}` (`lambda:Invoke` is unsupported on Floci and Moto, and a `default` lab
+using it is rejected at import). The MiniStack capability file has no S3/DynamoDB/EC2, so keep those labs
+Lambda-only. Invocations take ~10 s each, so use at most a few probes. Use a hidden probe (for example an
+empty input) to catch hard-coded answers.
+
+**Engine-neutral EC2 labs:** AMI IDs differ between engines, so never check or hard-code them. In
+private scripts, discover one with `aws ec2 describe-images --owners amazon --query "Images[0].ImageId" --output text`.
+Instances are simulated records: they have a state but no running machine. Check params are validated **after** rendering with a sample student, so type errors show up at
+import.
+
+## Break-fix labs
+Set `kind: break_fix` and provide a `setup` script in `public/`. Setup runs in a short-lived job container
+before the lab starts and again on **Reset**, with the AWS CLI pointed at the sandbox and every variable
+exported in upper case (`$GROUP`, `$STUDENT_SHORT_ID`, …). It builds the broken environment. Tasks then check
+the **repaired final state**. Rules of thumb:
+- The untouched broken state must score **0** (`private/expected.yaml` `empty`); labtest runs setup first.
+- Grade the outcome, not the steps: use `expect: absent` for "remove this", `iam.policy_allows` with
+  `expect: deny` for "can no longer", and `absent_ok: true` when deleting the principal is a valid fix.
+- Add at least one check that a lazy "fix" fails, such as deleting everything or granting `*`. Hidden checks
+  work well here.
+- The setup script isn't secret (it describes the problem). Keep solutions in `private/`.
+- The baseline is captured after setup, so an untouched auto-submit doesn't use an attempt.
+
+Example: `labs/iam-breakfix` (Mission 6).
+
+## The simulator is honest
+Every operation in `requires`, and every operation a check reads, must be `supported` or `simulated` in
+`services/api/app/runtime/capabilities/<engine>.yaml`. A lab on `runtime.emulator: default` must be valid
+on **every** engine (Floci and Moto), so changing the platform default can never break it. Import fails
+otherwise. Known limitations (IAM not
+enforced, no website endpoint, in-memory state, …) are listed in that file.
+
+## Private material and testing
+`private/solution.sh` and `private/partial.sh` get every variable exported in upper case (`$BUCKET`,
+`$STUDENT_SHORT_ID`) and run with the AWS CLI already pointed at the sandbox. `private/expected.yaml`:
+```yaml
+empty: "0.00"
+partial: "50.00"
+solution: "100.00"
+```
+Test on the real runtime (fresh sandbox per scenario, job containers, pure grading):
+```bash
+docker compose -f infra/docker-compose.yml exec -T api python -m app.labtest /labs/my-lab            # every engine
+docker compose -f infra/docker-compose.yml exec -T api python -m app.labtest --engine floci /labs/my-lab
+```
+Import (creates an immutable lab version; the same version with different content is rejected):
+```bash
+docker compose -f infra/docker-compose.yml exec -T api python -m app.labs.importer /labs/my-lab
+```
+Assignments pin a lab version, so editing a pack never changes what running assignments are graded against.

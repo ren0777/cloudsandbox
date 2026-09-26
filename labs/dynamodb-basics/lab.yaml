@@ -1,0 +1,64 @@
+schema_version: 1
+id: dynamodb-basics
+version: 1.0.0
+title: "Mission 2: CloudCafé takes orders"
+summary: Create a DynamoDB table for CloudCafé's online orders and store the first orders.
+story: |
+  The website is live and customers want to order ahead. CloudCafé needs a fast, serverless place
+  to keep orders. Create an **Amazon DynamoDB** table, choose the right capacity mode for a small
+  café with unpredictable traffic, and record the first orders.
+
+  Your table name is personal to you: **{{ table }}**. Use the Region **us-east-1**.
+
+  Work in the **DynamoDB console**, with the **AWS CLI**, or both. Open the hints only when you're stuck.
+services: [dynamodb]
+runtime: {emulator: default}
+duration_minutes: 45
+max_attempts: 3
+variables:
+  table: "cafe-{{ student_short_id }}-orders"
+requires:
+  - dynamodb:CreateTable
+  - dynamodb:PutItem
+tasks:
+  - id: create-table
+    title: "Create the DynamoDB table {{ table }}"
+    description: Every order is identified by its order ID, so make orderId (a String) the partition key. Don't add a sort key.
+    hints:
+      - "In the console, open **DynamoDB**, go to **Tables** and find the button that creates a table."
+      - "The partition key is part of the table's primary key. Name it exactly `orderId` and keep its type as String."
+      - "CLI: `aws dynamodb create-table help` describes --attribute-definitions and --key-schema."
+    marks: 25
+    checks:
+      - {type: dynamodb.table_exists, table: "{{ table }}"}
+      - {type: dynamodb.key_schema, table: "{{ table }}", partition_key: orderId, partition_type: S}
+  - id: on-demand
+    title: Use on-demand capacity
+    description: CloudCafé's traffic is spiky and small, so it should pay per request instead of provisioning capacity.
+    hints:
+      - "Capacity mode is part of the table settings. Look for the option to customise settings."
+      - "Choose **On-demand** read/write capacity."
+      - "CLI: look for --billing-mode in `aws dynamodb create-table help` (or `update-table`)."
+    marks: 25
+    checks:
+      - {type: dynamodb.billing_mode, table: "{{ table }}", mode: PAY_PER_REQUEST}
+  - id: first-order
+    title: "Record order 1001: 2 lattes"
+    description: "Add an item with orderId 1001, drink latte and quantity 2."
+    hints:
+      - "Open the table and choose **Explore table items**, then **Create item**."
+      - "Add two attributes besides orderId: drink and quantity. Think about which data type a quantity should be."
+      - "CLI: `aws dynamodb put-item help`. Items use typed JSON such as {\"S\": \"text\"} and {\"N\": \"2\"}."
+    marks: 25
+    checks:
+      - {type: dynamodb.item, table: "{{ table }}", key: {orderId: "1001"}, attributes: {drink: latte}, weight: 2}
+      - {type: dynamodb.attribute_type, table: "{{ table }}", key: {orderId: "1001"}, attribute: quantity, attribute_type: N, value: "2", hidden: true}
+  - id: more-orders
+    title: Store at least 3 orders
+    description: Add two more orders of your choice so the table holds at least three items.
+    hints:
+      - "Each order needs a different orderId, or it overwrites an existing item."
+      - "The item count is shown when you explore the table's items."
+    marks: 25
+    checks:
+      - {type: dynamodb.item_count, table: "{{ table }}", min: 3}
