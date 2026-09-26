@@ -121,24 +121,67 @@ def validate_definition(d: LabDefinition, public_files: set[str]) -> list[str]:
     return errors
 
 
-def load_pack(path: str | Path) -> LabPackage:
-    root = Path(path)
-    yml = root / "lab.yaml"
-    if not yml.is_file():
-        raise LabValidationError([f"{yml} not found"])
-    text = yml.read_text(encoding="utf-8").replace("\r\n", "\n")
+MAX_FILE_BYTES = 256 * 1024     # per file in a pack (scripts, notes, assets)
+MAX_PACK_FILES = 50
+
+
+def pack_from_files(files: dict[str, bytes]) -> LabPackage:
+    """Validate and bundle a lab pack given as {"lab.yaml": ..., "public/<path>": ..., "private/<path>": ...}.
+    Used for directories (load_pack), Lab Builder drafts and uploaded packs alike, so every source gets the
+    same schema, capability and file checks."""
+    errors: list[str] = []
+    for name, data in files.items():
+        parts = name.split("/")
+        if name != "lab.yaml" and (parts[0] not in ("public", "private") or len(parts) < 2):
+            errors.append(f"{name}: only lab.yaml, public/… and private/… files are allowed")
+        if name.startswith("/") or ".." in parts or any(not p for p in parts):
+            errors.append(f"{name}: invalid path")
+        if len(data) > MAX_FILE_BYTES:
+            errors.append(f"{name}: larger than {MAX_FILE_BYTES // 1024} KB")
+    if len(files) > MAX_PACK_FILES:
+        errors.append(f"too many files (limit {MAX_PACK_FILES})")
+    if "lab.yaml" not in files:
+        errors.append("lab.yaml is missing")
+    if errors:
+        raise LabValidationError(errors)
+    text = files["lab.yaml"].decode("utf-8").replace("\r\n", "\n")
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as e:
         raise LabValidationError([f"lab.yaml is not valid YAML: {e}"]) from e
     definition = parse_definition(data)
-    public_files = _collect(root, "public")
+
+    def norm(name: str, b: bytes) -> tuple[str, bytes, int]:
+        if name.endswith(".sh"):
+            b = b.replace(b"\r\n", b"\n")  # authored on Windows is fine
+        return name, b, 0o755 if name.endswith(".sh") else 0o644
+    public_files = [norm(n[len("public/"):], b) for n, b in sorted(files.items()) if n.startswith("public/")]
+    private_files = [norm(n[len("private/"):], b) for n, b in sorted(files.items()) if n.startswith("private/")]
     errors = validate_definition(definition, {n for n, _, _ in public_files})
     if errors:
         raise LabValidationError(errors)
     public = _tar([("lab.yaml", text.encode(), 0o644)] + [(f"public/{n}", d, m) for n, d, m in public_files])
-    private = _tar(_collect(root, "private"))
+    private = _tar(private_files)
     return LabPackage(definition, text, public, private)
+
+
+def load_pack(path: str | Path) -> LabPackage:
+    root = Path(path)
+    yml = root / "lab.yaml"
+    if not yml.is_file():
+        raise LabValidationError([f"{yml} not found"])
+    files = {"lab.yaml": yml.read_bytes()}
+    for sub in ("public", "private"):
+        for rel, data, _ in _collect(root, sub):
+            files[f"{sub}/{rel}"] = data
+    return pack_from_files(files)
+
+
+def pack_files(public_bundle: bytes, private_bundle: bytes) -> dict[str, bytes]:
+    """Inverse of pack_from_files for a stored lab version (clone / export)."""
+    files = dict(tar_members(public_bundle))  # lab.yaml + public/...
+    files.update({f"private/{n}": b for n, b in tar_members(private_bundle).items()})
+    return files
 
 
 SETUP_WRAPPER = "_cloudlabs_setup.sh"
