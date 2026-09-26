@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     terminal_max_frame_bytes: int = 64 * 1024
 
     labs_dir: str = "/labs"
+    # Lab Builder test runs (phase 8): one sandbox at a time per run, on the platform runner
+    builder_max_concurrent_tests: int = 2
+    builder_test_timeout_s: float = 900.0  # a run still "testing" after this is reported as interrupted
     default_emulator: str = "floci"  # engine for labs with runtime.emulator = default (promoted, EMULATOR-EVALUATION.md)
     grader_version: str = "1.0.0"
 

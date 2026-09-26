@@ -22,11 +22,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
+from collections.abc import Awaitable, Callable
+
 import yaml
 
 from .config import get_settings
 from .grader import evidence as ev
-from .grader.grade import collectors_for, grade, probes_for
+from .grader.grade import collectors_for, grade, probes_for, to_json
 from .labs.package import LabPackage, load_pack, setup_job, tar_members
 from .labs.render import compute_variables
 from .runtime import emulators
@@ -42,6 +44,8 @@ class ScenarioResult:
     expected: Decimal
     actual: Decimal | None
     detail: str = ""
+    engine: str = ""
+    result: dict | None = None  # the full grade result (per-task, per-check), for the Lab Builder
 
     @property
     def ok(self) -> bool:
@@ -66,11 +70,11 @@ def _job_bundle(pkg: LabPackage, script: str, variables: dict[str, str]) -> dict
 
 
 async def run_scenario(runner: RunnerClient, pkg: LabPackage, name: str, expected: Decimal,
-                       engine: str) -> ScenarioResult:
+                       engine: str, sandbox_id: str | None = None) -> ScenarioResult:
     s = get_settings()
     d = pkg.definition
     variables = compute_variables(d, LABTEST_SHORT_ID)
-    sid = str(uuid.uuid4())
+    sid = sandbox_id or str(uuid.uuid4())
     try:
         info = await runner.create_sandbox({
             "sandbox_id": sid, "env": s.env, "engine": engine,
@@ -83,12 +87,12 @@ async def run_scenario(runner: RunnerClient, pkg: LabPackage, name: str, expecte
             res = await runner.run_job(sid, _job_bundle(pkg, SCRIPTS[name], variables))
             if res["exit_code"] != 0:
                 return ScenarioResult(name, expected, None, f"{SCRIPTS[name]} exited {res['exit_code']}: "
-                                                            f"{res['output'][-400:]}")
+                                                            f"{res['output'][-400:]}", engine)
         payload = await ev.capture(info["emulator_endpoint"], collectors_for(d), engine, probes_for(d, variables))
         result = grade(d, variables, payload)
         failed = [f"{t['task_id']}" for t in result["tasks"] if not t["passed"]]
         detail = f"failed tasks: {', '.join(failed) or '-'}"
-        return ScenarioResult(name, expected, result["score"], detail)
+        return ScenarioResult(name, expected, result["score"], detail, engine, to_json(result))
     finally:
         try:
             await runner.destroy_sandbox(sid)
@@ -96,23 +100,39 @@ async def run_scenario(runner: RunnerClient, pkg: LabPackage, name: str, expecte
             pass
 
 
-async def check_pack(path: str | Path, runner: RunnerClient | None = None,
-                     engine: str | None = None) -> list[ScenarioResult]:
-    """engine=None tests every engine the lab may run on (all primary engines for 'default' labs)."""
-    pkg = load_pack(path)
+def expected_scores(pkg: LabPackage) -> dict[str, Decimal]:
     exp_file = tar_members(pkg.private_bundle).get("expected.yaml")
     if exp_file is None:
         raise FileNotFoundError("private/expected.yaml missing")
-    expected = {k: Decimal(str(v)) for k, v in yaml.safe_load(exp_file).items()}
+    return {k: Decimal(str(v)) for k, v in yaml.safe_load(exp_file).items()}
+
+
+def scenario_plan(pkg: LabPackage, expected: dict[str, Decimal], engine: str | None = None) -> list[tuple[str, str]]:
+    """(engine, scenario) pairs in run order. engine=None: every engine the lab may run on (all primary
+    engines for 'default' labs)."""
+    engines = [engine] if engine else list(emulators.candidates(pkg.definition.runtime.emulator))
+    return [(eng, name) for eng in engines for name in ("empty", "partial", "solution") if name in expected]
+
+
+async def check_pack(pack: str | Path | LabPackage, runner: RunnerClient | None = None,
+                     engine: str | None = None, *, expected: dict[str, Decimal] | None = None,
+                     sandbox_id_for: Callable[[str], str] | None = None,
+                     on_result: Callable[[ScenarioResult], Awaitable[None]] | None = None) -> list[ScenarioResult]:
+    """Run every scenario of a pack (a directory, or an in-memory `LabPackage` from the Lab Builder).
+    `expected` overrides private/expected.yaml; `sandbox_id_for("<engine>/<scenario>")` fixes the sandbox ids
+    (the builder records them so the reconciler leaves them alone); `on_result` sees each result as it lands."""
+    pkg = pack if isinstance(pack, LabPackage) else load_pack(pack)
+    expected = expected if expected is not None else expected_scores(pkg)
     runner = runner or get_runner()
     out = []
-    engines = [engine] if engine else list(emulators.candidates(pkg.definition.runtime.emulator))
-    for eng in engines:
-        for name in ("empty", "partial", "solution"):
-            if name in expected:
-                r = await run_scenario(runner, pkg, name, expected[name], eng)
-                r.name = f"{eng}/{name}"
-                out.append(r)
+    for eng, name in scenario_plan(pkg, expected, engine):
+        key = f"{eng}/{name}"
+        r = await run_scenario(runner, pkg, name, expected[name], eng,
+                               sandbox_id_for(key) if sandbox_id_for else None)
+        r.name = key
+        out.append(r)
+        if on_result is not None:
+            await on_result(r)
     return out
 
 

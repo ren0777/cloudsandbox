@@ -5,12 +5,16 @@ behave exactly as against the real runner. Terminal endpoints are not available.
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import os
 import socket
 import subprocess
 import sys
+import tarfile
 import time
 import urllib.request
+from collections.abc import Callable
 from typing import Any
 
 from app.runtime.runner_client import RunnerError
@@ -33,6 +37,9 @@ class FakeRunner:
         self.create_delay_s = 0.0
         self.calls: list[tuple[str, str]] = []
         self.healthy = True
+        # run_job hook: (emulator_endpoint, job files {name: bytes}) -> (exit_code, output). Tests use it to
+        # apply a lab script's effect with boto3 (there is no terminal image to run bash + aws CLI in).
+        self.job_handler: Callable[[str, dict[str, bytes]], tuple[int, str]] | None = None
 
     # --- helpers
     def _spawn(self) -> tuple[subprocess.Popen, int]:
@@ -124,4 +131,13 @@ class FakeRunner:
                 "terminal": {"state": "running", "exit_code": None}}
 
     async def run_job(self, sandbox_id: str, job: dict[str, Any]) -> dict[str, Any]:
-        raise RunnerError("not_supported", "FakeRunner cannot run jobs", 400)
+        self.calls.append(("job", sandbox_id))
+        if self.job_handler is None:
+            raise RunnerError("not_supported", "FakeRunner cannot run jobs", 400)
+        sb = self.sandboxes.get(sandbox_id)
+        if sb is None:
+            raise RunnerError("not_found", "sandbox not found", 404)
+        with tarfile.open(fileobj=io.BytesIO(base64.b64decode(job["bundle_b64"]))) as tf:
+            files = {m.name: tf.extractfile(m).read() for m in tf.getmembers() if m.isfile()}  # type: ignore[union-attr]
+        code, output = await asyncio.to_thread(self.job_handler, f"http://127.0.0.1:{sb['port']}", files)
+        return {"exit_code": code, "output": output}

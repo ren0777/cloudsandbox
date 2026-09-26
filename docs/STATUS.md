@@ -81,7 +81,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 |---|---|---|---|
 | 36a | `pack_from_files` / `pack_files` refactor of `labs/package.py` | ☑ | API 239/239 fast suite unchanged; all 6 lab packs give byte-identical public/private bundle hashes before and after, and `pack_files → pack_from_files` round-trips losslessly (2026-09-26) |
 | 36 | Backend: migration 0006, drafts API, validation, YAML, preview, clone/import/export, visibility + sharing | ☑ | `tests/test_lab_builder.py` 14 passed (ownership 404s, row-level errors, YAML round-trip, clone keeps private files, redacted preview, export/import round-trip + unsafe tar refusals, private-until-shared, assign/clone/export refused for invisible labs, demo reset); fast suite 253/253; 0006 downgrade → upgrade clean. Docker-marked tests and labtest not re-run in this session (see NEXT.md) |
-| 37 | Test run and publish gate | ☐ | |
+| 37 | Test run and publish gate | ☑ | `tests/test_lab_builder_publish.py` 10 passed on the FakeRunner (job hook applies scripts with boto3): pass → publish owned private version + audit, publish refused until a passing test of the current content (any edit, even notes.md), wrong/failed solution blocks, partial scenario, runtime failure unlocks, interrupted run + test cap, reconciler keeps in-flight test sandboxes, immutability + clone → 1.1.0, 404/403; fast suite 263/263. Docker-marked real-sandbox test (clone Mission 1 → 0/50/100 → publish) written, not run here (no Docker daemon in this session) |
 | 38 | UI (`apps/web`) + `e2e/lab-builder.spec.ts` | ☐ | |
 | 39 | Docs and full regression, merge to `main` | ☐ | |
 
@@ -241,3 +241,17 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   accepted (no links, devices, traversal or other top-level folders); a schema-invalid pack still becomes a draft.
 - **D34 — Demo reset** also deletes demo authors' drafts and published labs. Draft links to lab versions are
   `ON DELETE SET NULL`, so a real instructor's clone of a demo lab survives the reset.
+- **D35 — Test run and publish gate.** `POST drafts/{id}/test` validates, locks the draft (`testing`) and answers
+  202; a background task runs `labtest.check_pack(LabPackage)` on the platform runner: empty, partial (if any) and
+  solution, each in a fresh sandbox, one at a time, on every engine the lab may run on. Per-scenario results with
+  per-check detail are written into `last_test` as they land, and only while that run id is still current. The
+  run ends `passed` (every scenario matched) or `failed` and stores `tested_sha256` = the tested content hash (it
+  covers private files too, so editing even notes.md needs a new test). Runner errors and crashes end as `failed`
+  with `last_test.status = error`. A run still `testing` after `builder_test_timeout_s` (900 s, e.g. the API
+  restarted) is reported interrupted on the next read, so a draft can't stay locked. At most
+  `builder_max_concurrent_tests` (2) runs at once (`429 test_capacity_full`). Sandbox ids are uuid5(run id,
+  scenario) and listed in `last_test.sandbox_ids`; the reconciler counts those of `testing` drafts as known, so
+  only leftovers of finished runs are removed as orphans. `POST drafts/{id}/publish` needs `passed` and
+  `tested_sha256` = current hash (`409 test_required`), re-validates, then `import_package(owner_id=author)`
+  must create a new version (`409 lab_version_conflict` otherwise), updates the lab title, records `lab.published`
+  and makes the draft `published` (read-only). The published lab is private to its author until shared.

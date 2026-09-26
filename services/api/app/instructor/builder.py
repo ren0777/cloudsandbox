@@ -2,32 +2,42 @@
 builder, lab drafts (blank / clone / import), YAML round-trip, row-level validation and student preview.
 
 Drafts hold private files (reference solutions), so every draft route answers 404 to anyone but the draft's
-owner or an admin (PLAN §9, §7b). Testing and publishing a draft are milestone 37."""
+owner or an admin (PLAN §9, §7b). Milestone 37 adds the publish gate: a test run in real sandboxes (untouched
+sandbox 0, partial optional, reference solution full marks) must pass on the current content before
+`publish` imports it as an immutable lab version."""
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from datetime import UTC, datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import audit
+from .. import audit, labtest
 from ..auth.policy import Action, Authz, load_draft_for, load_lab_version_visible
-from ..db import get_db
+from ..config import get_settings
+from ..db import get_db, sessionmaker
 from ..errors import ApiError
 from ..grader import registry
 from ..grader.checks import load_all
 from ..labs import drafts as dr
-from ..labs.importer import get_bundle
+from ..labs.importer import get_bundle, import_package
+from ..labs.package import LabPackage
 from ..labs.render import compute_variables, student_lab_view
 from ..labs.schema import LabValidationError
 from ..labs.schema.v1 import SLUG, CheckSpec, Service
 from ..models import Lab, LabDraft, LabVersion, Role, User
+from ..obs.logging import log
 from ..runtime import emulators
+from ..runtime.runner_client import RunnerError, get_runner
+from ..tasks import background
 
 router = APIRouter(prefix="/api/instructor/builder", tags=["lab-builder"])
 
@@ -207,7 +217,7 @@ async def import_draft(file: UploadFile, user: User = Depends(Authz(Action.lab_m
 @router.get("/drafts/{draft_id}")
 async def get_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.lab_manage)),
                     db: AsyncSession = Depends(get_db)):
-    return await _out(db, await load_draft_for(db, user, draft_id))
+    return await _out(db, await _load(db, user, draft_id))
 
 
 def _ensure_editable(d: LabDraft) -> None:
@@ -240,7 +250,7 @@ async def update_draft(draft_id: uuid.UUID, body: DraftUpdate, user: User = Depe
                        db: AsyncSession = Depends(get_db)):
     """Save the form builder's lab and/or editable files. Invalid content is saved too (a draft is work in
     progress); the response carries the validation result for the always-visible validation panel."""
-    d = await load_draft_for(db, user, draft_id, for_update=True)
+    d = await _load(db, user, draft_id, for_update=True)
     _ensure_editable(d)
     try:
         content = dr.apply_edit(d.content, body.lab, body.files)
@@ -253,7 +263,7 @@ async def update_draft(draft_id: uuid.UUID, body: DraftUpdate, user: User = Depe
 async def delete_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
     """Deleting a draft never touches published lab versions."""
-    d = await load_draft_for(db, user, draft_id, for_update=True)
+    d = await _load(db, user, draft_id, for_update=True)
     if d.status == "testing":
         raise ApiError("draft_testing", "a test run is in progress; wait for it to finish", 409)
     await db.delete(d)
@@ -276,7 +286,7 @@ async def put_yaml(draft_id: uuid.UUID, body: YamlIn, user: User = Depends(Authz
                    db: AsyncSession = Depends(get_db)):
     """"Edit as YAML": the text must be a YAML mapping (else 422, nothing saved); it then replaces the lab
     exactly like a form save. YAML comments are not kept: the draft stores the lab as JSON."""
-    d = await load_draft_for(db, user, draft_id, for_update=True)
+    d = await _load(db, user, draft_id, for_update=True)
     _ensure_editable(d)
     try:
         lab = dr.yaml_to_lab(body.yaml)
@@ -311,3 +321,150 @@ async def preview_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.l
         raise _invalid(e, d.content.get("lab")) from e
     variables = compute_variables(pkg.definition, user.short_id)
     return {"lab": student_lab_view(pkg.definition, variables), "variables": variables}
+
+
+# ------------------------------------------------------------------------ test run + publish gate
+def _stale(d: LabDraft) -> bool:
+    if d.status != "testing":
+        return False
+    started = (d.last_test or {}).get("started_at")
+    since = datetime.fromisoformat(started) if started else d.updated_at
+    return since < _now() - timedelta(seconds=get_settings().builder_test_timeout_s)
+
+
+async def _load(db: AsyncSession, user: User, draft_id: uuid.UUID, for_update: bool = False) -> LabDraft:
+    """load_draft_for, and a run still "testing" past `builder_test_timeout_s` (the API restarted mid-run) is
+    reported as interrupted, so a draft can never stay locked."""
+    d = await load_draft_for(db, user, draft_id, for_update=for_update)
+    if _stale(d):
+        if not for_update:
+            d = await load_draft_for(db, user, draft_id, for_update=True)
+        if _stale(d):
+            d.last_test = {**(d.last_test or {}), "status": "error", "finished_at": _now().isoformat(),
+                           "error": "the test run was interrupted (timeout or restart); run it again"}
+            d.status = "failed"
+            await db.commit()
+            await db.refresh(d)
+    return d
+
+
+def _scenario_out(r: labtest.ScenarioResult) -> dict[str, Any]:
+    eng, _, scenario = r.name.partition("/")
+    return {"name": r.name, "engine": eng, "scenario": scenario, "expected": str(r.expected),
+            "actual": None if r.actual is None else str(r.actual), "ok": r.ok, "detail": r.detail,
+            "tasks": (r.result or {}).get("tasks", [])}
+
+
+async def _run_test(draft_id: uuid.UUID, run_id: str, pkg: LabPackage, expected: dict[str, Decimal],
+                    sandbox_ids: dict[str, str]) -> None:
+    """Background task: each scenario in a fresh sandbox on the platform runner, one at a time (labtest).
+    Results are written as they land; a write only applies while this run is still the draft's current one."""
+
+    async def write(fn: Callable[[LabDraft, dict[str, Any]], None]) -> None:
+        async with sessionmaker()() as db:
+            d = await db.scalar(select(LabDraft).where(LabDraft.id == draft_id).with_for_update())
+            if d is None or d.status != "testing" or (d.last_test or {}).get("id") != run_id:
+                return
+            lt = dict(d.last_test)
+            fn(d, lt)
+            d.last_test = lt
+            await db.commit()
+
+    async def on_result(r: labtest.ScenarioResult) -> None:
+        await write(lambda _d, lt: lt.update(scenarios=[*lt.get("scenarios", []), _scenario_out(r)]))
+
+    error: str | None = None
+    results: list[labtest.ScenarioResult] = []
+    try:
+        results = await asyncio.wait_for(
+            labtest.check_pack(pkg, get_runner(), expected=expected, sandbox_id_for=sandbox_ids.__getitem__,
+                               on_result=on_result),
+            timeout=get_settings().builder_test_timeout_s)
+    except TimeoutError:
+        error = "the test run took too long and was stopped"
+    except RunnerError as e:
+        error = f"the lab runtime refused the test run: {e.message}"
+    except Exception as e:  # a crashed run must still unlock the draft
+        log.error("background.task.failed", task="lab_builder_test", draft_id=str(draft_id), error=repr(e))
+        error = "the test run failed unexpectedly; see the server log"
+    passed = error is None and bool(results) and all(r.ok for r in results)
+
+    def finish(d: LabDraft, lt: dict[str, Any]) -> None:
+        lt.update(status="passed" if passed else ("error" if error else "failed"), error=error,
+                  finished_at=_now().isoformat())
+        d.status = "passed" if passed else "failed"
+        d.tested_sha256 = lt["content_sha256"]
+    await write(finish)
+
+
+@router.post("/drafts/{draft_id}/test", status_code=202)
+async def test_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.lab_manage)),
+                     db: AsyncSession = Depends(get_db)):
+    """Start a test run of the current content: the empty, partial (if any) and solution scenarios, each in
+    a fresh real sandbox on every engine the lab may run on. Answers 202 at once; poll the draft for
+    `last_test` (per-scenario, per-check results) and the final status `passed` or `failed`."""
+    s = get_settings()
+    d = await _load(db, user, draft_id, for_update=True)
+    _ensure_editable(d)
+    result = await _validate(db, d)
+    if not result["ok"]:
+        await db.commit()
+        raise ApiError("lab_invalid", "fix the validation errors before testing", 422,
+                       extra={"errors": result["errors"]})
+    busy = await db.scalar(select(func.count()).select_from(LabDraft).where(
+        LabDraft.status == "testing", LabDraft.updated_at > _now() - timedelta(seconds=s.builder_test_timeout_s)))
+    if (busy or 0) >= s.builder_max_concurrent_tests:
+        await db.commit()
+        raise ApiError("test_capacity_full", "other lab tests are running; try again in a minute", 429,
+                       headers={"Retry-After": "60"})
+    pkg = dr.package(d.content)
+    expected, _ = dr.expectations(dr.draft_files(d.content), pkg.definition)
+    run_id = str(uuid.uuid4())
+    plan = labtest.scenario_plan(pkg, expected)
+    sandbox_ids = {f"{e}/{n}": str(uuid.uuid5(uuid.UUID(run_id), f"{e}/{n}")) for e, n in plan}
+    d.status = "testing"
+    d.tested_sha256 = None
+    d.last_test = {"id": run_id, "status": "running", "content_sha256": pkg.content_sha256,
+                   "started_at": _now().isoformat(), "finished_at": None, "started_by": str(user.id),
+                   "expected": {k: str(v) for k, v in expected.items()},
+                   "plan": list(sandbox_ids), "scenarios": [], "sandbox_ids": list(sandbox_ids.values()),
+                   "error": None}
+    await db.commit()
+    await db.refresh(d)
+    background.spawn(_run_test(d.id, run_id, pkg, expected, sandbox_ids), name=f"lab-test-{d.id}")
+    return await _out(db, d)
+
+
+@router.post("/drafts/{draft_id}/publish")
+async def publish_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.lab_manage)),
+                        db: AsyncSession = Depends(get_db)):
+    """Publish the draft as a new immutable lab version owned by the draft's author (private until shared).
+    Allowed only after a passing test run of exactly the current content."""
+    d = await _load(db, user, draft_id, for_update=True)
+    _ensure_editable(d)
+    result = await _validate(db, d)
+    if not result["ok"]:
+        await db.commit()
+        raise ApiError("lab_invalid", "fix the validation errors before publishing", 422,
+                       extra={"errors": result["errors"]})
+    if d.status != "passed" or d.tested_sha256 != result["content_sha256"]:
+        await db.commit()
+        raise ApiError("test_required", "publishing needs a passing test run of the current content; "
+                       "run the test", 409)
+    pkg = dr.package(d.content)
+    lv, created = await import_package(db, pkg, owner_id=d.owner_id)
+    if not created:  # _validate already refuses a published version; this closes the race
+        raise ApiError("lab_version_conflict", f"{pkg.definition.id}@{pkg.definition.version} is already "
+                       "published; bump the version", 409)
+    lab = await db.get(Lab, lv.lab_id)
+    assert lab is not None
+    lab.title = pkg.definition.title
+    d.status = "published"
+    d.published_version_id = lv.id
+    audit.record(db, user, "lab.published", draft_id=d.id, lab_id=lab.id, lab_version_id=lv.id,
+                 slug=lab.slug, version=lv.version, content_sha256=lv.content_sha256)
+    await db.commit()
+    await db.refresh(d)
+    return {"draft": await _out(db, d),
+            "lab_version": {"id": str(lv.id), "lab_id": str(lab.id), "slug": lab.slug, "version": lv.version,
+                            "title": lab.title, "shared": lab.shared}}

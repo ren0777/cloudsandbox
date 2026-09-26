@@ -14,6 +14,9 @@
 | TERMINATED / FAILED               | yes                        | destroy                                   |
 | (no row)                          | yes                        | orphan → destroy                          |
 
+Lab Builder test runs (phase 8) create sandboxes without a session row; the ids of runs still in progress
+(`lab_drafts.status = testing`) count as known, so only their leftovers become orphans.
+
 Phase 7: the table is applied per registered runner, to that runner's sessions and sandboxes only. A runner
 unreachable for longer than `runner_lost_after_s` is "lost": its sessions are never moved to another runner
 and never reported as alive. REQUESTED/PROVISIONING/READY/RESETTING and ungraded SUBMITTING → FAILED
@@ -34,7 +37,7 @@ from ..errors import ApiError
 from ..grader import evidence as ev
 from ..grader.grade import collectors_for, grade, probes_for
 from ..labs.importer import definition_of
-from ..models import Attempt, LabSession, LabVersion, Runner, SessionEvent, SessionState as S
+from ..models import Attempt, LabDraft, LabSession, LabVersion, Runner, SessionEvent, SessionState as S
 from ..obs.logging import log
 from ..runtime.fleet import runner_lost
 from ..runtime.runner_client import RunnerError, client_for
@@ -118,7 +121,7 @@ async def _reconcile_runner(r: Runner) -> dict[str, int]:
         rows = list((await db.scalars(select(LabSession).where(
             LabSession.env == s.env, LabSession.runner_id == r.id,
             or_(LabSession.state.notin_([S.TERMINATED, S.FAILED]), LabSession.id.in_(live_ids))))).all())
-    known = {str(r.id) for r in rows}
+    known = {str(r.id) for r in rows} | await _builder_test_sandboxes()
     async with sessionmaker()() as db:  # rows for live sandboxes may be in any env-matching state
         if live_ids:
             known |= {str(i) for i in (await db.scalars(select(LabSession.id).where(
@@ -193,6 +196,12 @@ async def _reconcile_runner(r: Runner) -> dict[str, int]:
                 log.warning("sandbox.destroy.failed", sandbox_id=sid, error=e.message)
             bump("orphan_removed")
     return stats
+
+
+async def _builder_test_sandboxes() -> set[str]:
+    async with sessionmaker()() as db:
+        runs = (await db.scalars(select(LabDraft.last_test).where(LabDraft.status == "testing"))).all()
+    return {sid for lt in runs for sid in (lt or {}).get("sandbox_ids", [])}
 
 
 async def _recover_submitting(sess: LabSession, sb: dict | None) -> None:

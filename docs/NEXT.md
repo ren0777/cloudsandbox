@@ -2,8 +2,8 @@
 
 Hand-off for the next working session (for example Claude Code on the web). Read `CLAUDE.md` and `docs/PLAN.md` first.
 State at hand-off: v0.1.0 is complete and verified on `main` (API 267, runner 16, E2E 13). On this branch
-(`feat/lab-builder`), the `package.py` refactor is verified and **milestone 36 (backend) is done**. Next up is
-**milestone 37**.
+(`feat/lab-builder`), the `package.py` refactor is verified and **milestones 36 (backend) and 37 (test run and
+publish gate) are done**. Next up is **milestone 38 (UI)**.
 
 ## Goal
 Instructors create, test and publish their own labs in the browser, without editing files on the server.
@@ -86,8 +86,18 @@ All routes are under `/api/instructor/`.
   - `student_lab_view` and `compute_variables` (`app/labs/render.py`)
   - `audit.record`
 
-### 37 Test run and publish gate
-Hooks that are already in place:
+### 37 Test run and publish gate ☑ (done, see STATUS 37 and D35)
+- `labtest.check_pack` accepts a path or a `LabPackage` (+ `expected`, `sandbox_id_for`, `on_result`).
+- `POST builder/drafts/{id}/test` → 202, draft `testing`; poll `GET builder/drafts/{id}` until `passed`/`failed`.
+  `last_test = {id, status: running|passed|failed|error, content_sha256, started_at, finished_at, expected,
+  plan: ["moto/empty", …], scenarios: [{name, engine, scenario, expected, actual, ok, detail, tasks[grade tasks
+  with checks[]]}], sandbox_ids, error}`. `429 test_capacity_full` when 2 runs are in flight.
+- `POST builder/drafts/{id}/publish` → `{draft, lab_version: {id, lab_id, slug, version, title, shared}}`;
+  `409 test_required` unless the last test passed on the current content; `422 lab_invalid` with `errors`.
+- Tests: `tests/test_lab_builder_publish.py` (FakeRunner `job_handler` hook). The docker-marked
+  `test_cloned_mission_1_tests_and_publishes_in_real_sandboxes` still has to be run on a machine with Docker.
+
+Original plan (kept for reference):
 - `drafts.expectations(files, definition)` gives the scenarios to run.
 - `drafts.package(content)` gives the `LabPackage`, and `last_validation.content_sha256` is the hash to store as
   `tested_sha256`.
