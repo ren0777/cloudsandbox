@@ -19,10 +19,17 @@ editing files on the server.
 - Audited: `lab.draft_created`, `lab.published`, `lab.shared`.
 
 ## Verification
-- Full regression (2026-09-26): API **292 passed / 1 skipped** (the skip is the two-runner gateway test without
-  `runner2`; **1/1** with it registered), runner **16/16**, `python -m app.labtest` on six lab packs
-  **0/partial/100 PASS on every engine**, browser E2E **14/14** including `lab-builder.spec.ts`.
-- Found and fixed D37: the reconciler could reap in-flight `labtest` sandboxes that have no database row.
+- Fresh full regression from `46d4ed2` (2026-09-27): API **294 passed / 0 skipped** (including the real-Docker
+  tests and the two-runner gateway test with `runner-local-2` registered), runner **16/16**, `python -m
+  app.labtest` on all six lab packs **0/partial/100 PASS on every engine**, browser E2E **14/14** including
+  `lab-builder.spec.ts`. Web `npm run typecheck` clean.
+- Found and fixed D37: the reconciler could reap in-flight `labtest` sandboxes that have no database row;
+  D38 then closed a clock-skew hole (a future/non-finite `created_at` no longer grants the orphan grace
+  window).
+- Lint: the repo defines no Python linter dependency (no `pyproject.toml`, `ruff` absent from
+  `requirements-dev.txt`) and no ESLint/Prettier config; the declared TypeScript gate `tsc --noEmit` passes.
+  `ruff check --isolated --select F,E9` is a working convention in `CLAUDE.md`, not a repo dependency, so it
+  was not installed for the release.
 
 ---
 
