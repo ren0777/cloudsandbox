@@ -1,12 +1,16 @@
 # CloudLabs — teacher demonstration script
 
-A reproducible 10-minute demo of vertical slice 1: a student completes an S3 lab using **both** the web
-console and the real AWS CLI, is graded on the **actual state** of their sandbox, and the instructor
-inspects the evidence. Every step below is also automated in `apps/web/e2e/journey.spec.ts`.
+A reproducible 10-minute core demo (CloudLabs v0.1.0): a student completes an S3 lab using **both** the web
+console and the real AWS CLI, is graded on the **actual state** of their sandbox, and the instructor inspects
+the evidence. The optional sections after it show the other services, instructor and admin tools, the learning
+layer and multi-server readiness. Every section is automated in `apps/web/e2e/` (`journey.spec.ts` for §1–7,
+`dynamodb`, `iam`, `ec2`, `lambda`, `instructor-roster`, `instructor-ops`, `architecture`, `breakfix-fun`,
+`admin-courses` and `fleet` for the optional parts).
 
 ## 0. Prepare (once, ~5 minutes on first run)
 
-Requirements: Windows 10/11 with Docker Desktop (WSL2 backend) running, Git Bash or PowerShell.
+Requirements: Docker Desktop (Windows with WSL2, or macOS) or Docker Engine with Compose v2 on Linux; see the
+README prerequisites.
 
 ```powershell
 scripts\up.ps1          # or: ./scripts/up.sh   — builds images, starts the stack, waits for health
@@ -14,7 +18,7 @@ scripts\demo-reset.ps1  # or: ./scripts/demo-reset.sh
 ```
 
 `demo-reset` must end with `RESULT: READY`. It wipes previous demo data and demo sandboxes, reseeds the
-accounts below, imports the `s3-basics` and `dynamodb-basics` lab packs (Missions 1 and 2) and checks the
+accounts below and the course *Cloud Computing Demo*, imports the six lab packs (Missions 1–6) and checks the
 database, runner and sandbox images.
 
 | Role | Email | Password |
@@ -76,7 +80,7 @@ project=cloudcafe"*. The grader looked at real state, not at which buttons were 
 docker ps -a --filter label=cloudlabs.session      # empty: containers removed after submit
 docker network ls --filter label=cloudlabs.session # empty: the private network is gone too
 ```
-Optionally sign in as **demo-admin** → *Runtime status*: runner health, seats in use (0/4),
+Optionally sign in as **demo-admin** → *Runtime*: runner health, seats in use (0/4),
 provisioning p50/p95 and failures in the last 24 h.
 
 ## Optional: Mission 2 (DynamoDB, about 5 minutes)

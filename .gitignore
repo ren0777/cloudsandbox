@@ -1,9 +1,40 @@
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+.coverage
+htmlcov/
+
+# Web
 node_modules/
 .next/
+*.tsbuildinfo
 apps/web/test-results/
 apps/web/playwright-report/
+apps/web/blob-report/
+
+# Secrets and local configuration (the *.example files ARE committed)
 .env
+.env.*
+!.env.example
 *.local
+production.env
+runner.env
+*.pem
+*.key
+*.crt
+*.p12
+infra/production/acme/
+
+# Database backups and dumps
+backups/
+*.dump
+*.sql.gz
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log

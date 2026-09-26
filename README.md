@@ -1,39 +1,73 @@
 # CloudLabs
 
-Hands-on AWS labs for college courses, with automatic grading. Each student gets an **isolated
-simulated AWS cloud** (Moto in Docker, no AWS account, no internet), works through a **simplified
-AWS-style console** or the **real AWS CLI** in a browser terminal, and is graded on the **actual state**
-of what they built. Grading uses immutable, explainable evidence that instructors can inspect.
+Hands-on AWS labs for college courses, with automatic grading. Each student gets an **isolated simulated AWS
+cloud** in Docker (no AWS account, no cost, no internet). They work in an **AWS-style console** or with the
+**real AWS CLI** in a browser terminal, and are graded on the **actual state** of what they built, using immutable,
+explainable evidence that instructors can inspect.
 
-**Status:** vertical slice 1 (S3) complete and verified. See [docs/STATUS.md](docs/STATUS.md).
+**Version 0.1.0.** S3, DynamoDB, IAM, EC2 and Lambda; guided and break-fix labs; instructor and admin tools;
+multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES.md). Verified status:
+[docs/STATUS.md](docs/STATUS.md).
 
-## Quick start (Windows, Docker Desktop with WSL2)
+## Prerequisites
+- Docker Desktop (Windows with the WSL2 backend, or macOS) or Docker Engine 24+ with Compose v2 (Linux).
+  Give Docker at least 4 CPUs and 6 GB RAM.
+- About 6 GB of free disk for images. Internet access for the first build only.
+- For the end-to-end tests only: Node.js 20+.
+
+## Quick start
+Windows (PowerShell):
 ```powershell
-scripts\up.ps1           # build images + start the stack  → http://localhost:3000
-scripts\demo-reset.ps1   # seed demo accounts and the S3 lab (password: cloudlabs-demo)
+scripts\up.ps1           # builds the sandbox images and the stack, starts it  → http://localhost:3000
+scripts\demo-reset.ps1   # seeds demo accounts, a course and six labs
 ```
-Sign in as `demo-student1@cloudlabs.demo`, `demo-instructor@cloudlabs.demo` or `demo-admin@cloudlabs.demo`.
-The walkthrough is in [docs/DEMO.md](docs/DEMO.md).
+Linux / macOS:
+```bash
+scripts/up.sh
+scripts/demo-reset.sh
+```
+The first build takes several minutes. Then sign in at http://localhost:3000 with password `cloudlabs-demo` as
+`demo-student1@cloudlabs.demo` (students 1–3), `demo-instructor@cloudlabs.demo` or `demo-admin@cloudlabs.demo`.
+Demo accounts exist only while `CL_DEMO_MODE=true` (the laptop default). The teacher walkthrough is in
+[docs/DEMO.md](docs/DEMO.md).
+
+Stop with `docker compose -f infra/docker-compose.yml down` (add `-v` to also delete the database).
+
+## Tests
+```bash
+scripts/test-api.sh                                        # API suite incl. real-Docker tests (about 40 min)
+scripts/test-api.sh -m "not docker"                        # fast subset (no sandboxes)
+docker compose -f infra/docker-compose.yml exec runner python -m pytest -q   # runner (real Docker)
+cd apps/web && npm ci && npx playwright install chromium && npx playwright test   # browser E2E (stack must be up)
+```
+Lab packs: `docker compose -f infra/docker-compose.yml exec api python -m app.labtest /labs/<id>`.
+Load test: [docs/LOADTEST.md](docs/LOADTEST.md).
 
 ## Documentation
 | Doc | Contents |
 |---|---|
 | [docs/PLAN.md](docs/PLAN.md) | Scope, architecture, hardening decisions, acceptance criteria (source of truth) |
 | [docs/STATUS.md](docs/STATUS.md) | Milestones with verification evidence and implementation decisions |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, sandbox, state machine, grading, data |
-| [docs/SECURITY.md](docs/SECURITY.md) | Trust boundaries, sandbox hardening, grade integrity |
-| [docs/LAB-AUTHORING.md](docs/LAB-AUTHORING.md) | Writing and testing lab packs |
-| [docs/TESTING.md](docs/TESTING.md) | Test suites and how to run them |
-| [docs/SCALING.md](docs/SCALING.md) | From one laptop to several college servers |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, sandbox, state machine, grading, fleet, data |
+| [docs/SECURITY.md](docs/SECURITY.md) | Trust boundaries, sandbox hardening, grade integrity, staff actions, runner fleet |
+| [docs/LAB-AUTHORING.md](docs/LAB-AUTHORING.md) | Writing and testing lab packs (including break-fix labs) |
+| [docs/TESTING.md](docs/TESTING.md) | Test suites and what they cover |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | One-server and multi-runner deployment, TLS, secrets, backups, upgrades, rollback |
+| [docs/SCALING.md](docs/SCALING.md) | Runner fleet, scheduler, sizing, next steps |
+| [docs/LOADTEST.md](docs/LOADTEST.md) | Class-scale load test and results |
+| [docs/EMULATOR-EVALUATION.md](docs/EMULATOR-EVALUATION.md) | Why Floci (default), Moto (regression) and MiniStack (Lambda code) |
 | [docs/DEMO.md](docs/DEMO.md) | Reproducible teacher demonstration |
 
 ## Repository
 ```
-apps/web          Next.js UI (student player, console, terminal, instructor, admin)
-services/api      FastAPI control plane (auth, sessions, grading, proxies) + Alembic
-services/runner   Runner Agent — the only component that talks to Docker
-images/           emulator (Moto) and terminal (AWS CLI v2 + ttyd) sandbox images
+apps/web          Next.js UI (student player, consoles, terminal, instructor, admin)
+services/api      FastAPI control plane (auth, sessions, scheduler, grading, proxies) + Alembic migrations
+services/runner   Runner agent: the only component that talks to Docker (optional sandbox gateway)
+images/           sandbox images: emulators (Floci, Moto, MiniStack) and terminal (AWS CLI v2 + ttyd)
 labs/             lab packs (lab.yaml + public/ + private/)
-infra/            docker-compose, nginx gateway, Postgres roles
+infra/            docker-compose (laptop), production/ and runner-host/ overrides, nginx, Postgres roles
 scripts/          up, demo-reset, test helpers
+tools/            emulator bake-off probes
 ```
+
+Third-party software and licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

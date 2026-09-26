@@ -64,6 +64,17 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | 35 | Deployment docs (one-server, multi-runner, TLS, secrets, backup/restore, firewall, upgrades, rollback) | ☑ | `docs/DEPLOYMENT.md` + `infra/production/*`, `infra/runner-host/*` (validated with `docker compose config`); backup → restore verified: identical row counts, triggers and grants intact |
 | R4 | **Phase 7 regression** | ☑ | API 267/267 (incl. docker + real two-runner gateway test), runner 16/16, E2E 13/13 incl. `fleet.spec.ts` (with runner2 registered, so labs also ran through the gateway) (2026-09-26). Postgres backup → restore verified: identical migration, row counts, append-only triggers and grants |
 
+**Release v0.1.0: final verification** (2026-09-26)
+
+| # | Check | State | Evidence |
+|---|---|---|---|
+| R5 | Clean start from README (`docker compose down -v`, `scripts/up.sh`, `scripts/demo-reset.sh`) | ☑ | healthy in 3 min; demo reset READY, 6 lab packs imported |
+| R5 | Full regression | ☑ | **API 267/267** (incl. real-Docker and two-runner gateway tests, 0 skipped), **runner 16/16**, **browser E2E 13/13** (12 on the default single-runner stack, `fleet.spec` with runner2 registered) |
+| R5 | DEMO.md walkthrough | ☑ | every section automated in `apps/web/e2e/` and passing on the fresh stack; stale wording fixed |
+| R5 | Load-test smoke | ☑ | 6 students on 4 seats: 0 failures, 6/6 cleanup, provisioning p50 7.5 s, grading p50 1.0 s |
+| R5 | Repository hygiene | ☑ | no keys/tokens/private keys tracked (only documented dev defaults); `.env`, `production.env`, `runner.env`, backups, certificates and build/test output ignored; `tsconfig.tsbuildinfo` untracked |
+| R5 | Licences | ☑ | THIRD_PARTY_NOTICES.md lists every bundled/adapted component with MIT copyright notices and the full Apache-2.0 text; no project LICENSE yet (owner's decision) |
+
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
   therefore connects all containers labelled `cloudlabs.role=control-plane` (with the matching
