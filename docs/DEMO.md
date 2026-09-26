@@ -175,6 +175,18 @@ a hidden empty-order test.
 5. Talking point: if a server dies, its labs are ended honestly after 5 minutes (`runner_lost`, no attempt used),
    never silently recreated elsewhere, and cleaned up when it returns.
 
+## Optional: Instructor Lab Builder (about 6 minutes)
+1. As **demo-instructor**, nav **Labs**: *My drafts*, *My labs*, *Shared labs* and *Built-in missions*.
+   Point out that a built-in mission (e.g. Mission 1) offers **Clone** and **Export**.
+2. **Clone** Mission 1. The draft opens on Overview with a green validation panel; the Tasks tab shows the
+   checks as generated forms, and **Preview** shows the student view (no checks, no private files).
+3. Change the first task title, **Save**, then open **YAML** to show the same change. Return to **Test &
+   publish** and choose **Run test**: it runs untouched (0), partial (50) and solution (100) in real sandboxes
+   on moto and floci. *Publish* stays disabled until the run passes.
+4. **Publish**: the lab becomes an immutable version private to the author. **Share** it so every instructor
+   can assign or clone it (each action is in the audit log).
+5. Assign the new lab to the demo course and start it as a student — the changed task is what they see.
+
 ## Talking points
 - **Safe and free:** no AWS account. Each student's cloud is an isolated AWS emulator (Floci, about 34 MB per
   student) in Docker, with CPU, memory, PID and time limits, and no internet access.

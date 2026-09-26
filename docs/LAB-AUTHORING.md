@@ -128,3 +128,36 @@ Import (creates an immutable lab version; the same version with different conten
 docker compose -f infra/docker-compose.yml exec -T api python -m app.labs.importer /labs/my-lab
 ```
 Assignments pin a lab version, so editing a pack never changes what running assignments are graded against.
+
+## Instructor Lab Builder (browser)
+
+Instructors can create, test and publish labs from the browser instead of editing files on the server
+(`/instructor/labs`, phase 8). It writes the same schema-v1 packs described above.
+
+- **New / Clone / Import.** *New* starts from a small S3 template. *Clone* copies any lab version you can
+  see: a built-in mission or another author's lab becomes a new id `<id>-<your short id>` at `1.0.0`
+  (titled "… (copy)"), while cloning **your own** lab prepares its next minor version (same id, e.g.
+  `1.1.0`). *Import* accepts a `.tar.gz`/`.tar` pack exported from the builder.
+- **Editor.** Overview (including variables), Tasks and Scripts are a form builder; the check parameter
+  forms are generated from the grader's Pydantic models (`GET /api/instructor/builder/check-types`), so a
+  field can never drift from what grading accepts. The **YAML** tab is the same draft as `lab.yaml` and is
+  editable (aliases are refused; comments are not kept). **Preview** shows the redacted student view with
+  sample variables — never checks or private files.
+- **Editable vs read-only files.** Only `private/solution.sh`, `private/partial.sh`,
+  `private/expected.yaml` and `private/notes.md` are editable. Any other file from a clone or import (for
+  example a break-fix `setup.sh`) is carried unchanged and shown read-only; v1 does not author setup scripts.
+- **Validation** is always shown, and each error is placed on the row that caused it (a task/check/field, or
+  a file). Drafts save even while invalid — they are work in progress.
+- **Test & publish gate.** A lab can only be published after a test run in **real sandboxes** on every engine
+  the lab may run on: an untouched sandbox must score `0`, `private/partial.sh` (if present) must reach the
+  score in `expected.yaml`, and the reference solution must score full marks. The run is asynchronous and
+  per-check results appear as they land. Publishing is allowed only while the last test passed on the
+  **current** content hash — editing even `notes.md` invalidates it and requires a new run.
+- **Publishing** imports an immutable lab version owned by the author and records `lab.published`. The lab is
+  **private to its author (and admins)** until the author marks it *shared*, which makes it visible to every
+  instructor to assign or clone. Versions are immutable: editing a published lab means cloning it into a new
+  draft with a new version.
+- **Export/import** round-trips a pack as a deterministic `.tar.gz` (staff only). Private files are included
+  and never offered to students.
+
+The CLI equivalents (`app.labtest`, `app.labs.importer`) remain and are what CI uses.

@@ -119,6 +119,19 @@ Migration `0004`: `user_badges` (append-only), `courses.leaderboard`.
 Migration `0005`: runner registry columns (secret, drain, engines, host stats, reachability) and an index on
 `lab_sessions(runner_id, state)`.
 
+## Lab Builder (phase 8)
+| Module | What |
+|---|---|
+| `labs/drafts.py` | pure helpers: draft content ⇄ pack files, YAML round-trip (aliases refused), row-level validation errors, scenario expectations, deterministic tar.gz export/import |
+| `instructor/builder.py` | `/api/instructor/builder/...`: check-type catalogue (JSON Schema per check), drafts CRUD (blank/clone/import), YAML, validate, preview, test run, publish |
+| `instructor/routes.py` | lab-version visibility (`GET lab-versions`), share (`POST labs/{id}/share`), export (`GET lab-versions/{id}/export`) |
+| `labtest.py` | `check_pack(LabPackage)` reused by the builder: one fresh sandbox per scenario on the platform runner |
+| `sessions/reconciler.py` | keeps sandboxes of `testing` drafts, plus a grace window for rowless one-off `labtest` sandboxes |
+
+Migration `0006`: `labs.owner_id` / `labs.shared` and the `lab_drafts` table. A draft's `content` is
+`{lab: <schema-v1 dict>, files: {path: text}}`; `status` is draft|testing|passed|failed|published. Publishing
+imports a new immutable `lab_versions` row via `import_package(owner_id=…)`.
+
 ## Observability
 structlog JSON with correlation IDs (`request_id`, `user_id`, `assignment_id`, `session_id`,
 `sandbox_id`, `attempt_id`, `runner_id`). Event names come from a fixed set (`app/obs/events.py`),

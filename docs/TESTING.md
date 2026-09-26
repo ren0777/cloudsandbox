@@ -62,6 +62,11 @@ journey with the session freeze, and terminal ticket rules. Run the browser E2E 
   two-runner test** with runner2 in gateway mode covering console, grading, terminal WebSocket, token rejection and
   cleanup). Runner tests cover capacity/stats scoping and the reattach/destroy race. The class-scale load test is
   `python -m app.loadtest` (docs/LOADTEST.md); it isn't part of CI because it needs minutes and a quiet machine.
+- **Phase 8 (Lab Builder):** `test_lab_builder.py` (draft CRUD + ownership 404s, row-level errors, YAML
+  round-trip, clone keeps private files, redacted preview, export/import + unsafe tar refusals, visibility and
+  sharing, assignment refusal for invisible labs, demo reset) and `test_lab_builder_publish.py` (test run +
+  publish gate on the FakeRunner, interrupted runs and the test cap, reconciler keeps in-flight test
+  sandboxes, immutability, plus a docker-marked real-sandbox clone of Mission 1). E2E `lab-builder.spec.ts`.
 - **E2E:** the DEMO.md flow in Chromium, including `docker ps` cleanup checks. It writes screenshots to
   `docs/screenshots/`.
 
