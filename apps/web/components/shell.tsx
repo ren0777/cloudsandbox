@@ -12,8 +12,8 @@ export function Shell({ children, wide = false }: { children: React.ReactNode; w
   const links = me.role === "student"
     ? [{ href: "/labs", label: "My labs" }]
     : me.role === "instructor"
-      ? [{ href: "/instructor", label: "Courses" }]
-      : [{ href: "/instructor", label: "Courses" }, { href: "/admin/status", label: "Runtime" },
+      ? [{ href: "/instructor", label: "Courses" }, { href: "/instructor/labs", label: "Labs" }]
+      : [{ href: "/instructor", label: "Courses" }, { href: "/instructor/labs", label: "Labs" }, { href: "/admin/status", label: "Runtime" },
         { href: "/admin/users", label: "Users" }, { href: "/admin/courses", label: "Courses & staff" }, { href: "/admin/audit", label: "Audit log" }];
   return (
     <>
@@ -21,7 +21,7 @@ export function Shell({ children, wide = false }: { children: React.ReactNode; w
         <Link href="/" className="brand"><span className="dot" aria-hidden />CloudLabs</Link>
         <nav aria-label="Main">
           {links.map((l) => (
-            <Link key={l.href} href={l.href} aria-current={path.startsWith(l.href) ? "page" : undefined}>{l.label}</Link>
+            <Link key={l.href} href={l.href} aria-current={current(path, l.href, links) ? "page" : undefined}>{l.label}</Link>
           ))}
         </nav>
         <span className="spacer" />
@@ -31,4 +31,10 @@ export function Shell({ children, wide = false }: { children: React.ReactNode; w
       {wide ? children : <main className="page">{children}</main>}
     </>
   );
+}
+
+/** The most specific nav link matching the path ("/instructor/labs" wins over "/instructor"). */
+function current(path: string, href: string, links: { href: string }[]): boolean {
+  const best = links.filter((l) => path === l.href || path.startsWith(`${l.href}/`)).sort((a, b) => b.href.length - a.href.length)[0];
+  return best?.href === href;
 }

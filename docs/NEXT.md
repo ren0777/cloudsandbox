@@ -3,7 +3,7 @@
 Hand-off for the next working session (for example Claude Code on the web). Read `CLAUDE.md` and `docs/PLAN.md` first.
 State at hand-off: v0.1.0 is complete and verified on `main` (API 267, runner 16, E2E 13). On this branch
 (`feat/lab-builder`), the `package.py` refactor is verified and **milestones 36 (backend) and 37 (test run and
-publish gate) are done**. Next up is **milestone 38 (UI)**.
+publish gate) and 38 (UI) are done**. Next up: run the real-runtime checks below, then **milestone 39**.
 
 ## Goal
 Instructors create, test and publish their own labs in the browser, without editing files on the server.
@@ -112,7 +112,14 @@ Original plan (kept for reference):
   - sets the draft to `published`
   Editing a published lab means a new draft with a new version.
 
-### 38 UI (apps/web)
+### 38 UI (apps/web) ☑ (done, see STATUS 38 and D36)
+- Pages: `app/instructor/labs/page.tsx`, `app/instructor/labs/drafts/[id]/page.tsx`; tabs in
+  `components/lab-builder/*`; generated forms in `components/schema-form.tsx`; types in `lib/builder.ts`.
+- **Still to run on a machine with Docker:** `npx playwright test e2e/lab-builder.spec.ts` against the compose stack
+  (it passed here only against a FakeRunner smoke stack), the docker-marked API test from milestone 37, and
+  `python -m app.labtest`. Screenshots 20–22 are written by the spec.
+
+Original plan (kept for reference):
 - `/instructor/labs`: my drafts / my labs / shared labs / built-in missions, with **New**, **Clone** and
   **Import**.
 - `/instructor/labs/drafts/[id]` tabs:

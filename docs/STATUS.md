@@ -82,7 +82,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | 36a | `pack_from_files` / `pack_files` refactor of `labs/package.py` | ☑ | API 239/239 fast suite unchanged; all 6 lab packs give byte-identical public/private bundle hashes before and after, and `pack_files → pack_from_files` round-trips losslessly (2026-09-26) |
 | 36 | Backend: migration 0006, drafts API, validation, YAML, preview, clone/import/export, visibility + sharing | ☑ | `tests/test_lab_builder.py` 14 passed (ownership 404s, row-level errors, YAML round-trip, clone keeps private files, redacted preview, export/import round-trip + unsafe tar refusals, private-until-shared, assign/clone/export refused for invisible labs, demo reset); fast suite 253/253; 0006 downgrade → upgrade clean. Docker-marked tests and labtest not re-run in this session (see NEXT.md) |
 | 37 | Test run and publish gate | ☑ | `tests/test_lab_builder_publish.py` 10 passed on the FakeRunner (job hook applies scripts with boto3): pass → publish owned private version + audit, publish refused until a passing test of the current content (any edit, even notes.md), wrong/failed solution blocks, partial scenario, runtime failure unlocks, interrupted run + test cap, reconciler keeps in-flight test sandboxes, immutability + clone → 1.1.0, 404/403; fast suite 263/263. Docker-marked real-sandbox test (clone Mission 1 → 0/50/100 → publish) written, not run here (no Docker daemon in this session) |
-| 38 | UI (`apps/web`) + `e2e/lab-builder.spec.ts` | ☐ | |
+| 38 | UI (`apps/web`) + `e2e/lab-builder.spec.ts` | ☑ | `tsc --noEmit` and `next build` clean. `e2e/lab-builder.spec.ts` passed in a smoke stack in this session (API in-process with the FakeRunner emulating Mission 1's scripts via boto3, `next dev`, system Chromium): clone → edit task → preview/YAML → test 0/50/100 on moto+floci → publish → assign → student starts and ends. **Still to run on the real compose stack** (real sandboxes) |
 | 39 | Docs and full regression, merge to `main` | ☐ | |
 
 ## Implementation decisions log
@@ -255,3 +255,11 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   `tested_sha256` = current hash (`409 test_required`), re-validates, then `import_package(owner_id=author)`
   must create a new version (`409 lab_version_conflict` otherwise), updates the lab title, records `lab.published`
   and makes the draft `published` (read-only). The published lab is private to its author until shared.
+- **D36 — Lab Builder UI.** `/instructor/labs` (nav "Labs"): drafts, my labs (share toggle, *New version*), shared / other
+  authors' labs, built-in missions, each with Clone and Export; New (blank) and Import (.tar.gz). The editor
+  `/instructor/labs/drafts/[id]` keeps local edits with an explicit Save (plus a leave-page warning); the YAML, Preview and
+  Test tabs save first because they show the saved draft. Check parameter forms are generated from each check's JSON
+  Schema (`components/schema-form.tsx`): string, number, bool, enum, key-value maps, lists, and JSON for anything
+  else. Engine warnings only name engines the lab can run on. The validation panel is always visible and each row jumps
+  to its tab/task. Testing and published drafts are shown read-only (`<fieldset disabled>`); a running test is polled
+  every 2.5 s. Publishing needs a passing test of the saved content, then offers Share, Assign and *Prepare next version*.
