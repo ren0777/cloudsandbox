@@ -3,6 +3,9 @@
 First complete prototype of a college cloud lab platform: students do hands-on AWS labs in isolated, cost-free
 simulated clouds and are graded automatically on what they actually built.
 
+CloudLabs is licensed under the Apache License 2.0 (see `LICENSE`). Third-party components keep their own licences
+(`THIRD_PARTY_NOTICES.md`).
+
 ## Core platform
 - One isolated sandbox per student (emulator + terminal on a private network, no internet, resource limits).
 - AWS-style web console **and** the real AWS CLI in a browser terminal, both acting on the same sandbox.
@@ -35,4 +38,3 @@ simulated clouds and are graded automatically on what they actually built.
 - Runner channel: HMAC + per-sandbox tokens on a private network. Native mTLS is not implemented; use a VPN
   tunnel across untrusted networks.
 - Lambda code execution needs the MiniStack engine; EC2 instances are simulated records (no real VM shell).
-- The repository has no project licence yet.

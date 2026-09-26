@@ -70,4 +70,6 @@ scripts/          up, demo-reset, test helpers
 tools/            emulator bake-off probes
 ```
 
-Third-party software and licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+## License
+CloudLabs is licensed under the [Apache License 2.0](LICENSE). Copyright 2026 ren0777.
+Third-party software and its licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -73,7 +73,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | R5 | DEMO.md walkthrough | ☑ | every section automated in `apps/web/e2e/` and passing on the fresh stack; stale wording fixed |
 | R5 | Load-test smoke | ☑ | 6 students on 4 seats: 0 failures, 6/6 cleanup, provisioning p50 7.5 s, grading p50 1.0 s |
 | R5 | Repository hygiene | ☑ | no keys/tokens/private keys tracked (only documented dev defaults); `.env`, `production.env`, `runner.env`, backups, certificates and build/test output ignored; `tsconfig.tsbuildinfo` untracked |
-| R5 | Licences | ☑ | THIRD_PARTY_NOTICES.md lists every bundled/adapted component with MIT copyright notices and the full Apache-2.0 text; no project LICENSE yet (owner's decision) |
+| R5 | Licences | ☑ | THIRD_PARTY_NOTICES.md lists every bundled/adapted component with MIT copyright notices and the full Apache-2.0 text; CloudLabs itself is Apache-2.0 (`LICENSE`, added after the release commit) |
 
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
