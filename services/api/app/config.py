@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     heartbeat_write_min_interval_s: float = 30.0
     janitor_interval_s: float = 15.0
     reconciler_interval_s: float = 30.0
+    # A sandbox with no session/draft row is reaped as an orphan, except within this window: one-off
+    # `labtest` sandboxes (no DB row) are in flight here. Older orphans are destroyed as before.
+    orphan_grace_s: int = 300
     background_loops: bool = True
 
     # Per-sandbox quotas (PLAN §12) — platform defaults and admin caps

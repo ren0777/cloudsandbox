@@ -12,7 +12,8 @@
 | SUBMITTED past deadline           | any                        | teardown                                  |
 | TERMINATING past deadline         | any                        | destroy → TERMINATED                      |
 | TERMINATED / FAILED               | yes                        | destroy                                   |
-| (no row)                          | yes                        | orphan → destroy                          |
+| (no row), older than grace        | yes                        | orphan → destroy                          |
+| (no row), younger than grace      | yes                        | keep (in-flight `labtest`)                |
 
 Lab Builder test runs (phase 8) create sandboxes without a session row; the ids of runs still in progress
 (`lab_drafts.status = testing`) count as known, so only their leftovers become orphans.
@@ -188,13 +189,18 @@ async def _reconcile_runner(r: Runner) -> dict[str, int]:
             bump("leftover_destroyed")
 
     for sid in sandboxes:
-        if sid not in known:
-            log.info("janitor.orphan_removed", sandbox_id=sid)
-            try:
-                await runner.destroy_sandbox(sid)
-            except RunnerError as e:
-                log.warning("sandbox.destroy.failed", sandbox_id=sid, error=e.message)
-            bump("orphan_removed")
+        if sid in known:
+            continue
+        created = sandboxes[sid].get("created_at")
+        if created is not None and st.now().timestamp() - created < s.orphan_grace_s:
+            bump("orphan_young")
+            continue
+        log.info("janitor.orphan_removed", sandbox_id=sid)
+        try:
+            await runner.destroy_sandbox(sid)
+        except RunnerError as e:
+            log.warning("sandbox.destroy.failed", sandbox_id=sid, error=e.message)
+        bump("orphan_removed")
     return stats
 
 

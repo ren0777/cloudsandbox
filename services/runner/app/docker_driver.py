@@ -49,6 +49,7 @@ L_COMPONENT = "cloudlabs.component"
 L_ROLE = "cloudlabs.role"
 L_EMULATOR = "cloudlabs.engine"
 L_GW_TOKEN = "cloudlabs.gateway_token"  # gateway mode: per-sandbox access token for the control plane
+L_CREATED = "cloudlabs.created_at"  # unix seconds; lets the control plane age orphan candidates
 
 TTYD_PORT = 7681
 EMULATOR_UID = "10001"
@@ -360,7 +361,8 @@ class DockerDriver:
             token = secrets.token_urlsafe(24) if self.s.access_mode == "gateway" else None
             net = self.client.networks.create(
                 name, driver="bridge", internal=True, check_duplicate=True,
-                labels={**self._labels(sid, req.env, "network"), L_EMULATOR: emu, **({L_GW_TOKEN: token} if token else {})},
+                labels={**self._labels(sid, req.env, "network"), L_EMULATOR: emu, L_CREATED: str(int(time.time())),
+                        **({L_GW_TOKEN: token} if token else {})},
             )
             try:
                 self._attach_access(net, req.env)
@@ -457,12 +459,20 @@ class DockerDriver:
 
     def status(self, sandbox_id: str) -> SandboxStatus:
         net = self._get_network(sandbox_id)
+        created: float | None = None
+        if net is not None:
+            raw = (net.attrs.get("Labels") or {}).get(L_CREATED)
+            try:
+                created = float(raw) if raw else None
+            except ValueError:
+                created = None
         return SandboxStatus(
             sandbox_id=sandbox_id,
             env=net.attrs["Labels"].get(L_ENV) if net else None,
             exists=net is not None,
             emulator=self._component_status(sandbox_id, "emulator"),
             terminal=self._component_status(sandbox_id, "terminal"),
+            created_at=created,
         )
 
     def _sandbox_networks(self, env: str | None = None) -> list[Network]:

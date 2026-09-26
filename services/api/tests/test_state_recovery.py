@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import itertools
+import time
 import uuid
 from datetime import timedelta
 
@@ -292,6 +293,21 @@ async def test_reconcile_terminating_and_leftovers_and_orphans(world, fake_runne
     assert (await _state(sid)).state == S.TERMINATED
     assert set(fake_runner.sandboxes) == {other_env}, "other environments must never be reaped"
     assert stats.get("orphan_removed") == 1 and stats.get("leftover_destroyed") == 1
+
+
+async def test_reconcile_gives_in_flight_labtest_sandboxes_a_grace_period(world, fake_runner):
+    """A one-off `python -m app.labtest` sandbox has no session/draft row. The reconciler must not reap it
+    while the run is in flight (regression: the janitor destroyed sandboxes mid-run), but an old rowless
+    sandbox is still destroyed as an orphan."""
+    young, old = str(uuid.uuid4()), str(uuid.uuid4())
+    await fake_runner.create_sandbox({"sandbox_id": young, "env": "test", "terminal_credential": "x:y"})
+    await fake_runner.create_sandbox({"sandbox_id": old, "env": "test", "terminal_credential": "x:y"})
+    fake_runner.sandboxes[young]["created_at"] = time.time()
+    fake_runner.sandboxes[old]["created_at"] = time.time() - 10_000
+    stats = await reconcile_once()
+    assert young in fake_runner.sandboxes, "an in-flight labtest sandbox must survive"
+    assert old not in fake_runner.sandboxes, "an old rowless sandbox is still reaped"
+    assert stats.get("orphan_young") == 1 and stats.get("orphan_removed") == 1
 
 
 async def test_reconcile_does_not_mistake_reset_for_loss(world, fake_runner):

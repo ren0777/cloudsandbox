@@ -128,7 +128,7 @@ class FakeRunner:
                     "terminal": missing}
         emu = {"state": sb["dead"] or "running", "exit_code": None}
         return {"sandbox_id": sandbox_id, "env": sb["env"], "exists": True, "emulator": emu,
-                "terminal": {"state": "running", "exit_code": None}}
+                "terminal": {"state": "running", "exit_code": None}, "created_at": sb.get("created_at")}
 
     async def run_job(self, sandbox_id: str, job: dict[str, Any]) -> dict[str, Any]:
         self.calls.append(("job", sandbox_id))

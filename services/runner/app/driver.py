@@ -65,6 +65,9 @@ class SandboxStatus(BaseModel):
     exists: bool
     emulator: ComponentStatus
     terminal: ComponentStatus
+    # unix seconds the sandbox was created (None for a sandbox that predates this field). The control plane
+    # uses it to give in-flight one-off sandboxes (labtest) a grace period before reaping them as orphans.
+    created_at: float | None = None
 
 
 class JobResult(BaseModel):
