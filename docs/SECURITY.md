@@ -26,13 +26,17 @@ Integration tests search the student terminal's filesystem for private files.
 
 The **Lab Builder** (phase 8) keeps the same boundary. A draft holds private files (reference solutions,
 expected scores, notes) and is visible only to its owner or an admin — every draft route answers **404** to
-anyone else (`auth/policy.py::load_draft_for`). The **preview** endpoint returns the same redacted
-`student_lab_view` as the student API, never checks or private files. **Export** (which includes the private
-bundle) is staff-only, and an authored lab is visible to its author and admins until it is *shared* with all
-instructors. Publishing is gated on a passing real-sandbox test of the exact content hash and imports an
-immutable version owned by the author; `import_package(owner_id=…)` refuses an id that belongs to another
-owner, so a draft can never add a version to a built-in mission or someone else's lab. Draft creation,
-publishing and sharing are audited (`lab.draft_created`, `lab.published`, `lab.shared`).
+anyone else (`auth/policy.py::load_draft_for`), never 403, so an invisible draft cannot be probed for
+existence. The **preview** endpoint returns the same redacted `student_lab_view` as the student API, never
+checks or private files. **Export** (which includes the private bundle) is offered only to instructors and
+admins, never to students, and an authored lab is visible to its author and admins until it is *shared* with
+all instructors. YAML in `lab.yaml` and `expected.yaml` is parsed with an alias ban: a few KB of nested
+anchors/aliases would expand exponentially, so `pyyaml`'s loader rejects them (`labs/drafts.py`) and a pack
+cannot smuggle a bomb through an import or the YAML tab. Publishing is gated on a passing real-sandbox test of
+the exact content hash and imports an immutable version owned by the author; `import_package(owner_id=…)`
+refuses an id that belongs to another owner, so a draft can never add a version to a built-in mission or
+someone else's lab. Draft creation, publishing and sharing are audited (`lab.draft_created`, `lab.published`,
+`lab.shared`).
 
 ## Staff actions and accounts (phase 5)
 - **Role matrix additions:** `course.manage` (courses, roster, enrolments), `session.manage` (live view,

@@ -2,8 +2,9 @@
 
 Hand-off for the next working session (for example Claude Code on the web). Read `CLAUDE.md` and `docs/PLAN.md` first.
 State at hand-off: v0.1.0 is complete and verified on `main` (API 267, runner 16, E2E 13). On this branch
-(`feat/lab-builder`), the `package.py` refactor is verified and **milestones 36 (backend) and 37 (test run and
-publish gate) and 38 (UI) are done**. Next up: run the real-runtime checks below, then **milestone 39**.
+(`feat/lab-builder`), the `package.py` refactor is verified and **milestones 36 (backend), 37 (test run and
+publish gate), 38 (UI) and 39 (docs and regression) are done** (see `docs/STATUS.md`). The full phase-8
+regression is green and the built-in checks below have been run on a real compose stack.
 
 ## Goal
 Instructors create, test and publish their own labs in the browser, without editing files on the server.
@@ -134,7 +135,7 @@ Original plan (kept for reference):
 - Playwright spec `e2e/lab-builder.spec.ts`: clone Mission 1 → change a task → test (0 and 100) → publish →
   assign to the demo course → start it as a student.
 
-### 39 Docs and regression
+### 39 Docs and regression ☑ (done, see STATUS 39 and R6)
 - LAB-AUTHORING (builder section), SECURITY (who can see private files), STATUS (milestones 36–39, decisions D29+),
   DEMO (optional section).
 - Full regression: API, runner and E2E must all be green, including the existing 267 / 16 / 13.

@@ -1,3 +1,31 @@
+# CloudLabs v0.2.0 (unreleased)
+
+**Instructor Lab Builder.** Instructors create, test and publish their own labs from the browser, without
+editing files on the server.
+
+## Lab Builder
+- `/instructor/labs`: **New** (blank), **Clone** any lab version you can see (a built-in mission or another
+  author's lab becomes a new id; cloning your own prepares its next minor version) or **Import** a `.tar.gz`
+  pack.
+- Form editor (Overview, Tasks, Scripts) whose check parameter forms are generated from the grader's Pydantic
+  models, a synchronised **YAML** view (aliases refused), and a **Preview** of the redacted student view.
+- Always-on **validation** with row-level errors; drafts save while invalid.
+- **Test & publish gate**: a run in real sandboxes on every engine the lab may run on — an untouched sandbox
+  must score `0`, an optional partial must hit its expected score, the reference solution full marks — and it
+  must pass on the **current** content hash before publishing.
+- Published versions are **immutable**. An authored lab is **private to its author (and admins)** until it is
+  marked *shared* with all instructors. Export/import round-trips a deterministic `.tar.gz`; private files
+  never reach students.
+- Audited: `lab.draft_created`, `lab.published`, `lab.shared`.
+
+## Verification
+- Full regression (2026-09-26): API **292 passed / 1 skipped** (the skip is the two-runner gateway test without
+  `runner2`; **1/1** with it registered), runner **16/16**, `python -m app.labtest` on six lab packs
+  **0/partial/100 PASS on every engine**, browser E2E **14/14** including `lab-builder.spec.ts`.
+- Found and fixed D37: the reconciler could reap in-flight `labtest` sandboxes that have no database row.
+
+---
+
 # CloudLabs v0.1.0 (2026-09-26)
 
 First complete prototype of a college cloud lab platform: students do hands-on AWS labs in isolated, cost-free

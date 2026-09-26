@@ -84,6 +84,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | 37 | Test run and publish gate | ☑ | `tests/test_lab_builder_publish.py` 10 passed on the FakeRunner (job hook applies scripts with boto3): pass → publish owned private version + audit, publish refused until a passing test of the current content (any edit, even notes.md), wrong/failed solution blocks, partial scenario, runtime failure unlocks, interrupted run + test cap, reconciler keeps in-flight test sandboxes, immutability + clone → 1.1.0, 404/403; fast suite 263/263. Docker-marked real-sandbox test (clone Mission 1 → 0/50/100 → publish) **passes on the compose stack** (2026-09-26) |
 | 38 | UI (`apps/web`) + `e2e/lab-builder.spec.ts` | ☑ | `tsc --noEmit` and `next build` clean. `e2e/lab-builder.spec.ts` passed in a smoke stack in this session (API in-process with the FakeRunner emulating Mission 1's scripts via boto3, `next dev`, system Chromium): clone → edit task → preview/YAML → test 0/50/100 on moto+floci → publish → assign → student starts and ends. **Runs on the real compose stack** (real sandboxes) in the full E2E below (2026-09-26) |
 | 39 | Docs and full regression; merged to `main` | ☑ | **Full regression green, 2026-09-26:** API **292 passed, 1 skipped** (the skip is the two-runner gateway test when `runner2` is not registered; re-run with `runner2` up: **1/1 passed**), runner **16/16** (real Docker), `python -m app.labtest` on all six lab packs **0/partial/100 PASS on every engine**, browser E2E **14/14** including `e2e/lab-builder.spec.ts` and `e2e/fleet.spec.ts` (runner-local-2 registered, gateway). Found and fixed **D37** (reconciler reaped in-flight `labtest` sandboxes). Phase-8 docs added to LAB-AUTHORING / SECURITY / ARCHITECTURE / TESTING / DEMO (2026-09-27); fast-forward merged into `main` |
+| R6 | **Phase 8 regression (Lab Builder)** | ☑ | **API 292 passed, 1 skipped** (the skip is the two-runner gateway test when `runner2` is not registered; **1/1** with it up), runner **16/16** (real Docker), `python -m app.labtest` on six lab packs **0/partial/100 PASS on every engine**, browser E2E **14/14** incl. `e2e/lab-builder.spec.ts` and `e2e/fleet.spec.ts` (2026-09-26). Follow-up review of D37 (2026-09-27, **D38**) closed a clock-skew hole: a future/non-finite `created_at` no longer grants the orphan grace window. Fast suite `-m "not docker"`: **265 passed, 29 deselected**; reconciler tests **12 passed** |
 
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
@@ -270,3 +271,9 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   `orphan_grace_s` (300 s) as `orphan_young`. Older rowless sandboxes and rowless sandboxes whose runner reports no
   creation time (the test FakeRunner) are still destroyed as orphans, so session/draft cleanup and existing tests are
   unchanged.
+- **D38 — Orphan grace needs a plausible clock.** D37's grace window used `now - created < grace`, so a
+  `created_at` in the future (a runner clock ahead of the control plane) or a non-finite label gave a negative age
+  and kept the sandbox alive forever. The reconciler now grants the window only when `0 <= age < orphan_grace_s`;
+  a missing, future, `inf`/`nan` or older-than-grace value is reaped as an orphan. A rowless sandbox can therefore
+  never outlive the grace window, and live sessions / running draft tests are still kept as `known`. Regression:
+  `test_state_recovery.py::test_reconcile_reaps_rowless_sandboxes_with_an_implausible_age`.
