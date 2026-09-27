@@ -10,7 +10,7 @@ services:
   postgres:
     ports: !override ["127.0.0.1:57432:5432"]
   gateway:
-    ports: !override ["127.0.0.1:3200:3000"]
+    ports: !override ["127.0.0.1:3300:3000"]
 
   runner:
     image: cloudlabs-m44/runner:dev
@@ -26,11 +26,16 @@ services:
 
   api:
     image: cloudlabs-m44/api:dev
+    # The base file labels the API with ${CL_ENV:-demo} interpolated from the SHELL, not from the
+    # service environment below, so an isolated project must override the label explicitly (the runner
+    # attaches only control-plane containers whose env label matches the sandbox's env).
+    labels:
+      cloudlabs.env: m44
     environment:
       CL_RUNNER_ID: runner-m44
       CL_RUNNER_SECRET: dev-runner-m44-secret
       CL_ENV: m44
-      CL_ALLOWED_ORIGINS: '["http://localhost:3200"]'
+      CL_ALLOWED_ORIGINS: '["http://localhost:3300"]'
 
   api-test:
     image: cloudlabs-m44/api:dev
