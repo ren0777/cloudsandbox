@@ -125,9 +125,10 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
   });
 
   test("admin sees runtime status", async ({ page }) => {
+    const R1 = process.env.CLOUDLABS_RUNNER_ID ?? "runner-local-1";
     await signIn(page, "demo-admin@cloudlabs.demo");
     await expect(page.getByRole("heading", { name: "Runtime status" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "runner-local-1" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: new RegExp(`^${R1}(\\s|$)`) })).toBeVisible();
     await expect(page.getByText("Healthy").first()).toBeVisible();
     await shot(page, "07-runtime-status");
   });
