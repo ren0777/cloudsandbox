@@ -310,6 +310,26 @@ async def test_reconcile_gives_in_flight_labtest_sandboxes_a_grace_period(world,
     assert stats.get("orphan_young") == 1 and stats.get("orphan_removed") == 1
 
 
+async def test_reconcile_reaps_rowless_sandboxes_with_an_implausible_age(world, fake_runner):
+    """Clock skew (a `created_at` in the future) or a non-finite value must never look "young": it is
+    treated like a missing time and reaped, so a rowless sandbox can never outlive the grace window."""
+    from app.config import get_settings
+
+    grace = get_settings().orphan_grace_s
+    now = time.time()
+    future, infinite, over_grace, just_inside = (str(uuid.uuid4()) for _ in range(4))
+    for sid in (future, infinite, over_grace, just_inside):
+        await fake_runner.create_sandbox({"sandbox_id": sid, "env": "test", "terminal_credential": "x:y"})
+    fake_runner.sandboxes[future]["created_at"] = now + 3600       # runner clock ahead of the control plane
+    fake_runner.sandboxes[infinite]["created_at"] = float("inf")   # non-finite label
+    fake_runner.sandboxes[over_grace]["created_at"] = now - grace - 1
+    fake_runner.sandboxes[just_inside]["created_at"] = now - grace / 2
+    stats = await reconcile_once()
+    assert just_inside in fake_runner.sandboxes, "a real time inside the grace window is kept"
+    assert set(fake_runner.sandboxes) == {just_inside}, "everything implausible or too old is reaped"
+    assert stats.get("orphan_young") == 1 and stats.get("orphan_removed") == 3
+
+
 async def test_reconcile_does_not_mistake_reset_for_loss(world, fake_runner):
     """READY row read, then a reset replaced containers: the version CAS must prevent a false FAILED."""
     c = await login(world.alice)

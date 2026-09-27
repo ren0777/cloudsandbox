@@ -192,7 +192,11 @@ async def _reconcile_runner(r: Runner) -> dict[str, int]:
         if sid in known:
             continue
         created = sandboxes[sid].get("created_at")
-        if created is not None and st.now().timestamp() - created < s.orphan_grace_s:
+        # Only a plausible, past creation time earns the grace window. A missing time (None), a time in the
+        # future or a non-finite value (clock skew, a bad label) must never look "young", or the sandbox
+        # could survive forever: reap it as an orphan.
+        age = None if created is None else st.now().timestamp() - created
+        if age is not None and 0.0 <= age < s.orphan_grace_s:
             bump("orphan_young")
             continue
         log.info("janitor.orphan_removed", sandbox_id=sid)

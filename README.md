@@ -9,6 +9,15 @@ explainable evidence that instructors can inspect.
 multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES.md). Verified status:
 [docs/STATUS.md](docs/STATUS.md).
 
+## v0.2.0 (unreleased)
+- **Instructor Lab Builder** (`/instructor/labs`, in progress): create, **clone** or **import** a lab, edit
+  it in the browser (a form builder with a synchronised **YAML** view and a redacted **student preview**),
+  **validate** it, **test** it in real sandboxes (untouched `0`, optional partial, reference solution full
+  marks) and **publish** it as an immutable version. Authored labs are private to their author (and admins)
+  until **shared** with all instructors; packs export/import as deterministic `.tar.gz`. See
+  [docs/LAB-AUTHORING.md](docs/LAB-AUTHORING.md#instructor-lab-builder-browser) and, for the security
+  boundary, [docs/SECURITY.md](docs/SECURITY.md). Optional walkthrough: [docs/DEMO.md](docs/DEMO.md).
+
 ## Prerequisites
 - Docker Desktop (Windows with the WSL2 backend, or macOS) or Docker Engine 24+ with Compose v2 (Linux).
   Give Docker at least 4 CPUs and 6 GB RAM.
