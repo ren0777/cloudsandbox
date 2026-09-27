@@ -66,6 +66,14 @@ codename.
   **no YAML, shell, database or developer tooling**. Passed with no blockers.
 - `docs/INSTRUCTOR-QUICKSTART.md` + an in-app first-run card and quickstart links.
 
+### 44p Services preparation: VPC / SQS / SNS ☑ (done — see STATUS 44p and docs/M44-SERVICES-EVALUATION.md)
+- Evaluated on Moto 5.2.3, Floci 2.1.0 and MiniStack 1.5.16 under production sandbox hardening: VPC
+  32/32, SQS 20/20, SNS 16/16 probe checks on every engine (`tools/emulator-bakeoff/m44_bakeoff.sh`).
+- Contract tests `tests/test_vpc.py`, `test_sqs.py`, `test_sns.py` run per engine through the runner;
+  capability declarations added behind the adapter (`SERVICE_CLIENT`), `CONSOLE_OPS` untouched.
+- Proposals (grader checks, FastAPI routes, console IA) and the per-service default recommendation
+  (**Floci**; no switch made) are in `docs/M44-SERVICES-EVALUATION.md`. Nothing reaches students yet.
+
 ### 44 New teaching templates (richer labs)
 - **Lambda + DynamoDB** combined pack ☑ (Mission 7, done — see STATUS 44a and D45): table + function that
   saves and totals an order; MiniStack declares the 12 DynamoDB contract ops; labtest 0/55/100 on MiniStack;

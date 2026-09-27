@@ -1,0 +1,105 @@
+# M44 probe: floci  image=cloudlabs/emulator-floci:dev  2026-09-27T14:52:08Z
+# hardening: --user 10001:10001 --read-only --tmpfs /tmp:size=32m,uid=10001 --memory 384m --memory-swap 384m
+         --pids-limit 128 --cpus 0.5 --cap-drop ALL --security-opt no-new-privileges --tmpfs /app/data:size=64m,uid=10001 -e FLOCI_STORAGE_MODE=memory
+# container: running oom=false exit=0
+# health: healthy
+PROBE endpoint=http://172.22.0.2:4566 suffix=145211
+   default VPCs: [('vpc-default-us-east-1', '172.31.0.0/16', True)]
+RESULT vpc   DescribeVpcs(default)                        PASS    
+RESULT vpc   CreateVpc                                    PASS    vpc-65655435
+RESULT vpc   DescribeVpcs(created)                        PASS    
+RESULT vpc   CreateTags(vpc)/DescribeTags                 PASS    
+RESULT vpc   ModifyVpcAttribute(EnableDnsSupport)         PASS    {'ResponseMetadata': {'RequestId': '76250ec6-11b1-4fb5-a2c1-b6b7e56c0121', 'HTTP
+RESULT vpc   DescribeVpcAttribute                         PASS    
+RESULT vpc   CreateSubnet                                 PASS    subnet-0c989873
+RESULT vpc   DescribeSubnets                              PASS    
+RESULT vpc   ModifySubnetAttribute                        PASS    {'ResponseMetadata': {'RequestId': 'a63d5837-262e-4bf9-8ae7-4f31f92d584e', 'HTTP
+RESULT vpc   CreateInternetGateway                        PASS    igw-653cd3b7
+RESULT vpc   AttachInternetGateway                        PASS    {'ResponseMetadata': {'RequestId': '020b2757-1a05-4a68-a427-816221a49afe', 'HTTP
+RESULT vpc   DescribeInternetGateways(attachment)         PASS    
+RESULT vpc   CreateRouteTable                             PASS    rtb-c680041f
+RESULT vpc   CreateRoute(igw)                             PASS    {'Return': True, 'ResponseMetadata': {'RequestId': '0c86d7a2-f439-4cd7-b216-4af5
+RESULT vpc   DescribeRouteTables(route)                   PASS    
+RESULT vpc   AssociateRouteTable                          PASS    rtbassoc-692f3fbc
+RESULT vpc   DescribeRouteTables(association)             PASS    
+RESULT vpc   CreateSecurityGroup(in vpc)                  PASS    sg-b54d37ac2d5821ac3
+RESULT vpc   AuthorizeSecurityGroupIngress                PASS    {'Return': True, 'SecurityGroupRules': [{'SecurityGroupRuleId': 'sgr-9970ba9c11b
+RESULT vpc   DescribeSecurityGroups(in vpc)               PASS    
+RESULT vpc   AuthorizeSecurityGroupEgress                 PASS    {'Return': True, 'SecurityGroupRules': [{'SecurityGroupRuleId': 'sgr-ad17ddee36e
+RESULT vpc   RevokeSecurityGroupIngress                   PASS    {'Return': True, 'ResponseMetadata': {'RequestId': '3e3f9bb5-cb50-41b3-a069-dab3
+RESULT vpc   RevokeSecurityGroupEgress                    PASS    {'Return': True, 'ResponseMetadata': {'RequestId': 'd5f1aaea-f047-44c5-9bac-6cb0
+RESULT vpc   DisassociateRouteTable                       PASS    {'ResponseMetadata': {'RequestId': 'ac8fa0c5-f2f8-46be-a1e7-a5954fa72114', 'HTTP
+RESULT vpc   DeleteRoute                                  PASS    {'ResponseMetadata': {'RequestId': 'fa2bab79-d70b-4fc3-b501-e81d6b6c60de', 'HTTP
+RESULT vpc   DetachInternetGateway                        PASS    {'ResponseMetadata': {'RequestId': '55c88bb1-a268-4dc8-b529-9103c4c574ca', 'HTTP
+RESULT vpc   DeleteInternetGateway                        PASS    {'ResponseMetadata': {'RequestId': '6bd11e18-5e74-43a2-ada6-5840dfe9d3c0', 'HTTP
+RESULT vpc   DeleteRouteTable                             PASS    {'ResponseMetadata': {'RequestId': 'a7e1fbe9-dd8d-433b-8f74-4fbc15440051', 'HTTP
+RESULT vpc   DeleteSecurityGroup                          PASS    {'Return': True, 'ResponseMetadata': {'RequestId': 'ab6a4aec-9ccb-4fad-a024-3558
+RESULT vpc   DeleteSubnet                                 PASS    {'ResponseMetadata': {'RequestId': '2a2a02e8-d5b4-417d-a6b1-e7cf67037c0b', 'HTTP
+RESULT vpc   DeleteVpc                                    PASS    {'ResponseMetadata': {'RequestId': '0acf8e92-f796-42c1-8a32-c3e4cfb0091d', 'HTTP
+RESULT vpc   DeleteVpc(dependent semantics)               PASS    cascaded (AWS would refuse)
+UNSUPPORTED-PROBE vpc CreateNatGateway IMPLEMENTED (unexpected)
+UNSUPPORTED-PROBE vpc CreateVpcPeeringConnection IMPLEMENTED (unexpected)
+UNSUPPORTED-PROBE vpc CreateVpcEndpoint IMPLEMENTED (unexpected)
+UNSUPPORTED-PROBE vpc CreateFlowLogs IMPLEMENTED (unexpected)
+RESULT sqs   CreateQueue(attrs)                           PASS    http://localhost:4566/000000000000/m44-orders-145211
+RESULT sqs   GetQueueUrl                                  PASS    
+RESULT sqs   ListQueues(prefix)                           PASS    
+RESULT sqs   GetQueueAttributes                           PASS    
+RESULT sqs   SetQueueAttributes                           PASS    
+RESULT sqs   TagQueue/ListQueueTags                       PASS    
+RESULT sqs   UntagQueue                                   PASS    
+RESULT sqs   SendMessage                                  PASS    a341fe4b-9029-4fb6-aafd-f8eb6490356e
+RESULT sqs   GetQueueAttributes(count)                    PASS    
+RESULT sqs   ReceiveMessage                               PASS    
+RESULT sqs   ChangeMessageVisibility                      PASS    {'ResponseMetadata': {'RequestId': '66d70134-7a83-495a-9bff-d36e903f6a84', 'HTTP
+RESULT sqs   ReceiveMessage(after visibility 0)           PASS    
+RESULT sqs   DeleteMessage                                PASS    {'ResponseMetadata': {'RequestId': '1a48f5d3-558c-413f-ab1e-1195cbe4bf76', 'HTTP
+RESULT sqs   ReceiveMessage(empty)                        PASS    
+RESULT sqs   SendMessageBatch                             PASS    
+RESULT sqs   DeleteMessageBatch                           PASS    
+UNSUPPORTED-PROBE sqs AddPermission IMPLEMENTED (unexpected)
+RESULT sqs   PurgeQueue                                   PASS    {'ResponseMetadata': {'RequestId': '0057c494-dc97-4ab5-bd2f-46411f24aaa5', 'HTTP
+RESULT sqs   DeleteQueue                                  PASS    {'ResponseMetadata': {'RequestId': 'a45185b9-903f-4c06-8e51-4612964f79bf', 'HTTP
+RESULT sqs   GetQueueUrl(after delete)                    PASS    
+RESULT sqs   FIFO create/send/receive                     PASS    
+RESULT sns   CreateTopic                                  PASS    arn:aws:sns:us-east-1:000000000000:m44-orders-145211
+RESULT sns   ListTopics                                   PASS    
+OBSERVE sns topic-tags: create-time={'project': 'cloudcafe'}, TagResource=KeyError
+RESULT sns   GetTopicAttributes                           PASS    
+RESULT sns   SetTopicAttributes                           PASS    
+RESULT sns   Subscribe(sqs)                               PASS    arn:aws:sns:us-east-1:000000000000:m44-orders-145211:7e73f340-ecc8-416d-8f2e-950
+RESULT sns   ListSubscriptionsByTopic                     PASS    
+RESULT sns   GetSubscriptionAttributes                    PASS    
+RESULT sns   Publish                                      PASS    6c559f32-faf1-4ee1-8560-5078fb573e9b
+RESULT sns   Publish→SQS delivery                         PASS    
+RESULT sns   RawMessageDelivery                           PASS    
+RESULT sns   PublishBatch                                 PASS    
+RESULT sns   Http subscription (management only)          PASS    
+RESULT sns   Unsubscribe                                  PASS    {'ResponseMetadata': {'RequestId': 'ee550a3a-e511-4d48-a6c8-ef13c325db4b', 'HTTP
+RESULT sns   ListSubscriptionsByTopic(after unsubscribe)  PASS    
+RESULT sns   DeleteTopic                                  PASS    {'ResponseMetadata': {'RequestId': '94c73996-ad14-43a6-9e5f-c112dac20123', 'HTTP
+RESULT sns   Publish(after delete refused)                PASS    
+
+SUMMARY
+vpc: 32/32 PASS
+sqs: 20/20 PASS
+sns: 16/16 PASS
+
+UNSUPPORTED CANDIDATES (probed, expected absent)
+  vpc CreateNatGateway IMPLEMENTED 
+  vpc CreateVpcPeeringConnection IMPLEMENTED 
+  vpc CreateVpcEndpoint IMPLEMENTED 
+  vpc CreateFlowLogs IMPLEMENTED 
+  sqs AddPermission IMPLEMENTED 
+# memory: 39.52MiB / 384MiB
+# errors in emulator log:
+2026-09-27 14:52:11,712 INFO  [org.apa.hc.cli.htt.imp.cla.HttpRequestRetryExec] ex-0000000001 recoverable I/O exception (java.net.SocketException) caught when sending request to unix://localhost:2375;request will be automatically re-executed in 0 MILLISECONDS (exec count 2)
+2026-09-27 14:52:11,712 WARN  [io.git.hec.flo.ser.ec2.net.VpcNetworkManager] Could not reconcile orphaned VPC networks: java.net.SocketException: No such file or directory
+2026-09-27 14:52:11,713 INFO  [org.apa.hc.cli.htt.imp.cla.HttpRequestRetryExec] ex-0000000002 recoverable I/O exception (java.net.SocketException) caught when sending request to unix://localhost:2375;request will be automatically re-executed in 0 MILLISECONDS (exec count 2)
+2026-09-27 14:52:11,713 WARN  [io.git.hec.flo.ser.ec2.Ec2ContainerManager] Could not reconcile orphaned EC2 containers: java.net.SocketException: No such file or directory
+2026-09-27 14:52:11,713 INFO  [org.apa.hc.cli.htt.imp.cla.HttpRequestRetryExec] ex-0000000003 recoverable I/O exception (java.net.SocketException) caught when sending request to unix://localhost:2375;request will be automatically re-executed in 0 MILLISECONDS (exec count 2)
+2026-09-27 14:52:11,719 INFO  [org.apa.hc.cli.htt.imp.cla.HttpRequestRetryExec] ex-0000000004 recoverable I/O exception (java.net.SocketException) caught when sending request to unix://localhost:2375;request will be automatically re-executed in 0 MILLISECONDS (exec count 2)
+2026-09-27 14:52:11,826 INFO  [org.apa.hc.cli.htt.imp.cla.HttpRequestRetryExec] ex-0000000005 recoverable I/O exception (java.net.SocketException) caught when sending request to unix://localhost:2375;request will be automatically re-executed in 0 MILLISECONDS (exec count 2)
+2026-09-27 14:52:11,836 INFO  [org.apa.hc.cli.htt.imp.cla.HttpRequestRetryExec] ex-0000000006 recoverable I/O exception (java.net.SocketException) caught when sending request to unix://localhost:2375;request will be automatically re-executed in 0 MILLISECONDS (exec count 2)
+2026-09-27 14:52:11,839 INFO  [org.apa.hc.cli.htt.imp.cla.HttpRequestRetryExec] ex-0000000007 recoverable I/O exception (java.net.SocketException) caught when sending request to unix://localhost:2375;request will be automatically re-executed in 0 MILLISECONDS (exec count 2)
+2026-09-27 14:52:15,179 WARN  [io.git.hec.flo.ser.sns.SnsService] Failed to send SubscriptionConfirmation to http://10.0.0.1/hook: java.net.ConnectException: Network is unreachable

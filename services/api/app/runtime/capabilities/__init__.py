@@ -54,12 +54,15 @@ class Capabilities(BaseModel):
         return sorted({op for op in ops if not self.is_usable(op)})
 
     def service_status(self) -> dict[str, str]:
-        """Console nav: 'available' only when every operation its console page needs is usable."""
+        """Console nav: 'available' only when every operation its console page needs is usable.
+        Services with no console page (no CONSOLE_OPS entry) are not part of the catalogue: a service
+        only reaches students once its page exists and declares the operations it calls."""
         out = {}
         for svc in self.services:
-            needed = CONSOLE_OPS.get(svc, ())
-            ok = bool(needed) and all(self.is_usable(f"{svc}:{op}") for op in needed)
-            out[svc] = "available" if ok else "unavailable"
+            needed = CONSOLE_OPS.get(svc)
+            if not needed:
+                continue
+            out[svc] = "available" if all(self.is_usable(f"{svc}:{op}") for op in needed) else "unavailable"
         return out
 
     def features(self, service: str) -> dict[str, dict]:

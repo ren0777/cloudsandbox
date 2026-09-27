@@ -1,0 +1,4 @@
+Images evaluated:
+  cloudlabs/emulator:dev 5.2.3 d569ee4df895
+  cloudlabs/emulator-floci:dev 2.1.0 99e3cb196d49
+  cloudlabs/emulator-ministack:dev 1.5.16 605db685ca17

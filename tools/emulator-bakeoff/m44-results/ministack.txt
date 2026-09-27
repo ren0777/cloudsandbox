@@ -1,0 +1,96 @@
+# M44 probe: ministack  image=cloudlabs/emulator-ministack:dev  2026-09-27T14:52:17Z
+# hardening: --user 10001:10001 --read-only --tmpfs /tmp:size=32m,uid=10001 --memory 384m --memory-swap 384m
+         --pids-limit 128 --cpus 0.5 --cap-drop ALL --security-opt no-new-privileges 
+# container: running oom=false exit=0
+# health: healthy
+PROBE endpoint=http://172.22.0.2:4566 suffix=145231
+   default VPCs: [('vpc-00000001', '172.31.0.0/16', True)]
+RESULT vpc   DescribeVpcs(default)                        PASS    
+RESULT vpc   CreateVpc                                    PASS    vpc-c14d8af8ec30800fc
+RESULT vpc   DescribeVpcs(created)                        PASS    
+RESULT vpc   CreateTags(vpc)/DescribeTags                 PASS    
+RESULT vpc   ModifyVpcAttribute(EnableDnsSupport)         PASS    {'ResponseMetadata': {'RequestId': '548ecb3c-cca6-4476-b61d-f3144d09a16e', 'HTTP
+RESULT vpc   DescribeVpcAttribute                         PASS    
+RESULT vpc   CreateSubnet                                 PASS    subnet-8d9fbdc1ddae604e9
+RESULT vpc   DescribeSubnets                              PASS    
+RESULT vpc   ModifySubnetAttribute                        PASS    {'ResponseMetadata': {'RequestId': '2f2a9617-dcca-4e76-8f71-64dcbdce688c', 'HTTP
+RESULT vpc   CreateInternetGateway                        PASS    igw-c01eb3e9bb43ec7e2
+RESULT vpc   AttachInternetGateway                        PASS    {'ResponseMetadata': {'RequestId': '3dbeac19-151d-4726-aaff-268b496d6ba4', 'HTTP
+RESULT vpc   DescribeInternetGateways(attachment)         PASS    
+RESULT vpc   CreateRouteTable                             PASS    rtb-79c8a6fae1f605f88
+RESULT vpc   CreateRoute(igw)                             PASS    {'Return': True, 'ResponseMetadata': {'RequestId': '349eba3e-094c-4031-803b-978f
+RESULT vpc   DescribeRouteTables(route)                   PASS    
+RESULT vpc   AssociateRouteTable                          PASS    rtbassoc-e29421fb79aa80dfb
+RESULT vpc   DescribeRouteTables(association)             PASS    
+RESULT vpc   CreateSecurityGroup(in vpc)                  PASS    sg-20f59602523863a60
+RESULT vpc   AuthorizeSecurityGroupIngress                PASS    {'Return': True, 'SecurityGroupRules': [{'SecurityGroupRuleId': 'sgr-cd05a57b876
+RESULT vpc   DescribeSecurityGroups(in vpc)               PASS    
+RESULT vpc   AuthorizeSecurityGroupEgress                 PASS    {'Return': True, 'SecurityGroupRules': [{'SecurityGroupRuleId': 'sgr-5156d7b04c4
+RESULT vpc   RevokeSecurityGroupIngress                   PASS    {'Return': True, 'ResponseMetadata': {'RequestId': '66363779-2425-4c35-8bf0-404f
+RESULT vpc   RevokeSecurityGroupEgress                    PASS    {'Return': True, 'RevokedSecurityGroupRules': [{'SecurityGroupRuleId': 'sgr-e0fa
+RESULT vpc   DisassociateRouteTable                       PASS    {'ResponseMetadata': {'RequestId': 'fc6d3881-5f5a-4935-b24d-65ac608d237c', 'HTTP
+RESULT vpc   DeleteRoute                                  PASS    {'ResponseMetadata': {'RequestId': '86461704-fdbf-42bc-9a22-437f87b5f131', 'HTTP
+RESULT vpc   DetachInternetGateway                        PASS    {'ResponseMetadata': {'RequestId': 'ac8abad5-4fa7-40c2-bb42-705f4b209f99', 'HTTP
+RESULT vpc   DeleteInternetGateway                        PASS    {'ResponseMetadata': {'RequestId': 'b61ea31e-b023-4910-8c6f-fe765f8c3665', 'HTTP
+RESULT vpc   DeleteRouteTable                             PASS    {'ResponseMetadata': {'RequestId': '25c7c875-29fe-4f55-a2e3-e383a574a041', 'HTTP
+RESULT vpc   DeleteSecurityGroup                          PASS    {'Return': True, 'GroupId': 'sg-20f59602523863a60', 'ResponseMetadata': {'Reques
+RESULT vpc   DeleteSubnet                                 PASS    {'ResponseMetadata': {'RequestId': 'cce4687a-243d-410a-bd74-d8cf8d3817cc', 'HTTP
+RESULT vpc   DeleteVpc                                    PASS    {'ResponseMetadata': {'RequestId': 'e071bea3-ae76-4bef-a365-b8d8bc6fb842', 'HTTP
+RESULT vpc   DeleteVpc(dependent semantics)               PASS    refused (AWS-faithful)
+UNSUPPORTED-PROBE vpc CreateNatGateway IMPLEMENTED (unexpected)
+UNSUPPORTED-PROBE vpc CreateVpcPeeringConnection IMPLEMENTED (unexpected)
+UNSUPPORTED-PROBE vpc CreateVpcEndpoint IMPLEMENTED (unexpected)
+UNSUPPORTED-PROBE vpc CreateFlowLogs IMPLEMENTED (unexpected)
+RESULT sqs   CreateQueue(attrs)                           PASS    http://172.22.0.2:4566/000000000000/m44-orders-145231
+RESULT sqs   GetQueueUrl                                  PASS    
+RESULT sqs   ListQueues(prefix)                           PASS    
+RESULT sqs   GetQueueAttributes                           PASS    
+RESULT sqs   SetQueueAttributes                           PASS    
+RESULT sqs   TagQueue/ListQueueTags                       PASS    
+RESULT sqs   UntagQueue                                   PASS    
+RESULT sqs   SendMessage                                  PASS    cb055e73-8691-43a5-931e-d4ba4b910018
+RESULT sqs   GetQueueAttributes(count)                    PASS    
+RESULT sqs   ReceiveMessage                               PASS    
+RESULT sqs   ChangeMessageVisibility                      PASS    {'ResponseMetadata': {'RequestId': '238d6c2a-e5ef-4cf4-94e9-ec67c33dc9a2', 'HTTP
+RESULT sqs   ReceiveMessage(after visibility 0)           PASS    
+RESULT sqs   DeleteMessage                                PASS    {'ResponseMetadata': {'RequestId': '2ace31d3-2cce-4db1-8a50-82bdb9bbbc26', 'HTTP
+RESULT sqs   ReceiveMessage(empty)                        PASS    
+RESULT sqs   SendMessageBatch                             PASS    
+RESULT sqs   DeleteMessageBatch                           PASS    
+UNSUPPORTED-PROBE sqs AddPermission IMPLEMENTED (unexpected)
+RESULT sqs   PurgeQueue                                   PASS    {'ResponseMetadata': {'RequestId': '87b1cce9-66cf-4ac7-ba42-0419e8ffd795', 'HTTP
+RESULT sqs   DeleteQueue                                  PASS    {'ResponseMetadata': {'RequestId': 'f54c03d7-f39a-4809-ab6b-76d4380f0692', 'HTTP
+RESULT sqs   GetQueueUrl(after delete)                    PASS    
+RESULT sqs   FIFO create/send/receive                     PASS    
+RESULT sns   CreateTopic                                  PASS    arn:aws:sns:us-east-1:000000000000:m44-orders-145231
+RESULT sns   ListTopics                                   PASS    
+OBSERVE sns topic-tags: create-time=ignored, TagResource=ok, UntagResource=ok
+RESULT sns   GetTopicAttributes                           PASS    
+RESULT sns   SetTopicAttributes                           PASS    
+RESULT sns   Subscribe(sqs)                               PASS    arn:aws:sns:us-east-1:000000000000:m44-orders-145231:63945399-e012-4e21-b279-720
+RESULT sns   ListSubscriptionsByTopic                     PASS    
+RESULT sns   GetSubscriptionAttributes                    PASS    
+RESULT sns   Publish                                      PASS    c608849f-8a12-4291-9c29-702f5a4d5632
+RESULT sns   Publish→SQS delivery                         PASS    
+RESULT sns   RawMessageDelivery                           PASS    
+RESULT sns   PublishBatch                                 PASS    
+RESULT sns   Http subscription (management only)          PASS    
+RESULT sns   Unsubscribe                                  PASS    {'ResponseMetadata': {'RequestId': '172f1f21-6193-4692-9245-4dac699b8f21', 'HTTP
+RESULT sns   ListSubscriptionsByTopic(after unsubscribe)  PASS    
+RESULT sns   DeleteTopic                                  PASS    {'ResponseMetadata': {'RequestId': '30bd4864-c12c-47d5-a0bf-bf797f309d8f', 'HTTP
+RESULT sns   Publish(after delete refused)                PASS    
+
+SUMMARY
+vpc: 32/32 PASS
+sqs: 20/20 PASS
+sns: 16/16 PASS
+
+UNSUPPORTED CANDIDATES (probed, expected absent)
+  vpc CreateNatGateway IMPLEMENTED 
+  vpc CreateVpcPeeringConnection IMPLEMENTED 
+  vpc CreateVpcEndpoint IMPLEMENTED 
+  vpc CreateFlowLogs IMPLEMENTED 
+  sqs AddPermission IMPLEMENTED 
+# memory: 59.01MiB / 384MiB
+# errors in emulator log:
+2026-09-27 14:52:41 WARNING [sns] SNS SubscriptionConfirmation to http://10.0.0.1/hook failed: <urlopen error [Errno 101] Network unreachable>
