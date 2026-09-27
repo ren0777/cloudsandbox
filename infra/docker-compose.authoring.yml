@@ -41,6 +41,9 @@ services:
       CL_RUNNER_SECRET: dev-runner-authoring-secret
       CL_ENV: test
       CL_ALLOWED_ORIGINS: '["http://testserver", "http://localhost:3100"]'
+      CL_RUNNER2_ID: runner-authoring-2
+      CL_RUNNER2_URL: http://runner2:7070
+      CL_RUNNER2_SECRET: dev-runner-authoring-2-secret
 
   web:
     image: cloudlabs-authoring/web:dev
