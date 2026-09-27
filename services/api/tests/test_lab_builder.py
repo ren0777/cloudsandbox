@@ -75,7 +75,7 @@ async def test_templates_catalogue_and_create_from_template(world):
     assert r.status_code == 200, r.text
     ts = {t["id"]: t for t in r.json()["templates"]}
     assert {"s3-basics", "dynamodb-basics", "iam-least-privilege", "ec2-web-server",
-            "lambda-basics", "iam-breakfix"} <= set(ts)
+            "lambda-basics", "iam-breakfix", "lambda-dynamodb"} <= set(ts)
     s3 = ts["s3-basics"]
     assert s3["available"] is True and s3["latest_version"] and s3["services"] == ["s3"]
     assert s3["difficulty"] == "starter" and s3["highlights"]

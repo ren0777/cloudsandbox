@@ -84,6 +84,10 @@ journey with the session freeze, and terminal ticket rules. Run the browser E2E 
   0, Reset reproduces it, the console and terminal work, and no session/attempt/grade exists. Readiness tests
   in `test_lab_builder_publish.py` cover the checklist mirroring the gate, the guided-lab N/A reset row, and
   unsupported engines blocking test/publish. E2E `lab-builder.spec.ts` walks the preview and the checklist.
+- **Phase 9 (M44, richer labs):** `test_lambda.py::test_lambda_dynamodb_labtest_on_ministack` runs Mission 7
+  end to end (0 / 55 / 100) on a real MiniStack sandbox, where the probe invocation writes the DynamoDB row
+  the hidden item check then reads. `test_dynamodb.py`'s contract test now runs on **all three engines**, so
+  every DynamoDB operation declared for MiniStack is exercised for real.
 - **E2E:** the DEMO.md flow in Chromium, including `docker ps` cleanup checks. It writes screenshots to
   `docs/screenshots/`.
 

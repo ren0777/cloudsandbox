@@ -166,7 +166,7 @@ DDB_CONTRACT = {
 
 
 @pytest.mark.docker
-@pytest.mark.parametrize("contract_engine", emulators.ENGINES)
+@pytest.mark.parametrize("contract_engine", emulators.ALL_ENGINES)
 async def test_dynamodb_contract_for_every_declared_supported_operation(real_runner, contract_engine):
     caps = emulators.get(contract_engine).capabilities
     declared = {op for op, o in caps.services["dynamodb"].items() if o.level == "supported"}

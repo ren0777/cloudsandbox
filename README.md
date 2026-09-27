@@ -35,7 +35,7 @@ multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES
 Windows (PowerShell):
 ```powershell
 scripts\up.ps1           # builds the sandbox images and the stack, starts it  → http://localhost:3000
-scripts\demo-reset.ps1   # seeds demo accounts, a course and six labs
+scripts\demo-reset.ps1   # seeds demo accounts, a course and seven labs
 ```
 Linux / macOS:
 ```bash

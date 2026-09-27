@@ -216,3 +216,14 @@ async def test_lambda_labtest_on_ministack(real_runner):
     assert [(r.name, str(r.actual)) for r in results] == [
         ("ministack/empty", "0.00"), ("ministack/partial", "45.00"), ("ministack/solution", "100.00")], \
         [(r.name, r.actual, r.detail) for r in results]
+
+
+@pytest.mark.docker
+async def test_lambda_dynamodb_labtest_on_ministack(real_runner):
+    """Mission 7 (Lambda + DynamoDB): the function is invoked by the probe, must save the order in the
+    table (scanned afterwards) and return the total. MiniStack is the only engine that runs Lambda code."""
+    from app.labtest import check_pack
+    results = await check_pack(Path(LABS) / "lambda-dynamodb", real_runner)
+    assert [(r.name, str(r.actual)) for r in results] == [
+        ("ministack/empty", "0.00"), ("ministack/partial", "55.00"), ("ministack/solution", "100.00")], \
+        [(r.name, r.actual, r.detail) for r in results]

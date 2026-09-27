@@ -26,5 +26,19 @@ services:
     ListRoles: {level: supported}
     DeleteRole: {level: supported}
   s3: {}
-  dynamodb: {}
+  dynamodb:
+    # Verified against MiniStack 1.5.16 by the DynamoDB contract test (all 12 declared ops run on this
+    # engine); declaring the console set also makes the DynamoDB console available in MiniStack labs.
+    CreateTable: {level: supported}
+    ListTables: {level: supported}
+    DescribeTable: {level: supported}
+    UpdateTable: {level: supported}
+    TagResource: {level: supported}
+    ListTagsOfResource: {level: supported}
+    PutItem: {level: supported}
+    GetItem: {level: supported}
+    Query: {level: supported}
+    Scan: {level: supported}
+    DeleteItem: {level: supported}
+    DeleteTable: {level: supported}
   ec2: {}

@@ -18,7 +18,7 @@ scripts\demo-reset.ps1  # or: ./scripts/demo-reset.sh
 ```
 
 `demo-reset` must end with `RESULT: READY`. It wipes previous demo data and demo sandboxes, reseeds the
-accounts below and the course *Cloud Computing Demo*, imports the six lab packs (Missions 1–6) and checks the
+accounts below and the course *Cloud Computing Demo*, imports the seven lab packs (Missions 1–7) and checks the
 database, runner and sandbox images.
 
 | Role | Email | Password |

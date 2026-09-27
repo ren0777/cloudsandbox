@@ -72,6 +72,15 @@ TEMPLATES: tuple[Template, ...] = (
         highlights=("Create a function", "Environment variables", "Invoke with a test event"),
     ),
     Template(
+        id="lambda-dynamodb",
+        title="Lambda + DynamoDB",
+        summary="A serverless order service: store orders in DynamoDB and total them with a Lambda function.",
+        services=("lambda", "dynamodb"),
+        difficulty="advanced",
+        source_lab_id="lambda-dynamodb",
+        highlights=("Create a DynamoDB table", "Create a Lambda function", "Save and total an order"),
+    ),
+    Template(
         id="iam-breakfix",
         title="IAM break-fix",
         summary="Start from a broken IAM setup and fix it without breaking the team.",

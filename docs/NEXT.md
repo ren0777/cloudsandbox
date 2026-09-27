@@ -67,9 +67,14 @@ codename.
 - `docs/INSTRUCTOR-QUICKSTART.md` + an in-app first-run card and quickstart links.
 
 ### 44 New teaching templates (richer labs)
-- **Lambda + DynamoDB** combined pack (function writes/reads a table), then VPC and SQS/SNS when their
-  consoles are added. Each new template must pass `app.labtest` (empty 0 / partial / solution 100) on every
-  engine it may run on before it appears in the gallery.
+- **Lambda + DynamoDB** combined pack ☑ (Mission 7, done — see STATUS 44a and D45): table + function that
+  saves and totals an order; MiniStack declares the 12 DynamoDB contract ops; labtest 0/55/100 on MiniStack;
+  template `lambda-dynamodb`.
+- **VPC** next: console, checks, capabilities on the primary engines, a lab pack and labtest. VPC unlocks
+  richer real-world labs (public/private subnets, routing, security groups) than another isolated service.
+- **SQS/SNS** after that, in the same shape.
+- Each new lab must pass `app.labtest` (empty 0 / partial / solution 100) on every engine it may run on
+  before it appears in the gallery.
 
 ## After phase 9
 Deploy on a real server (docs/DEPLOYMENT.md) → run it with actual students → collect feedback → expand AWS

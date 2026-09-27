@@ -215,7 +215,7 @@ $ aws iam detach-group-policy ...   ✓ fixed`}</pre>
           </div>
           <ul className="lp-list">
             <li>One command to build the sandbox images and the stack.</li>
-            <li>Six ready-made labs and an instructor Lab Builder.</li>
+            <li>Seven ready-made labs and an instructor Lab Builder.</li>
             <li>Postgres backup/restore, TLS and multi-runner deployment guides.</li>
           </ul>
         </div>

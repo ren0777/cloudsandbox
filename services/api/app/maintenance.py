@@ -3,7 +3,10 @@ bypassed ONLY here, explicitly, with the owner role — never by request handler
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from .config import get_settings
@@ -16,15 +19,23 @@ ALL_TABLES = ("task_results", "grades", "grading_evidence", "attempts", "termina
 
 
 async def wipe_all() -> None:
-    """Delete every row (tests only)."""
+    """Delete every row (tests only). A straggler background writer can hold a row lock while the TRUNCATE
+    takes its AccessExclusiveLock, so a detected deadlock is retried instead of failing the test setup."""
     eng = create_async_engine(get_settings().database_owner_url)
     try:
-        async with eng.begin() as conn:
-            for t in APPEND_ONLY_TABLES:
-                await conn.execute(text(f"ALTER TABLE {t} DISABLE TRIGGER USER"))
-            await conn.execute(text("TRUNCATE " + ", ".join(ALL_TABLES) + " CASCADE"))
-            for t in APPEND_ONLY_TABLES:
-                await conn.execute(text(f"ALTER TABLE {t} ENABLE TRIGGER USER"))
+        for attempt in range(5):
+            try:
+                async with eng.begin() as conn:
+                    for t in APPEND_ONLY_TABLES:
+                        await conn.execute(text(f"ALTER TABLE {t} DISABLE TRIGGER USER"))
+                    await conn.execute(text("TRUNCATE " + ", ".join(ALL_TABLES) + " CASCADE"))
+                    for t in APPEND_ONLY_TABLES:
+                        await conn.execute(text(f"ALTER TABLE {t} ENABLE TRIGGER USER"))
+                return
+            except DBAPIError as e:
+                if "deadlock" not in str(e).lower() or attempt == 4:
+                    raise
+                await asyncio.sleep(0.2 * (attempt + 1))
     finally:
         await eng.dispose()
 
