@@ -28,6 +28,8 @@ services:
 
   api:
     image: cloudlabs-authoring/api:dev
+    labels:
+      cloudlabs.env: authoring  # must match CL_ENV so the runner attaches this control plane to sandboxes
     environment:
       CL_RUNNER_ID: runner-authoring
       CL_RUNNER_SECRET: dev-runner-authoring-secret
