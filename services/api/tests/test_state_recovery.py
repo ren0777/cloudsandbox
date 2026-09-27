@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import DBAPIError
 
+from app.config import get_settings
 from app.db import sessionmaker
 from app.models import (
     Attempt,
@@ -38,7 +39,7 @@ ALL = list(S)
 async def _mk_session(world, state: S) -> LabSession:
     async with sessionmaker()() as db:
         s = LabSession(user_id=world.alice.id, assignment_id=world.assignment.id,
-                       lab_version_id=world.lab_version.id, runner_id="runner-local-1", env="test",
+                       lab_version_id=world.lab_version.id, runner_id=get_settings().runner_id, env="test",
                        state=state, variables={"student_short_id": "alice1", "bucket": BUCKET},
                        resources={}, ttl_minutes=45, idle_minutes=20)
         db.add(s)

@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from app.auth.routes import create_user
+from app.config import get_settings
 from app.db import sessionmaker
 from app.models import Attempt, Enrolment, LabSession, Role, Runner
 from app.runtime import fleet
@@ -22,7 +23,7 @@ from tests.conftest import PASSWORD, idem, login, wait_state
 from tests.fakes import FakeRunner
 from tests.test_courses_roster import audits
 
-A, B = "runner-local-1", "runner-b"
+A, B = get_settings().runner_id, "runner-b"  # the platform runner id is configurable
 
 
 @pytest.fixture

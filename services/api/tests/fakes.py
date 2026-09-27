@@ -17,6 +17,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from app.config import get_settings
 from app.runtime.runner_client import RunnerError
 
 
@@ -27,9 +28,9 @@ def _free_port() -> int:
 
 
 class FakeRunner:
-    def __init__(self, max_sandboxes: int = 4, runner_id: str = "runner-local-1",
+    def __init__(self, max_sandboxes: int = 4, runner_id: str | None = None,
                  engines: dict[str, bool] | None = None):
-        self.runner_id = runner_id
+        self.runner_id = runner_id or get_settings().runner_id
         self.engines = engines if engines is not None else {"moto": True, "floci": True, "ministack": True}
         self.max_sandboxes = max_sandboxes
         self.sandboxes: dict[str, dict[str, Any]] = {}
