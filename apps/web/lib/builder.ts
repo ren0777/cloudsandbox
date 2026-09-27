@@ -80,6 +80,12 @@ export type LabVersionRow = {
   builtin: boolean; shared: boolean; mine: boolean; owner: { id: string; name: string | null } | null;
 };
 
+/** A curated starting point (phase 9, milestone 40): a working built-in lab offered as a template. */
+export type Template = {
+  id: string; title: string; summary: string; services: string[]; difficulty: "starter" | "intermediate" | "advanced";
+  highlights: string[]; source_lab_id: string; available: boolean; latest_version: string | null;
+};
+
 export type PreviewTask = { id: string; title: string; description: string; hints: string[]; marks: string };
 export type Preview = {
   lab: { id: string; version: string; title: string; summary: string; story: string; services: string[]; kind: string;

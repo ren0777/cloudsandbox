@@ -67,6 +67,9 @@ journey with the session freeze, and terminal ticket rules. Run the browser E2E 
   sharing, assignment refusal for invisible labs, demo reset) and `test_lab_builder_publish.py` (test run +
   publish gate on the FakeRunner, interrupted runs and the test cap, reconciler keeps in-flight test
   sandboxes, immutability, plus a docker-marked real-sandbox clone of Mission 1). E2E `lab-builder.spec.ts`.
+- **Phase 9 (authoring):** `test_lab_builder.py` also covers the template catalogue (availability against the
+  installed built-in packs) and starting a draft from a template (fresh id/version/title, files carried,
+  break-fix setup read-only, audit, 404/403). E2E `lab-builder.spec.ts` has a template-gallery test.
 - **E2E:** the DEMO.md flow in Chromium, including `docker ps` cleanup checks. It writes screenshots to
   `docs/screenshots/`.
 

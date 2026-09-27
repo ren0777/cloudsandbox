@@ -86,6 +86,12 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | 39 | Docs and full regression; merged to `main` | ☑ | **Full regression green, 2026-09-26:** API **292 passed, 1 skipped** (the skip is the two-runner gateway test when `runner2` is not registered; re-run with `runner2` up: **1/1 passed**), runner **16/16** (real Docker), `python -m app.labtest` on all six lab packs **0/partial/100 PASS on every engine**, browser E2E **14/14** including `e2e/lab-builder.spec.ts` and `e2e/fleet.spec.ts` (runner-local-2 registered, gateway). Found and fixed **D37** (reconciler reaped in-flight `labtest` sandboxes). Phase-8 docs added to LAB-AUTHORING / SECURITY / ARCHITECTURE / TESTING / DEMO (2026-09-27); fast-forward merged into `main` |
 | R6 | **Phase 8 regression (Lab Builder)** | ☑ | **Fresh full regression from `46d4ed2`, 2026-09-27:** API **294 passed, 0 skipped** (incl. real-Docker and the two-runner gateway test with runner-local-2 registered), runner **16/16** (real Docker), `python -m app.labtest` on all six lab packs **0/partial/100 PASS on every engine** (lambda on MiniStack; the rest on moto and floci), browser E2E **14/14** incl. `e2e/lab-builder.spec.ts` and `e2e/fleet.spec.ts`. D38 review closed a clock-skew hole in D37 (a future/non-finite `created_at` no longer grants the orphan grace window). Fast suite `-m "not docker"`: 265 passed, 29 deselected; reconciler tests 12 passed. Web `npm run typecheck` clean. Supersedes the 2026-09-26 run (API 292 + 1 skip, before the D38 test) |
 
+**Phase 9: Authoring excellence** (branch `feat/authoring-excellence`, plan in `docs/NEXT.md`)
+
+| # | Milestone | State | Verification evidence |
+|---|---|---|---|
+| 40 | Template gallery and guided New-lab start | ☑ | `GET builder/templates` (curated, resolved against the latest built-in version, `available: false` when the pack is not installed) and `POST builder/drafts {source: "template", template_id, title?}` → a fresh draft: id `<title-slug>-<short id>`, version `1.0.0`, the author's title, all files carried (a break-fix `public/setup.sh` stays read-only), audited with `template_id`. Six templates from the built-in missions. UI: New-lab gallery (Start from scratch + cards with services/difficulty), dialogs scroll. `tests/test_lab_builder.py` **16 passed** (2 new); fast suite **267 passed, 29 deselected**; `tsc --noEmit` clean; `e2e/lab-builder.spec.ts` **2/2** (new template test on the real stack) (2026-09-27) |
+
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
   therefore connects all containers labelled `cloudlabs.role=control-plane` (with the matching
@@ -277,3 +283,10 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   a missing, future, `inf`/`nan` or older-than-grace value is reaped as an orphan. A rowless sandbox can therefore
   never outlive the grace window, and live sessions / running draft tests are still kept as `known`. Regression:
   `test_state_recovery.py::test_reconcile_reaps_rowless_sandboxes_with_an_implausible_age`.
+- **D39 — Lab templates.** The New-lab flow offers curated templates instead of only a blank S3 skeleton
+  (phase 9, milestone 40). A template is a built-in lab version resolved at request time
+  (`app/instructor/templates.py::TEMPLATES`), so a teacher always starts from the installed,
+  labtest-verified content; creating a draft copies the pack under a new id (`<title-slug>-<short id>`) and the
+  teacher's title at `1.0.0`. Unlike Clone, it is not a "copy" of a mission — it is the teacher's own new lab.
+  `available: false` hides a template whose built-in pack is not installed. Break-fix setup scripts are carried
+  read-only, keeping the v1 scope (no setup authoring) until milestone 41.

@@ -9,6 +9,7 @@ sandbox 0, partial optional, reference solution full marks) must pass on the cur
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -38,6 +39,7 @@ from ..obs.logging import log
 from ..runtime import emulators
 from ..runtime.runner_client import RunnerError, get_runner
 from ..tasks import background
+from . import templates as tpl
 
 router = APIRouter(prefix="/api/instructor/builder", tags=["lab-builder"])
 
@@ -73,6 +75,21 @@ async def check_types(user: User = Depends(Authz(Action.lab_manage))):
     return {"check_types": out, "common_fields": common, "services": list(Service.__args__),
             "engines": {"primary": list(emulators.ENGINES), "specialised": list(emulators.SPECIALISED)},
             "editable_files": list(dr.EDITABLE_FILES)}
+
+
+# -------------------------------------------------------------------------------------- templates
+@router.get("/templates")
+async def list_templates(user: User = Depends(Authz(Action.lab_manage)), db: AsyncSession = Depends(get_db)):
+    """Curated starting points for the New-lab gallery, resolved against the latest built-in version of
+    each source lab. `available: false` means the built-in pack is not installed on this deployment."""
+    out = []
+    for t in tpl.TEMPLATES:
+        lv = await _builtin_latest(db, t.source_lab_id)
+        out.append({"id": t.id, "title": t.title, "summary": t.summary, "services": list(t.services),
+                    "difficulty": t.difficulty, "highlights": list(t.highlights),
+                    "source_lab_id": t.source_lab_id, "available": lv is not None,
+                    "latest_version": lv.version if lv else None})
+    return {"templates": out}
 
 
 # --------------------------------------------------------------------------------------- helpers
@@ -134,12 +151,27 @@ async def _unique_slug(db: AsyncSession, base: str) -> str:
     return slug
 
 
+def _slug_from_title(title: str, short_id: str) -> str:
+    """A lab id from a teacher's title: lower-case words joined by dashes, suffixed with the author's short
+    id so two teachers naming a lab the same way can never collide (and the SLUG pattern still holds)."""
+    base = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:70].strip("-") or "lab"
+    return f"{base}-{short_id}"
+
+
+async def _builtin_latest(db: AsyncSession, lab_slug: str) -> LabVersion | None:
+    """The newest version of a built-in lab (owner_id NULL = imported from labs/ on disk)."""
+    return await db.scalar(
+        select(LabVersion).join(Lab, Lab.id == LabVersion.lab_id)
+        .where(Lab.slug == lab_slug, Lab.owner_id.is_(None))
+        .order_by(LabVersion.id.desc()).limit(1))
+
+
 def _semver(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in v.split("."))  # lab versions match SEMVER (schema v1)
 
 
 async def _create(db: AsyncSession, user: User, content: dict[str, Any], source: str,
-                  base: LabVersion | None = None) -> LabDraft:
+                  base: LabVersion | None = None, template_id: str | None = None) -> LabDraft:
     d = LabDraft(owner_id=user.id, content=content, status="draft",
                  base_lab_version_id=base.id if base else None, slug="", title="")
     _denorm(d)
@@ -147,7 +179,7 @@ async def _create(db: AsyncSession, user: User, content: dict[str, Any], source:
     await db.flush()
     await _validate(db, d)
     audit.record(db, user, "lab.draft_created", draft_id=d.id, source=source, slug=d.slug,
-                 lab_version_id=base.id if base else None)
+                 lab_version_id=base.id if base else None, template_id=template_id)
     await db.commit()
     await db.refresh(d)
     return d
@@ -164,8 +196,9 @@ async def list_drafts(user: User = Depends(Authz(Action.lab_manage)), db: AsyncS
 
 
 class DraftIn(BaseModel):
-    source: str = Field("blank", pattern=r"^(blank|clone)$")
+    source: str = Field("blank", pattern=r"^(blank|clone|template)$")
     lab_version_id: uuid.UUID | None = None  # clone: a lab version the user can see
+    template_id: str | None = Field(None, max_length=60)  # template: a curated starting point
     title: str | None = Field(None, min_length=1, max_length=200)
     slug: str | None = Field(None, pattern=SLUG)
 
@@ -173,12 +206,33 @@ class DraftIn(BaseModel):
 @router.post("/drafts", status_code=201)
 async def create_draft(body: DraftIn, user: User = Depends(Authz(Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
-    """Blank draft, or a clone of a visible lab version. Cloning your own lab prepares its next version
-    (same id, next minor version); cloning anyone else's lab (or a built-in mission) starts a new lab with a
-    new id, so it can never overwrite the original."""
+    """Blank draft, a clone of a visible lab version, or a fresh lab from a curated template. Cloning your
+    own lab prepares its next version (same id, next minor version); cloning anyone else's lab (or a
+    built-in mission) starts a new lab with a new id, so it can never overwrite the original."""
     if body.source == "blank":
         slug = await _unique_slug(db, body.slug or f"new-lab-{user.short_id}")
         return await _out(db, await _create(db, user, dr.blank_content(slug, body.title or "Untitled lab"), "blank"))
+    if body.source == "template":
+        if not body.template_id:
+            raise ApiError("validation_error", "template_id is required to start from a template", 400)
+        t = tpl.BY_ID.get(body.template_id)
+        if t is None:
+            raise ApiError("template_not_found", "no such lab template", 404)
+        lv = await _builtin_latest(db, t.source_lab_id)
+        if lv is None:
+            raise ApiError("template_unavailable", "this template's built-in lab is not installed", 409)
+        lv, _lab = await load_lab_version_visible(db, user, lv.id)
+        pub, priv = await get_bundle(db, lv.id, "public"), await get_bundle(db, lv.id, "private")
+        try:
+            content = dr.content_from_bundles(pub.data, priv.data)
+        except LabValidationError as e:
+            raise _invalid(e) from e
+        lab_def = content["lab"]
+        title = (body.title or t.title)[:200]
+        lab_def["id"] = await _unique_slug(db, body.slug or _slug_from_title(title, user.short_id))
+        lab_def["version"] = "1.0.0"
+        lab_def["title"] = title
+        return await _out(db, await _create(db, user, content, "template", base=lv, template_id=t.id))
     if body.lab_version_id is None:
         raise ApiError("validation_error", "lab_version_id is required to clone", 400)
     lv, lab = await load_lab_version_visible(db, user, body.lab_version_id)

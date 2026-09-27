@@ -177,9 +177,12 @@ a hidden empty-order test.
 
 ## Optional: Instructor Lab Builder (about 6 minutes)
 1. As **demo-instructor**, nav **Labs**: *My drafts*, *My labs*, *Shared labs* and *Built-in missions*.
-   Point out that a built-in mission (e.g. Mission 1) offers **Clone** and **Export**.
-2. **Clone** Mission 1. The draft opens on Overview with a green validation panel; the Tasks tab shows the
-   checks as generated forms, and **Preview** shows the student view (no checks, no private files).
+   Point out that a built-in mission (e.g. Mission 1) offers **Clone** and **Export**. Choose **New lab**
+   to show the template gallery (S3 basics, DynamoDB basics, IAM least privilege, EC2 web server, Lambda,
+   IAM break-fix) — a working lab, not a blank page.
+2. **Clone** Mission 1 (or start from the S3 basics template). The draft opens on Overview with a green
+   validation panel; the Tasks tab shows the checks as generated forms, and **Preview** shows the student
+   view (no checks, no private files).
 3. Change the first task title, **Save**, then open **YAML** to show the same change. Return to **Test &
    publish** and choose **Run test**: it runs untouched (0), partial (50) and solution (100) in real sandboxes
    on moto and floci. *Publish* stays disabled until the run passes.

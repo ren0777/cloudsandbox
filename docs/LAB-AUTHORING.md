@@ -134,8 +134,12 @@ Assignments pin a lab version, so editing a pack never changes what running assi
 Instructors can create, test and publish labs from the browser instead of editing files on the server
 (`/instructor/labs`, phase 8). It writes the same schema-v1 packs described above.
 
-- **New / Clone / Import.** *New* starts from a small S3 template. *Clone* copies any lab version you can
-  see: a built-in mission or another author's lab becomes a new id `<id>-<your short id>` at `1.0.0`
+- **New / Templates / Clone / Import.** *New* opens a gallery: **Start from scratch** (a small S3 lab) or a
+  **template** — a working built-in lab offered as a starting point (S3 basics, DynamoDB basics, IAM least
+  privilege, EC2 web server, Lambda serverless, IAM break-fix). A template becomes **your own** lab: new id
+  `<title-slug>-<your short id>`, version `1.0.0`, your title, with all tasks, checks, reference solution and
+  expected scores carried over (`GET /api/instructor/builder/templates`). *Clone* copies any lab version you
+  can see: a built-in mission or another author's lab becomes a new id `<id>-<your short id>` at `1.0.0`
   (titled "… (copy)"), while cloning **your own** lab prepares its next minor version (same id, e.g.
   `1.1.0`). *Import* accepts a `.tar.gz`/`.tar` pack exported from the builder.
 - **Editor.** Overview (including variables), Tasks and Scripts are a form builder; the check parameter

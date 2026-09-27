@@ -92,3 +92,20 @@ test("instructor clones, tests and publishes a lab; a student starts it", async 
   await stu.getByTestId("confirm-action").click();
   await sctx.close();
 });
+
+// Phase 9 milestone 40: the New-lab gallery starts a fresh lab from a curated template (no YAML needed).
+test("instructor starts a lab from a template", async ({ page }) => {
+  await signIn(page, "demo-instructor@cloudlabs.demo");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Labs", exact: true }).click();
+  await page.getByTestId("new-lab").click();
+  await expect(page.getByTestId("template-gallery")).toBeVisible();
+  await page.getByTestId("template-s3-basics").click();
+  await expect(page.getByTestId("new-lab-title")).toHaveValue("S3 basics");
+  await page.getByTestId("new-lab-title").fill("Template lab");
+  await page.getByTestId("new-lab-create").click();
+  await page.waitForURL(/\/instructor\/labs\/drafts\//);
+  await expect(page.getByTestId("draft-title")).toHaveText("Template lab");
+  await expect(page.getByTestId("validation-ok")).toBeVisible();
+  await page.getByTestId("tab-tasks").click();
+  await expect(page.getByTestId("task-card").first().getByTestId("task-title")).toHaveValue(/Create the S3 bucket/);
+});
