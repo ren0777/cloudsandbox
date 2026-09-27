@@ -18,7 +18,7 @@ export function Shell({ children, wide = false }: { children: React.ReactNode; w
   return (
     <>
       <header className="topbar">
-        <Link href="/" className="brand"><span className="dot" aria-hidden />CloudLabs</Link>
+        <Link href="/" className="brand"><span className="dot" aria-hidden />Stackora</Link>
         <nav aria-label="Main">
           {links.map((l) => (
             <Link key={l.href} href={l.href} aria-current={current(path, l.href, links) ? "page" : undefined}>{l.label}</Link>

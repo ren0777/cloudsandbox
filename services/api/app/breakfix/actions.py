@@ -122,7 +122,7 @@ register(BreakActionDef("s3.delete_bucket_tagging", Bucket, "s3", ("s3:DeleteBuc
 # -------------------------------------------------------------------------------------------- EC2
 class SecurityGroup(ActionParams):
     group: str = Field(pattern=SG_NAME)
-    description: str = Field("Created by CloudLabs break-fix setup", pattern=TEXT)
+    description: str = Field("Created by Stackora break-fix setup", pattern=TEXT)
 
 
 class IngressRule(ActionParams):

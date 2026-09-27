@@ -26,7 +26,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { void reload(); }, [reload]);
   useEffect(() => {
-    if (!loading && !me && path !== "/login") router.replace(`/login?next=${encodeURIComponent(path)}`);
+    // The public marketing site ("/") and the login page are reachable without an account.
+    const isPublic = path === "/" || path === "/login";
+    if (!loading && !me && !isPublic) router.replace(`/login?next=${encodeURIComponent(path)}`);
     // Roster-created accounts must replace their temporary password before anything else.
     if (!loading && me?.must_change_password && path !== "/account/password") router.replace("/account/password");
   }, [loading, me, path, router]);

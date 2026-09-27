@@ -136,7 +136,7 @@ async def create_function(session_id: uuid.UUID, body: CreateFunctionIn, user: U
                           db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     if body.architecture != "x86_64":
-        raise ApiError("not_in_simulator", "Only the x86_64 architecture is available in the CloudLabs simulator.", 409)
+        raise ApiError("not_in_simulator", "Only the x86_64 architecture is available in the Stackora simulator.", 409)
     if body.role_mode == "existing":
         if not body.role_arn:
             raise ApiError("validation_error", "choose an existing execution role", 400)

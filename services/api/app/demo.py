@@ -109,7 +109,7 @@ async def reset() -> int:
     def mark(v: bool) -> str:
         return "OK  " if v else "FAIL"
 
-    print("CloudLabs demo reset")
+    print("Stackora demo reset")
     print(f"  sandboxes destroyed : {destroyed}")
     print(f"  demo rows removed   : {sum(counts.values())}")
     for slug, version, created in imported:

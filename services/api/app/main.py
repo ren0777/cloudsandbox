@@ -74,7 +74,7 @@ async def _reconcile() -> None:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="CloudLabs API", version="0.1.0", lifespan=lifespan,
+    app = FastAPI(title="Stackora API", version="0.1.0", lifespan=lifespan,
                   docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
     errors.install(app)
 

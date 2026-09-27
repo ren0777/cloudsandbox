@@ -44,7 +44,7 @@ def require_capability(sess: LabSession, aws_service: str, fn_name: str) -> None
     op = f"{aws_service}:{operation_name(fn_name)}"
     if not caps.is_usable(op):
         entry = caps.services.get(aws_service, {}).get(operation_name(fn_name))
-        note = entry.note if entry and entry.note else "This operation isn't available in the CloudLabs simulator."
+        note = entry.note if entry and entry.note else "This operation isn't available in the Stackora simulator."
         raise ApiError("not_in_simulator", note, 409, extra={"operation": op})
 
 

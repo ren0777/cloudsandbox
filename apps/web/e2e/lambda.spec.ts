@@ -39,7 +39,7 @@ test("student builds and tests a serverless checkout function", async ({ page })
 
   // 1) GUI: create function (Author from scratch, Python 3.12, new execution role)
   await page.getByTestId("open-create-function").click();
-  await expect(page.getByText("Not available in CloudLabs simulator").first()).toBeVisible();
+  await expect(page.getByText("Not available in Stackora simulator").first()).toBeVisible();
   await page.getByTestId("function-name").fill(FN);
   await page.getByTestId("create-function").click();
   await expect(page.getByText(`Successfully created the function ${FN}.`)).toBeVisible({ timeout: 30_000 });

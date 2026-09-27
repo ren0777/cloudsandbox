@@ -13,8 +13,8 @@ from typing import Any
 import yaml
 
 DEFAULT_VERSION = "edu-2026.1"
-DISCLAIMER = ("Simulated, educational estimate using CloudLabs price table {version} (simplified us-east-1 list "
-              "prices, no free tier). This is not AWS billing: no real charges exist in CloudLabs.")
+DISCLAIMER = ("Simulated, educational estimate using the Stackora price table {version} (simplified us-east-1 list "
+              "prices, no free tier). This is not AWS billing: no real charges exist in Stackora.")
 GB = Decimal(1024 ** 3)
 Q4, Q2 = Decimal("0.0001"), Decimal("0.01")
 

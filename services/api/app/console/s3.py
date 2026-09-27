@@ -121,9 +121,9 @@ async def create_bucket(session_id: uuid.UUID, body: CreateBucketIn,
                         user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     if body.region not in SUPPORTED_REGIONS:
-        raise ApiError("not_in_simulator", "The CloudLabs simulator only provides the us-east-1 Region.", 400)
+        raise ApiError("not_in_simulator", "The Stackora simulator only provides the us-east-1 Region.", 400)
     if body.object_ownership != "BucketOwnerEnforced":
-        raise ApiError("not_in_simulator", "ACLs are not available in the CloudLabs simulator. "
+        raise ApiError("not_in_simulator", "ACLs are not available in the Stackora simulator. "
                        "Choose ACLs disabled (recommended).", 400)
     await _call(sess, "create_bucket", Bucket=body.name)
     if body.block_public_access:

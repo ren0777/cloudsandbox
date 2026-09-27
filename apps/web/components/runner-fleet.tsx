@@ -89,7 +89,7 @@ function RegisterRunner({ onClose }: { onClose: (changed: boolean) => void }) {
     <div className="dialog-backdrop" role="dialog" aria-modal aria-labelledby="rr-title" onClick={() => onClose(false)}>
       <form className="dialog stack" onClick={(e) => e.stopPropagation()} onSubmit={save} style={{ width: "min(520px, 100%)" }}>
         <h2 id="rr-title">Register a runner</h2>
-        <p className="small muted" style={{ margin: 0 }}>Start the runner on its server first (see docs/DEPLOYMENT.md). CloudLabs contacts it with these
+        <p className="small muted" style={{ margin: 0 }}>Start the runner on its server first (see docs/DEPLOYMENT.md). Stackora contacts it with these
           settings and saves it only if it answers with the same id.</p>
         <label>Runner id<input required pattern="[a-z0-9][a-z0-9-]*" minLength={3} maxLength={64} value={id} onChange={(e) => setId(e.target.value)} placeholder="runner-lab2" className="mono" /></label>
         <label>URL (reachable from the API server only)<input required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://10.0.0.12:7070" className="mono" /></label>

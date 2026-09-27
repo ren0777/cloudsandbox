@@ -39,7 +39,7 @@ function LoginForm() {
     } catch (err) {
       setError(err instanceof ApiError
         ? err.code === "rate_limited" ? "Too many attempts. Wait a minute, then try again." : "Email or password is incorrect."
-        : "Can't reach CloudLabs. Check your connection and try again.");
+        : "Can't reach Stackora. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -48,9 +48,9 @@ function LoginForm() {
   return (
     <main className="login">
       <section className="login-art" aria-hidden>
-        <div className="eyebrow" style={{ color: "#8fb3d9" }}>CloudLabs</div>
+        <div className="eyebrow" style={{ color: "#8fb3d9" }}>Stackora</div>
         <p className="login-quote">Build it for real.<br />Get marked on what you built.</p>
-        <pre className="login-term">{`cloudlabs:~$ aws s3 mb s3://cafe-7k2q9x-site
+        <pre className="login-term">{`stackora:~$ aws s3 mb s3://cafe-7k2q9x-site
 make_bucket: cafe-7k2q9x-site
 ✓ Create the bucket            25 / 25`}</pre>
       </section>

@@ -53,7 +53,7 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
     // 1) GUI: S3 → Buckets → Create bucket (AWS-style form, defaults kept).
     await page.getByTestId("open-create-bucket").click();
     await expect(page.getByRole("heading", { name: "Block Public Access settings for this bucket" })).toBeVisible();
-    await expect(page.getByText("Not available in CloudLabs simulator").first()).toBeVisible();
+    await expect(page.getByText("Not available in Stackora simulator").first()).toBeVisible();
     await page.getByTestId("new-bucket-name").fill(BUCKET);
     await page.getByTestId("create-bucket").click();
     await expect(page.getByText(`Successfully created bucket "${BUCKET}".`)).toBeVisible();
@@ -64,7 +64,7 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
     // 2) CLI proves it, then changes state.
     await page.getByTestId("tab-terminal").click();
     await expect(page.getByText("Connected")).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator(".xterm-rows")).toContainText("CloudLabs AWS CLI environment");
+    await expect(page.locator(".xterm-rows")).toContainText("Stackora AWS CLI environment");
     await termRun(page, "aws s3 ls | sed s/^/LS:/", `LS:`);
     await expect(page.locator(".xterm-rows")).toContainText(new RegExp(`LS:.*${BUCKET}`));
     await termRun(page, `aws s3api put-bucket-versioning --bucket ${BUCKET} --versioning-configuration Status=Enabled && echo VERSIONING_$((40+2))`, "VERSIONING_42");

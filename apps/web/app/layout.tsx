@@ -8,8 +8,8 @@ const body = IBM_Plex_Sans({ subsets: ["latin"], variable: "--f-body", weight: [
 const mono = IBM_Plex_Mono({ subsets: ["latin"], variable: "--f-mono", weight: ["400", "500"] });
 
 export const metadata: Metadata = {
-  title: "CloudLabs",
-  description: "Hands-on cloud labs with automatic grading.",
+  title: { default: "Stackora", template: "%s · Stackora" },
+  description: "Hands-on cloud labs with real CLI workflows and instant grading.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

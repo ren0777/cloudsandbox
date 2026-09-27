@@ -53,7 +53,7 @@ def create_app(settings: Settings | None = None, driver: DockerDriver | None = N
             threading.Thread(target=loop, name="reattach", daemon=True).start()
         yield
 
-    app = FastAPI(title="CloudLabs Runner", version=settings.version, docs_url=None, redoc_url=None,
+    app = FastAPI(title="Stackora Runner", version=settings.version, docs_url=None, redoc_url=None,
                   openapi_url=None, lifespan=lifespan)
 
     def get_driver() -> DockerDriver:

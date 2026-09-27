@@ -50,7 +50,7 @@ test("student launches a web server with a least-privilege security group", asyn
   await page.getByTestId("key-select").selectOption(KEY);
   await page.getByTestId("sg-existing").check();
   await page.getByLabel(`Security group ${SG}`).check();
-  await expect(page.getByText("Not available in CloudLabs simulator").first()).toBeVisible();
+  await expect(page.getByText("Not available in Stackora simulator").first()).toBeVisible();
   await page.getByTestId("launch-instance").click();
   await expect(page.getByText(`Successfully initiated launch of instance ${INSTANCE}.`)).toBeVisible();
   await expect(page.getByTestId("instance-row")).toHaveCount(2);

@@ -1,9 +1,14 @@
-# CloudLabs
+# Stackora
 
-Hands-on AWS labs for college courses, with automatic grading. Each student gets an **isolated simulated AWS
-cloud** in Docker (no AWS account, no cost, no internet). They work in an **AWS-style console** or with the
-**real AWS CLI** in a browser terminal, and are graded on the **actual state** of what they built, using immutable,
-explainable evidence that instructors can inspect.
+**Launch it. Break it. Fix it.** — Hands-on cloud labs with real CLI workflows and instant grading.
+
+Each student gets an **isolated simulated AWS cloud** in Docker (no AWS account, no cost, no internet). They
+work in an **AWS-style console** or with the **real AWS CLI** in a browser terminal, and are graded on the
+**actual state** of what they built, using immutable, explainable evidence that instructors can inspect.
+
+> **Branding:** **Stackora** is the public product name. The repository, Python/Node packages, Docker images,
+> database identifiers and API contracts keep the `cloudlabs` codename for compatibility. Older docs and
+> release notes may say CloudLabs; they mean Stackora.
 
 **Version 0.1.0.** S3, DynamoDB, IAM, EC2 and Lambda; guided and break-fix labs; instructor and admin tools;
 multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES.md). Verified status:
@@ -17,6 +22,8 @@ multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES
   until **shared** with all instructors; packs export/import as deterministic `.tar.gz`. See
   [docs/LAB-AUTHORING.md](docs/LAB-AUTHORING.md#instructor-lab-builder-browser) and, for the security
   boundary, [docs/SECURITY.md](docs/SECURITY.md). Optional walkthrough: [docs/DEMO.md](docs/DEMO.md).
+- **Public landing page** at `/` (Stackora marketing site), with `/login` as the authentication page and the
+  authenticated app behind it.
 
 ## Prerequisites
 - Docker Desktop (Windows with the WSL2 backend, or macOS) or Docker Engine 24+ with Compose v2 (Linux).

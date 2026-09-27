@@ -54,7 +54,7 @@ test("student completes the DynamoDB lab with console and CLI", async ({ page })
   await page.getByTestId("partition-key").fill("orderId");
   await page.getByTestId("customize-settings").check();
   await page.getByTestId("mode-on-demand").check();
-  await expect(page.getByText("Not available in CloudLabs simulator").first()).toBeVisible();
+  await expect(page.getByText("Not available in Stackora simulator").first()).toBeVisible();
   await page.getByTestId("create-table").click();
   await expect(page.getByText(`The ${TABLE} table was created successfully.`)).toBeVisible();
   await expect(page.getByRole("cell", { name: "On-demand" })).toBeVisible();

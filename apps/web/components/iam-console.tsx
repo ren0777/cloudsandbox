@@ -548,7 +548,7 @@ function Simulator(ctx: Ctx) {
   const label = (d: string) => d === "allowed" ? ["pass", "Allowed"] : d === "explicit_deny" ? ["fail", "Denied (explicit)"] : ["fail", "Denied"];
   return (
     <form onSubmit={run}>
-      <div className="panel"><div className="panel-head"><h3>Policy simulator</h3><span className="pill info">Simulated by CloudLabs</span></div>
+      <div className="panel"><div className="panel-head"><h3>Policy simulator</h3><span className="pill info">Simulated by Stackora</span></div>
         <div className="panel-body">
           <p className="help" style={{ margin: 0 }}>Tests identity-based policies (the user&apos;s own and its groups&apos;) the way IAM evaluates them: an explicit deny wins, then an allow, otherwise an implicit deny. Conditions aren&apos;t evaluated.</p>
           <label>Principal<select value={principal} onChange={(e) => setPrincipal(e.target.value)} style={{ maxWidth: 360 }} data-testid="sim-principal">

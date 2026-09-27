@@ -46,7 +46,14 @@ and Reset reproducibility; **no raw setup script editor** in the instructor UI.
   the console/terminal before running the publish gate. It needs a session-like sandbox access path and is
   deliberately separate from the test/publish flow.
 
+### 42a Stackora brand + public landing page ☑ (done, see STATUS 42a and D42)
+Public product name is **Stackora**; a premium marketing page at `/` (hero, services, features, screenshots,
+Apache-2.0, CTAs). The authenticated app stays behind `/login`; internal identifiers keep the `cloudlabs`
+codename.
+
 ### 42 Preview, test and publish clarity
+- An interactive **preview sandbox** (M41b): launch the authored starting state and inspect it in the console
+  and terminal, with Reset reconstructing it. Never creates an attempt, grade, XP, badge or leaderboard event.
 - A **publish-readiness checklist** (valid? tested on the *current* content? version free? title?) as the
   first thing on the Test tab, with one next action.
 - Test results: per-scenario summary that says what to fix, with the failing task/check linked to its row.
