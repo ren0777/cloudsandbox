@@ -1,6 +1,9 @@
 // Stackora public landing page. Marketing only: the authenticated application lives behind /login, so this
-// page never reads session state or redirects. Keep it a server component (no client hooks needed).
+// page never reads session state or redirects. Keep it a server component; the session-aware CTA fragments
+// it renders are client components (components/landing-cta.tsx) so signed-in visitors see their account
+// instead of the sign-in buttons.
 import Link from "next/link";
+import { LandingNavCtas, LandingPrimaryCtas } from "@/components/landing-cta";
 
 const SERVICES = [
   { name: "S3", line: "Buckets, versioning, policies, objects" },
@@ -93,10 +96,7 @@ export default function Landing() {
             <a href="#screens">Screenshots</a>
             <a href="#open-source">Open source</a>
           </nav>
-          <div className="lp-nav-cta">
-            <Link href="/login" className="lp-btn ghost">Sign in</Link>
-            <Link href="/login" className="lp-btn primary" data-testid="cta-try">Try the demo</Link>
-          </div>
+          <LandingNavCtas />
         </div>
       </header>
 
@@ -107,10 +107,7 @@ export default function Landing() {
             <h1>Stackora</h1>
             <p className="lp-tag">Launch it. Break it. Fix it.</p>
             <p className="lp-sub">Hands-on cloud labs with real CLI workflows and instant grading.</p>
-            <div className="lp-ctas">
-              <Link href="/login" className="lp-btn primary lg" data-testid="cta-primary">Try the demo</Link>
-              <Link href="/login?next=/instructor" className="lp-btn outline lg" data-testid="cta-instructor">For instructors</Link>
-            </div>
+            <LandingPrimaryCtas testId="cta-primary" instructorTestId="cta-instructor" />
             <p className="lp-note">Runs entirely on your hardware · No AWS account · Apache-2.0</p>
           </div>
           <div className="lp-hero-art" aria-hidden>
@@ -228,10 +225,7 @@ $ aws iam detach-group-policy ...   ✓ fixed`}</pre>
         <div className="lp-wrap">
           <h2>Ready to launch it?</h2>
           <p className="lp-lede">Start the demo, open a sandbox and get graded in minutes.</p>
-          <div className="lp-ctas center">
-            <Link href="/login" className="lp-btn primary lg" data-testid="cta-final">Try the demo</Link>
-            <Link href="/login?next=/instructor" className="lp-btn outline lg">For instructors</Link>
-          </div>
+          <LandingPrimaryCtas center testId="cta-final" />
         </div>
       </section>
 
@@ -260,6 +254,8 @@ $ aws iam detach-group-policy ...   ✓ fixed`}</pre>
         .lp-nav nav a { color: #b9c6e2; padding: 8px 12px; border-radius: 8px; font-size: 14px; }
         .lp-nav nav a:hover { color: #fff; background: rgba(255,255,255,.06); text-decoration: none; }
         .lp-nav-cta { margin-left: auto; display: flex; gap: 8px; }
+        .lp-nav-cta .lp-who { align-self: center; color: #cfd9ef; font-size: 13.5px; }
+        .lp-nav-cta .lp-who:hover { color: #fff; text-decoration: none; }
         .lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 10px; padding: 10px 16px; font-weight: 600; font-size: 14px; border: 1px solid transparent; transition: transform .08s ease, background .15s ease; }
         .lp-btn:hover { text-decoration: none; transform: translateY(-1px); }
         .lp-btn.lg { padding: 13px 22px; font-size: 15px; }
@@ -345,6 +341,7 @@ $ aws iam detach-group-policy ...   ✓ fixed`}</pre>
         @media (max-width: 640px) {
           .lp-services, .lp-grid, .lp-shots { grid-template-columns: 1fr; }
           .lp-grade { position: static; margin-top: 14px; }
+          .lp-nav-cta .lp-who { display: none; }
         }
       `}</style>
     </div>
