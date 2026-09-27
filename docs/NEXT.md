@@ -60,11 +60,11 @@ codename.
 - Preview: choose the sample variables / student identity, and show "what the student sees" next to "what
   is graded" (without leaking hidden checks).
 
-### 43 Instructor validation (no developer help)
-- A Playwright "new instructor" journey: sign in → start from a template → edit a task → test → publish →
-  assign → a student starts it, with no developer intervention.
-- A quickstart doc ("Your first lab in 15 minutes") and, if useful, short screen recordings/screenshots.
-- Success test: hand it to a teacher who has never seen the repo; they complete the journey unaided.
+### 43 Instructor validation (no developer help) ☑ (done — see STATUS 43)
+- `e2e/instructor-first-run.spec.ts`: create course → roster → lab from a template → edit tasks/checks →
+  starting state → preview → readiness → publish → assign → student completion → instructor evidence, with
+  **no YAML, shell, database or developer tooling**. Passed with no blockers.
+- `docs/INSTRUCTOR-QUICKSTART.md` + an in-app first-run card and quickstart links.
 
 ### 44 New teaching templates (richer labs)
 - **Lambda + DynamoDB** combined pack (function writes/reads a table), then VPC and SQS/SNS when their

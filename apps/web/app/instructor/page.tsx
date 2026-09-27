@@ -23,7 +23,25 @@ export default function InstructorHome() {
           <button className="primary" onClick={() => setCreating(true)} data-testid="new-course">New course</button>
         </div>
         <ErrorBanner error={error} />
-        {courses?.length === 0 && <div className="card flat muted">You aren&apos;t teaching any courses yet. Choose <strong>New course</strong> to start one.</div>}
+        {courses?.length === 0 && (
+          <section className="card" data-testid="first-run">
+            <h2>Your first run</h2>
+            <p className="muted small" style={{ margin: "6px 0 0" }}>
+              Four steps from an empty account to a graded class — all in the browser, no YAML, shell or
+              developer tooling.
+            </p>
+            <ol className="stack" style={{ gap: 8, margin: "12px 0 0", paddingLeft: 20 }}>
+              <li><strong>Create a course</strong> — choose <strong>New course</strong>; you are added as its instructor.</li>
+              <li><strong>Import your roster</strong> — paste a CSV on the course page, preview it, then import.</li>
+              <li><strong>Build a lab</strong> — <strong>Labs → New lab</strong>, pick a template, edit the generated forms, test and publish.</li>
+              <li><strong>Assign it</strong> — <strong>New assignment</strong> on the course page; students see it in <em>My labs</em>.</li>
+            </ol>
+            <p className="small" style={{ margin: "12px 0 0" }}>
+              <a href="https://github.com/ren0777/cloudsandbox/blob/main/docs/INSTRUCTOR-QUICKSTART.md"
+                target="_blank" rel="noreferrer" data-testid="quickstart-link">Read the instructor quickstart →</a>
+            </p>
+          </section>
+        )}
         {courses?.map((c) => (
           <section key={c.id} className="card" data-testid="course-card">
             <div className="row between">

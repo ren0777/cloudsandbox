@@ -74,6 +74,7 @@ Load test: [docs/LOADTEST.md](docs/LOADTEST.md).
 | [docs/LOADTEST.md](docs/LOADTEST.md) | Class-scale load test and results |
 | [docs/EMULATOR-EVALUATION.md](docs/EMULATOR-EVALUATION.md) | Why Floci (default), Moto (regression) and MiniStack (Lambda code) |
 | [docs/DEMO.md](docs/DEMO.md) | Reproducible teacher demonstration |
+| [docs/INSTRUCTOR-QUICKSTART.md](docs/INSTRUCTOR-QUICKSTART.md) | Your first lab, step by step, in the browser (no YAML or shell) |
 
 ## Repository
 ```

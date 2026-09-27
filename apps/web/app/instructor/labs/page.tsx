@@ -85,7 +85,9 @@ export default function LabLibrary() {
       <div className="stack" style={{ gap: 20 }}>
         <div className="row between">
           <div><div className="eyebrow">Lab Builder</div><h1>Labs</h1>
-            <p className="lede" style={{ margin: "6px 0 0" }}>Write your own labs, test them in real sandboxes and publish them for your courses.</p></div>
+            <p className="lede" style={{ margin: "6px 0 0" }}>Write your own labs, test them in real sandboxes and publish them for your courses.{" "}
+              <a href="https://github.com/ren0777/cloudsandbox/blob/main/docs/INSTRUCTOR-QUICKSTART.md"
+                target="_blank" rel="noreferrer" data-testid="quickstart-link">First-run guide</a>.</p></div>
           <div className="row">
             <input ref={fileRef} type="file" accept=".tar.gz,.tgz,.tar,application/gzip" hidden data-testid="import-file"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void importPack(f); }} />
