@@ -30,6 +30,17 @@ class CheckSpec(BaseModel):
         return dict(self.model_extra or {})
 
 
+class BreakActionSpec(BaseModel):
+    """One declarative starting-state operation (phase 9, milestone 41). Extra keys are that action's
+    typed parameters, validated by the break-action registry — never instructor-written shell."""
+    model_config = ConfigDict(extra="allow")
+    type: str = Field(pattern=r"^[a-z0-9]+\.[a-z0-9_]+$")
+
+    @property
+    def params(self) -> dict[str, Any]:
+        return dict(self.model_extra or {})
+
+
 class TaskSpec(Strict):
     id: str = Field(pattern=TASK_ID)
     title: str = Field(min_length=1, max_length=200)
@@ -56,6 +67,12 @@ class SetupSpec(Strict):
     timeout_s: int = Field(60, ge=1, le=180)
 
 
+class BaselineSpec(Strict):
+    """The score the broken starting state is expected to earn (0 by default). A break-fix lab may
+    deliberately start partially correct; validation refuses a baseline at or above full marks."""
+    expected_score: Decimal = Field(Decimal(0), ge=0, decimal_places=2)
+
+
 class RuntimeSpec(Strict):
     # "default" = the platform's default engine. Naming an engine is for exceptional labs only (e.g. a
     # Lambda lab that needs an engine able to execute code); labs must not depend on engine quirks.
@@ -80,6 +97,9 @@ class LabV1(Strict):
     requires: list[str] = Field(default_factory=list)
     resources: ResourcesSpec | None = None
     setup: SetupSpec | None = None
+    # break_fix: declarative starting-state actions (preferred) or a legacy setup script, not both.
+    break_actions: list[BreakActionSpec] = Field(default_factory=list, max_length=20)
+    baseline: BaselineSpec | None = None
     tasks: list[TaskSpec] = Field(min_length=1, max_length=50)
 
     @field_validator("variables")
@@ -103,8 +123,20 @@ class LabV1(Strict):
         ids = [t.id for t in self.tasks]
         if len(ids) != len(set(ids)):
             raise ValueError("task ids must be unique")
-        if self.kind == "break_fix" and self.setup is None:
-            raise ValueError("a break_fix lab needs a setup script that creates the broken state")
+        if self.kind == "break_fix":
+            if self.setup is None and not self.break_actions:
+                raise ValueError("a break_fix lab needs break_actions (or a legacy setup script) to create "
+                                 "the broken state")
+            if self.setup is not None and self.break_actions:
+                raise ValueError("a break_fix lab uses break_actions or a setup script, not both")
+            if self.baseline and self.baseline.expected_score >= self.max_score:
+                raise ValueError("baseline.expected_score must be below full marks: the broken state must "
+                                 "not already pass")
+        else:
+            if self.setup is not None or self.break_actions:
+                raise ValueError("only a break_fix lab may define setup or break_actions")
+            if self.baseline is not None:
+                raise ValueError("only a break_fix lab may define a baseline")
         return self
 
     @property

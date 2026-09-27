@@ -109,3 +109,24 @@ test("instructor starts a lab from a template", async ({ page }) => {
   await page.getByTestId("tab-tasks").click();
   await expect(page.getByTestId("task-card").first().getByTestId("task-title")).toHaveValue(/Create the S3 bucket/);
 });
+
+// Phase 9 milestone 41: a break-fix starting state is authored with typed actions, never shell.
+test("instructor authors a break-fix starting state with typed actions", async ({ page }) => {
+  await signIn(page, "demo-instructor@cloudlabs.demo");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Labs", exact: true }).click();
+  await page.getByTestId("new-lab").click();
+  await page.getByTestId("new-lab-title").fill("Broken bucket lab");
+  await page.getByTestId("new-lab-create").click();
+  await page.waitForURL(/\/instructor\/labs\/drafts\//);
+
+  await page.getByTestId("tab-start").click();
+  await page.getByTestId("make-break-fix").click();
+  await page.getByTestId("add-break-action").click();
+  await page.getByTestId("break-action-type").selectOption("s3.create_bucket");
+  await page.getByTestId("param-bucket").fill("{{ bucket }}");
+  await expect(page.getByTestId("broken-state")).toContainText("Bucket lab-");
+  await expect(page.getByTestId("baseline-score")).toHaveValue("0");
+  await page.getByTestId("save-draft").click();
+  await expect(page.getByTestId("save-draft")).toBeDisabled();
+  await expect(page.getByTestId("validation-ok")).toBeVisible();
+});

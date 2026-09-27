@@ -1,12 +1,14 @@
 "use client";
-// Lab Builder editor (phase 8): Overview, Tasks (check forms generated from the grader's parameter schemas),
-// Scripts, YAML, student Preview and Test & publish, with an always-visible validation panel.
+// Lab Builder editor (phase 8, plus the phase 9 Starting state tab): Overview, Tasks (check forms generated
+// from the grader's parameter schemas), Starting state (typed break actions), Scripts, YAML, student Preview
+// and Test & publish, with an always-visible validation panel.
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { OverviewTab } from "@/components/lab-builder/overview";
 import { PreviewTab } from "@/components/lab-builder/preview";
 import { ScriptsTab } from "@/components/lab-builder/scripts";
+import { StartingStateTab } from "@/components/lab-builder/starting-state";
 import { TasksTab } from "@/components/lab-builder/tasks";
 import { TestPublishTab } from "@/components/lab-builder/test-publish";
 import { ValidationPanel } from "@/components/lab-builder/validation";
@@ -18,8 +20,9 @@ import { type Catalogue, type Content, type Draft, type ErrorRow, type Lab, STAT
   type Validation } from "@/lib/builder";
 
 const TABS = [
-  { id: "overview", label: "Overview" }, { id: "tasks", label: "Tasks" }, { id: "scripts", label: "Scripts" },
-  { id: "yaml", label: "YAML" }, { id: "preview", label: "Preview" }, { id: "test", label: "Test & publish" },
+  { id: "overview", label: "Overview" }, { id: "tasks", label: "Tasks" }, { id: "start", label: "Starting state" },
+  { id: "scripts", label: "Scripts" }, { id: "yaml", label: "YAML" }, { id: "preview", label: "Preview" },
+  { id: "test", label: "Test & publish" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 const SAVE_FIRST: Tab[] = ["yaml", "preview", "test"];  // these show the saved draft
@@ -106,7 +109,8 @@ export default function DraftEditor() {
   }
 
   function jump(row: ErrorRow) {
-    if (row.task) { setFocusTask(row.task); void go("tasks"); setTimeout(() => document.getElementById(`task-${row.task}`)?.scrollIntoView({ block: "start", behavior: "smooth" }), 50); }
+    if (row.break_action != null) void go("start");
+    else if (row.task) { setFocusTask(row.task); void go("tasks"); setTimeout(() => document.getElementById(`task-${row.task}`)?.scrollIntoView({ block: "start", behavior: "smooth" }), 50); }
     else if (row.loc?.startsWith("private/") || row.loc?.startsWith("public/") || row.message.startsWith("private/")) void go("scripts");
     else void go("overview");
   }
@@ -153,10 +157,11 @@ export default function DraftEditor() {
               ))}
             </div>
             <div className="card" role="tabpanel">
-              {(tab === "overview" || tab === "tasks" || tab === "scripts") && (
+              {(tab === "overview" || tab === "tasks" || tab === "start" || tab === "scripts") && (
                 <fieldset disabled={readOnly} className="lb-plain" key={rev}>
                   {tab === "overview" && <OverviewTab lab={lab} catalogue={catalogue} validation={draft.validation} onChange={setLab} />}
                   {tab === "tasks" && <TasksTab lab={lab} catalogue={catalogue} validation={draft.validation} focusTask={focusTask} onChange={setLab} />}
+                  {tab === "start" && <StartingStateTab lab={lab} validation={draft.validation} onChange={setLab} />}
                   {tab === "scripts" && <ScriptsTab content={content} readOnlyFiles={draft.read_only_files} validation={draft.validation} onFile={setFile} />}
                 </fieldset>
               )}

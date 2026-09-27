@@ -17,11 +17,11 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import audit, labtest
+from .. import audit, breakfix, labtest
 from ..auth.policy import Action, Authz, load_draft_for, load_lab_version_visible
 from ..config import get_settings
 from ..db import get_db, sessionmaker
@@ -30,10 +30,10 @@ from ..grader import registry
 from ..grader.checks import load_all
 from ..labs import drafts as dr
 from ..labs.importer import get_bundle, import_package
-from ..labs.package import LabPackage
-from ..labs.render import compute_variables, student_lab_view
-from ..labs.schema import LabValidationError
-from ..labs.schema.v1 import SLUG, CheckSpec, Service
+from ..labs.package import SAMPLE_SHORT_ID, LabPackage
+from ..labs.render import compute_variables, render_break_actions, student_lab_view
+from ..labs.schema import LabValidationError, parse_definition
+from ..labs.schema.v1 import SLUG, BreakActionSpec, CheckSpec, Service
 from ..models import Lab, LabDraft, LabVersion, Role, User
 from ..obs.logging import log
 from ..runtime import emulators
@@ -75,6 +75,54 @@ async def check_types(user: User = Depends(Authz(Action.lab_manage))):
     return {"check_types": out, "common_fields": common, "services": list(Service.__args__),
             "engines": {"primary": list(emulators.ENGINES), "specialised": list(emulators.SPECIALISED)},
             "editable_files": list(dr.EDITABLE_FILES)}
+
+
+# ------------------------------------------------------------------------------------ break actions
+@router.get("/break-actions")
+async def break_actions(user: User = Depends(Authz(Action.lab_manage))):
+    """Every typed break action (phase 9, milestone 41) with its parameter JSON Schema, so the Lab Builder
+    can generate the starting-state forms. Instructors never write shell: actions compile to setup."""
+    breakfix.load_all()
+    out = [{"type": t, "service": a.service, "params_schema": a.params_model.model_json_schema()}
+           for t, a in sorted(breakfix.REGISTRY.items())]
+    return {"break_actions": out}
+
+
+class BreakActionsIn(BaseModel):
+    lab: dict[str, Any] | None = None  # the draft's lab; break actions are read from it and rendered
+    break_actions: list[BreakActionSpec] = Field(default_factory=list, max_length=20)
+
+
+@router.post("/break-actions/summary")
+async def break_actions_summary(body: BreakActionsIn, user: User = Depends(Authz(Action.lab_manage))):
+    """The Broken State Summary: one human line per action, from the same definitions the compiler uses.
+    Send the draft's `lab` so `{{ variables }}` are rendered with a sample student; invalid actions come
+    back as errors instead of lines."""
+    specs = body.break_actions
+    if body.lab is not None:
+        try:
+            d = parse_definition(body.lab)
+            specs = render_break_actions(d.break_actions, compute_variables(d, SAMPLE_SHORT_ID))
+        except LabValidationError as e:
+            return {"lines": [], "errors": list(e.errors)}
+        except Exception as e:  # jinja errors
+            return {"lines": [], "errors": [f"break_actions: template error: {e}"]}
+    lines: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for i, spec in enumerate(specs, 1):
+        where = f"{i}. {spec.type}"
+        try:
+            defn = breakfix.get(spec.type)
+        except KeyError:
+            errors.append(f"{where}: unknown break action type")
+            continue
+        try:
+            params = defn.params_model.model_validate(spec.params)
+        except ValidationError as e:
+            errors += [f"{where}: {'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
+            continue
+        lines.append({"type": spec.type, "service": defn.service, "summary": defn.summary(params)})
+    return {"lines": lines, "errors": errors}
 
 
 # -------------------------------------------------------------------------------------- templates

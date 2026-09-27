@@ -39,7 +39,8 @@ export type Catalogue = {
   editable_files: string[];
 };
 
-export type ErrorRow = { message: string; loc: string | null; task: string | null; check: number | null; field: string | null };
+export type ErrorRow = { message: string; loc: string | null; task: string | null; check: number | null;
+  field: string | null; break_action?: number | null };
 export type Validation = { ok: boolean; errors: ErrorRow[]; content_sha256: string | null; validated_at?: string };
 
 export type CheckResult = {
@@ -59,10 +60,12 @@ export type DraftStatus = "draft" | "testing" | "passed" | "failed" | "published
 export type Check = { type: string; hidden?: boolean; weight?: number; feedback?: string | null; [param: string]: unknown };
 export type Task = { id: string; title: string; description?: string; hints?: string[]; marks: number | string;
   scoring?: "all" | "proportional"; checks: Check[] };
+export type BreakAction = { type: string; [param: string]: unknown };
 export type Lab = {
   schema_version: number; id: string; version: string; title: string; kind?: string; summary?: string; story?: string;
   services: string[]; runtime?: { emulator?: string }; duration_minutes: number; idle_minutes?: number | null;
   max_attempts?: number; variables?: Record<string, string>; requires?: string[]; setup?: { script: string; timeout_s?: number } | null;
+  break_actions?: BreakAction[]; baseline?: { expected_score: number | string } | null;
   tasks: Task[]; [other: string]: unknown;
 };
 export type Content = { lab: Lab; files: Record<string, string> };
@@ -183,6 +186,7 @@ export function errorsFor(v: Validation | null, task: string, check: number | nu
 }
 
 export function rowLabel(e: ErrorRow): string {
+  if (e.break_action != null) return `Starting state · action ${e.break_action + 1}${e.field ? ` · ${e.field}` : ""}`;
   if (e.task && e.check) return `Task ${e.task} · check ${e.check}${e.field ? ` · ${e.field}` : ""}`;
   if (e.task) return `Task ${e.task}${e.field ? ` · ${e.field}` : ""}`;
   return e.loc ?? "Lab";

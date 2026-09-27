@@ -36,6 +36,7 @@ from .runtime.runner_client import RunnerClient, get_runner
 
 LABTEST_SHORT_ID = "labtst"
 SCRIPTS = {"partial": "partial.sh", "solution": "solution.sh"}
+RESET = "reset"  # break-fix only: a Reset must reproduce the same broken baseline
 
 
 @dataclass
@@ -69,27 +70,47 @@ def _job_bundle(pkg: LabPackage, script: str, variables: dict[str, str]) -> dict
             "script": "_labtest_run.sh", "timeout_s": 120}
 
 
+async def _score(runner: RunnerClient, pkg: LabPackage, engine: str, endpoint: str,
+                 variables: dict[str, str]) -> dict:
+    d = pkg.definition
+    payload = await ev.capture(endpoint, collectors_for(d), engine, probes_for(d, variables))
+    return grade(d, variables, payload)
+
+
 async def run_scenario(runner: RunnerClient, pkg: LabPackage, name: str, expected: Decimal,
                        engine: str, sandbox_id: str | None = None) -> ScenarioResult:
     s = get_settings()
     d = pkg.definition
     variables = compute_variables(d, LABTEST_SHORT_ID)
     sid = sandbox_id or str(uuid.uuid4())
+    req = {
+        "sandbox_id": sid, "env": s.env, "engine": engine,
+        "terminal_credential": f"labtest:{secrets.token_hex(12)}",
+        "emulator": {"cpus": s.emulator_cpus, "memory_mib": s.emulator_memory_mib, "pids": s.emulator_pids},
+        "terminal": {"cpus": s.terminal_cpus, "memory_mib": s.terminal_memory_mib, "pids": s.terminal_pids},
+        "setup": setup_job(pkg.public_bundle, d, variables),
+    }
     try:
-        info = await runner.create_sandbox({
-            "sandbox_id": sid, "env": s.env, "engine": engine,
-            "terminal_credential": f"labtest:{secrets.token_hex(12)}",
-            "emulator": {"cpus": s.emulator_cpus, "memory_mib": s.emulator_memory_mib, "pids": s.emulator_pids},
-            "terminal": {"cpus": s.terminal_cpus, "memory_mib": s.terminal_memory_mib, "pids": s.terminal_pids},
-            "setup": setup_job(pkg.public_bundle, d, variables)})
+        info = await runner.create_sandbox(req)
         detail = ""
+        if name == RESET:
+            first = await _score(runner, pkg, engine, info["emulator_endpoint"], variables)
+            reset = {k: v for k, v in req.items() if k in ("emulator", "terminal", "terminal_credential", "setup")}
+            info = await runner.reset_sandbox(sid, reset)
+            second = await _score(runner, pkg, engine, info["emulator_endpoint"], variables)
+            if first["score"] != second["score"]:
+                return ScenarioResult(name, expected, None,
+                                      f"reset changed the baseline: {first['score']} -> {second['score']}",
+                                      engine, to_json(second))
+            failed = [f"{t['task_id']}" for t in second["tasks"] if not t["passed"]]
+            detail = f"reset reproduced the baseline; failed tasks: {', '.join(failed) or '-'}"
+            return ScenarioResult(name, expected, second["score"], detail, engine, to_json(second))
         if name in SCRIPTS:
             res = await runner.run_job(sid, _job_bundle(pkg, SCRIPTS[name], variables))
             if res["exit_code"] != 0:
                 return ScenarioResult(name, expected, None, f"{SCRIPTS[name]} exited {res['exit_code']}: "
                                                             f"{res['output'][-400:]}", engine)
-        payload = await ev.capture(info["emulator_endpoint"], collectors_for(d), engine, probes_for(d, variables))
-        result = grade(d, variables, payload)
+        result = await _score(runner, pkg, engine, info["emulator_endpoint"], variables)
         failed = [f"{t['task_id']}" for t in result["tasks"] if not t["passed"]]
         detail = f"failed tasks: {', '.join(failed) or '-'}"
         return ScenarioResult(name, expected, result["score"], detail, engine, to_json(result))
@@ -109,9 +130,12 @@ def expected_scores(pkg: LabPackage) -> dict[str, Decimal]:
 
 def scenario_plan(pkg: LabPackage, expected: dict[str, Decimal], engine: str | None = None) -> list[tuple[str, str]]:
     """(engine, scenario) pairs in run order. engine=None: every engine the lab may run on (all primary
-    engines for 'default' labs)."""
+    engines for 'default' labs). A break-fix lab additionally proves that a Reset reproduces its baseline."""
     engines = [engine] if engine else list(emulators.candidates(pkg.definition.runtime.emulator))
-    return [(eng, name) for eng in engines for name in ("empty", "partial", "solution") if name in expected]
+    names = [n for n in ("empty", "partial", "solution") if n in expected]
+    if pkg.definition.kind == "break_fix":
+        names.append(RESET)
+    return [(eng, name) for eng in engines for name in names]
 
 
 async def check_pack(pack: str | Path | LabPackage, runner: RunnerClient | None = None,
@@ -127,7 +151,7 @@ async def check_pack(pack: str | Path | LabPackage, runner: RunnerClient | None 
     out = []
     for eng, name in scenario_plan(pkg, expected, engine):
         key = f"{eng}/{name}"
-        r = await run_scenario(runner, pkg, name, expected[name], eng,
+        r = await run_scenario(runner, pkg, name, expected["empty"] if name == RESET else expected[name], eng,
                                sandbox_id_for(key) if sandbox_id_for else None)
         r.name = key
         out.append(r)

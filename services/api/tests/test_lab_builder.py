@@ -115,6 +115,41 @@ async def test_template_errors_and_access(world):
     assert (await stu.post(f"{B}/drafts", json={"source": "template", "template_id": "s3-basics"})).status_code == 403
 
 
+# ----------------------------------------------------------------------------- break actions (M41)
+async def test_break_action_catalogue_and_break_fix_draft(world):
+    c = await login(world.instructor)
+    r = await c.get(f"{B}/break-actions")
+    assert r.status_code == 200, r.text
+    acts = {a["type"]: a for a in r.json()["break_actions"]}
+    assert {"iam.attach_managed_policy", "s3.disable_versioning", "ec2.authorize_ingress",
+            "lambda.remove_env_var"} <= set(acts)
+    assert {"target_type", "target", "policy"} <= set(acts["iam.attach_managed_policy"]["params_schema"]["properties"])
+
+    d = await new_draft(c)
+    actions = [{"type": "iam.create_group", "group": "baristas-{{ student_short_id }}"},
+               {"type": "iam.attach_managed_policy", "target_type": "group",
+                "target": "baristas-{{ student_short_id }}", "policy": "AdministratorAccess"}]
+    lab = d["content"]["lab"] | {"kind": "break_fix", "services": ["s3", "iam"], "break_actions": actions}
+    r = await c.put(f"{B}/drafts/{d['id']}", json={"lab": lab})
+    assert r.status_code == 200 and r.json()["validation"]["ok"], r.json()["validation"]
+    assert r.json()["content"]["lab"]["break_actions"] == actions
+    assert r.json()["read_only_files"] == []  # compiled actions need no setup file
+
+    r = await c.post(f"{B}/break-actions/summary", json={"lab": lab})
+    lines = r.json()["lines"]
+    assert r.json()["errors"] == [] and len(lines) == 2
+    assert "AdministratorAccess" in lines[1]["summary"]
+    assert "baristas-abc123" in lines[1]["summary"]
+
+    bad = lab | {"break_actions": [{"type": "nope.nope"}]}
+    r = await c.put(f"{B}/drafts/{d['id']}", json={"lab": bad})
+    v = r.json()["validation"]
+    assert not v["ok"] and any(e["break_action"] == 0 for e in v["errors"]), v["errors"]
+
+    stu = await login(world.alice)
+    assert (await stu.get(f"{B}/break-actions")).status_code == 403
+
+
 # --------------------------------------------------------------------------- drafts + ownership
 async def test_blank_draft_crud_and_ownership(world):
     c = await login(world.instructor)

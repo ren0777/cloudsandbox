@@ -32,19 +32,19 @@ clarity; templates (S3 basics, IAM least privilege, EC2 web server, Lambda + Dyn
 - Still open: a combined **"Lambda + DynamoDB"** template (needs a new lab pack and a labtest pass on
   MiniStack) — milestone 44.
 
-### 41 Break-fix starting-state builders (needs the owner's model decision)
-Today a break-fix `setup.sh` is carried read-only; v1 never authors it. To let teachers create break-fix
-labs, pick one:
-- **(A) Curated typed break actions (recommended).** A catalogue of safe, reversible operations per service
-  (IAM: attach `AdministratorAccess` / remove a policy from a group; S3: delete a bucket policy; EC2:
-  remove an ingress rule / stop an instance; Lambda: clear an env var), each with a parameter form
-  generated from a Pydantic model, composed into a deterministic `setup.sh`. Reset re-runs setup, and the
-  builder previews the broken state in a sandbox before testing.
-- **(B) Sandboxed raw `setup.sh` editing.** Full power, but the teacher writes shell; a live preview run is
-  the only safety net. More support burden, less "no YAML" friendly.
-- **(C) Both:** typed actions for common cases, raw script as an escape hatch.
-Acceptance for whichever is chosen: the broken baseline scores 0, the reference solution 100; validation
-refuses a setup that leaves the lab already solved.
+### 41 Break-fix starting-state builders ☑ (option A, done — see STATUS 41 and D40)
+The owner chose **A only** (2026-09-27): typed break actions, a deterministic compiler, baseline validation
+and Reset reproducibility; **no raw setup script editor** in the instructor UI.
+- `lab.yaml` `break_actions` (typed) + `baseline.expected_score`; compiled by `app/breakfix/` into the setup
+  the runner executes; validated against engine capabilities at import.
+- Lab Builder **Starting state** tab: forms generated from each action's Pydantic schema, Broken State
+  Summary, kind toggle, baseline input. Legacy packs keep their read-only setup script.
+- labtest runs a `reset` scenario for break-fix packs: setup → baseline → Reset → baseline must match.
+- Verification: a real compiled pack scored baseline 0 and 40 → solution 100 → Reset reproduced the
+  baseline, on moto and floci.
+- **Remaining (M41b):** an interactive **preview sandbox** — launch the broken environment and inspect it in
+  the console/terminal before running the publish gate. It needs a session-like sandbox access path and is
+  deliberately separate from the test/publish flow.
 
 ### 42 Preview, test and publish clarity
 - A **publish-readiness checklist** (valid? tested on the *current* content? version free? title?) as the

@@ -70,6 +70,13 @@ journey with the session freeze, and terminal ticket rules. Run the browser E2E 
 - **Phase 9 (authoring):** `test_lab_builder.py` also covers the template catalogue (availability against the
   installed built-in packs) and starting a draft from a template (fresh id/version/title, files carried,
   break-fix setup read-only, audit, 404/403). E2E `lab-builder.spec.ts` has a template-gallery test.
+- **Phase 9 (break actions, M41):** `test_breakfix_actions.py` covers the typed registry, compiler
+  determinism and shell quoting, the schema rules (`break_actions` XOR setup, baseline below full marks),
+  import-time validation (unknown type, parameters, service, engine capabilities), the compiled setup bundle
+  and the baseline/expected-score contract. `test_lab_builder.py` covers the break-action catalogue endpoint,
+  saving a break-fix draft and the Broken State Summary. `labtest` adds a `reset` scenario for break-fix
+  packs; the real-runtime check (baseline 0 and 40 → solution 100 → Reset reproduces the baseline) is verified
+  on moto and floci. E2E `lab-builder.spec.ts` has a Starting-state test.
 - **E2E:** the DEMO.md flow in Chromium, including `docker ps` cleanup checks. It writes screenshots to
   `docs/screenshots/`.
 

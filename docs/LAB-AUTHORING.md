@@ -28,7 +28,9 @@ variables:                        # rendered per student; student_short_id is bu
 requires: [s3:CreateBucket, s3:PutBucketVersioning]   # emulator operations students need
 resources:                        # optional; clamped to admin caps
   emulator: {memory_mib: 512}
-setup: {script: setup.sh, timeout_s: 60}             # optional, file in public/
+setup: {script: setup.sh, timeout_s: 60}             # optional legacy break-fix setup, file in public/
+break_actions: []                                    # break_fix: typed starting-state actions (preferred)
+baseline: {expected_score: "0.00"}                   # break_fix: score the broken state should earn
 tasks:
   - id: create-bucket
     title: "Create the bucket {{ bucket }}"
@@ -89,19 +91,46 @@ Instances are simulated records: they have a state but no running machine. Check
 import.
 
 ## Break-fix labs
-Set `kind: break_fix` and provide a `setup` script in `public/`. Setup runs in a short-lived job container
-before the lab starts and again on **Reset**, with the AWS CLI pointed at the sandbox and every variable
-exported in upper case (`$GROUP`, `$STUDENT_SHORT_ID`, …). It builds the broken environment. Tasks then check
-the **repaired final state**. Rules of thumb:
-- The untouched broken state must score **0** (`private/expected.yaml` `empty`); labtest runs setup first.
-- Grade the outcome, not the steps: use `expect: absent` for "remove this", `iam.policy_allows` with
-  `expect: deny` for "can no longer", and `absent_ok: true` when deleting the principal is a valid fix.
+Set `kind: break_fix` and describe the broken starting state with **typed break actions** in `lab.yaml`.
+Actions are declarative data, never instructor-written shell: each is a safe operation with a typed
+parameter model, and CloudLabs compiles them into the setup that runs in a short-lived job container before
+the lab starts and again on **Reset**, with the AWS CLI pointed at the sandbox and every variable exported
+in upper case (`$GROUP`, `$STUDENT_SHORT_ID`, …). Tasks then check the **repaired final state**.
+
+```yaml
+kind: break_fix
+break_actions:
+  - {type: iam.create_group, group: "{{ group }}"}
+  - {type: iam.attach_managed_policy, target_type: group, target: "{{ group }}", policy: AdministratorAccess}
+  - {type: s3.disable_versioning, bucket: "{{ bucket }}"}
+  - {type: ec2.authorize_ingress, group: "{{ group }}", protocol: tcp, port: 22, cidr: 0.0.0.0/0}
+  - {type: lambda.remove_env_var, function: "{{ function }}", name: TABLE_NAME}
+baseline: {expected_score: "0.00"}   # or e.g. "40.00" when the lab intentionally starts partly correct
+```
+
+The catalogue (services, action types, parameter JSON Schema) is `GET /api/instructor/builder/break-actions`;
+the Lab Builder's **Starting state** tab generates its forms from it and shows the Broken State Summary. The
+catalogue covers IAM (create group/user, membership, attach/detach a managed policy), S3 (create bucket,
+versioning, bucket policy, public access, tags), EC2 (security group, ingress rules) and Lambda (remove an
+environment variable); new typed actions are added in `services/api/app/breakfix/`. Import-time validation
+rejects an unknown action, bad parameters, a service not listed in `services`, and any action an engine
+cannot perform.
+
+Rules of thumb:
+- The untouched broken state must score `baseline.expected_score` (0 unless the lab starts partly correct);
+  `private/expected.yaml`'s `empty` must match it, and it must be **below full marks**. labtest runs setup
+  first.
+- labtest also **resets** the sandbox and re-scores it: Reset must reproduce the identical baseline.
+- Grade the outcome, not the steps: `expect: absent` for "remove this", `iam.policy_allows` with
+  `expect: deny` for "can no longer", `absent_ok: true` when deleting the principal is a valid fix.
 - Add at least one check that a lazy "fix" fails, such as deleting everything or granting `*`. Hidden checks
   work well here.
-- The setup script isn't secret (it describes the problem). Keep solutions in `private/`.
+- The compiled setup isn't secret (it describes the problem). Keep solutions in `private/`.
 - The baseline is captured after setup, so an untouched auto-submit doesn't use an attempt.
 
-Example: `labs/iam-breakfix` (Mission 6).
+Legacy packs (like `labs/iam-breakfix`) may instead carry a `setup` script in `public/`; it runs the same
+way. A lab uses `break_actions` **or** a setup script, never both; the Lab Builder carries a legacy setup
+script read-only.
 
 ## The simulator is honest
 Every operation in `requires`, and every operation a check reads, must be `supported` or `simulated` in
