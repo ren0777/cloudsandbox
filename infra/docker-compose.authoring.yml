@@ -1,0 +1,46 @@
+# Isolation override for running this checkout next to another one (project `cloudlabs`).
+#
+#   COMPOSE_PROJECT_NAME=cloudlabs-authoring \
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.authoring.yml --profile multi up -d --build
+#
+# It gives this worktree its own project name, host ports, runner ids, sandbox env, app image tags and
+# terminal image tag, so containers, networks, volumes, runners and test databases can never be shared with
+# the other project. The emulator image tags are shared (same content, never rebuilt here).
+services:
+  postgres:
+    ports: !override ["127.0.0.1:56432:5432"]
+  gateway:
+    ports: !override ["127.0.0.1:3100:3000"]
+
+  runner:
+    image: cloudlabs-authoring/runner:dev
+    environment:
+      RUNNER_ID: runner-authoring
+      RUNNER_SECRET: dev-runner-authoring-secret
+      RUNNER_TERMINAL_IMAGE: cloudlabs-authoring/terminal:dev
+
+  runner2:
+    image: cloudlabs-authoring/runner:dev
+    environment:
+      RUNNER_ID: runner-authoring-2
+      RUNNER_SECRET: dev-runner-authoring-2-secret
+      RUNNER_TERMINAL_IMAGE: cloudlabs-authoring/terminal:dev
+
+  api:
+    image: cloudlabs-authoring/api:dev
+    environment:
+      CL_RUNNER_ID: runner-authoring
+      CL_RUNNER_SECRET: dev-runner-authoring-secret
+      CL_ENV: authoring
+      CL_ALLOWED_ORIGINS: '["http://localhost:3100"]'
+
+  api-test:
+    image: cloudlabs-authoring/api:dev
+    environment:
+      CL_RUNNER_ID: runner-authoring
+      CL_RUNNER_SECRET: dev-runner-authoring-secret
+      CL_ENV: test
+      CL_ALLOWED_ORIGINS: '["http://testserver", "http://localhost:3100"]'
+
+  web:
+    image: cloudlabs-authoring/web:dev
