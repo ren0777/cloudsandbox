@@ -4,9 +4,31 @@
 (regression backend) and MiniStack (specialised engine) under the same locked-down sandbox, and which
 engine should be the default **per service**?
 
-This is *preparation only*: no student UI, no lab packs, no template, no API endpoints and **no change to
-the production defaults** were made. The deliverable is evidence, capability declarations, contract
-tests and the proposals below.
+This is *preparation only* for SQS and SNS: no student UI, no lab packs, no template, no API endpoints and
+**no change to the production defaults** were made. The deliverable is evidence, capability declarations,
+contract tests and the proposals below. **VPC has since been implemented** from these proposals — see
+"VPC implementation status" at the end.
+
+## VPC implementation status (landed 2026-09-28)
+
+The VPC proposal is implemented end to end, using exactly this evaluation's operation set:
+
+- `app/console/vpc.py`: 17 endpoints (overview, VPCs, subnets, route tables/routes/associations,
+  internet gateways, security groups with rule editing), resources addressed by `Name` tags and
+  capability-filtered through the adapter (`vpc` → boto3 `ec2`).
+- `vpc` evidence collector + six checks (`vpc.exists`, `vpc.subnet`, `vpc.route`,
+  `vpc.subnet_route_table`, `vpc.internet_gateway_attached`, `vpc.security_group_rule`); the architecture
+  diagram gained a network map; VPC is free in the cost meter (as on AWS).
+- `vpc-basics` (guided) and `vpc-breakfix` (typed `vpc.*` break actions, baseline 25) pass `app.labtest`
+  on **moto and floci**, are seeded by the demo reset and appear as Lab Builder templates.
+- `apps/web/components/vpc-console.tsx` + capability-gated nav; E2E `e2e/vpc.spec.ts` **2/2** (Mission 8
+  scores 100; Mission 9 repairs the broken network in the console).
+- Deviations worth recording: measurements changed three timeouts, because a CLI-driven break-action
+  setup is ~20-30 AWS CLI calls: compiled setup cap 60 → **180 s**, `runner_timeout_s` 150 → **240 s**,
+  gateway `proxy_read_timeout` 180 → **300 s**. The console orders named (lab) resources before the
+  unnamed engine defaults, so create dialogs default to the student's own VPC/gateway.
+- Engine quirks stayed where they belong: no check depends on ids, ARNs or `DependencyViolation`, and
+  nothing outside the capability/adapter layer knows which engine runs.
 
 ## Scope and method
 
@@ -252,7 +274,10 @@ POST   /console/sns/topics/{name}/publish          # {subject, message}         
 
 - `tests/test_vpc.py`, `tests/test_sqs.py`, `tests/test_sns.py`: **13 passed** (4 fast parity/mapping
   tests + 9 real-sandbox contract tests on Moto, Floci and MiniStack through the runner).
-- Full fast API suite (`-m "not docker"`) re-run with these changes (result recorded in STATUS).
+- VPC implementation: `tests/test_vpc_console.py` (pure grading, console journey, rules editing,
+  break-fix state, break-action compiler) plus labtest in `tests/test_vpc.py`
+  (`vpc-basics` 0/50/100 and `vpc-breakfix` 25/65/100 + Reset on **moto and floci**); E2E
+  `apps/web/e2e/vpc.spec.ts` **2/2** on the compose stack.
 - `tools/emulator-bakeoff/m44-results/{moto,floci,ministack}.txt` + `versions.txt` hold the raw probe
   evidence (68 result rows per engine, container health, memory, emulator errors).
 - Re-run `m44_bakeoff.sh` and the three contract files on every emulator version bump, as with the
@@ -260,9 +285,9 @@ POST   /console/sns/topics/{name}/publish          # {subject, message}         
 
 ## Deliberately not done (and open items)
 
-- No student console pages, no `CONSOLE_OPS` entries, no lab packs/templates, no grader checks or
-  evidence collectors yet — proposals only (above).
-- No production default change and no `lab.yaml` schema change.
-- Open: implement `vpc`/`sqs`/`sns` collectors + checks; console pages; a
+- SQS and SNS are still proposals: no console pages, no `CONSOLE_OPS` entries, no lab packs/templates,
+  no grader checks or evidence collectors for them yet (VPC is implemented — see the top of this file).
+- No production default change and no `lab.yaml` schema change beyond adding `vpc` to the service list.
+- Open: implement `sqs`/`sns` collectors + checks and console pages in the VPC shape; a
   **Lambda + SQS + DynamoDB** template (MiniStack, in-process) and a **VPC + EC2** template (Floci);
   decide whether any lab needs Moto pinned for `DependencyViolation`.

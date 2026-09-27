@@ -179,6 +179,68 @@ def collect_ec2(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, 
             "key_pairs": keys}
 
 
+def collect_vpc(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, Any]:
+    """VPCs, subnets, route tables (routes + associations), internet gateways (attachments) and security
+    groups (ingress + egress), keyed by Name tags. Resource ids, ARNs and AZs are deliberately left out,
+    so the evidence is engine-independent and lab checks address resources the way the console shows them."""
+    c = adapter.client("vpc", endpoint)
+
+    def tag_name(res: dict[str, Any]) -> str:
+        return {t["Key"]: t["Value"] for t in res.get("Tags", [])}.get("Name", "")
+
+    def key(res: dict[str, Any], fallback: str) -> str:
+        return tag_name(res) or fallback
+
+    vpcs_raw = c.describe_vpcs().get("Vpcs", [])
+    subnets_raw = c.describe_subnets().get("Subnets", [])
+    rtbs_raw = c.describe_route_tables().get("RouteTables", [])
+    igws_raw = c.describe_internet_gateways().get("InternetGateways", [])
+    sgs_raw = c.describe_security_groups().get("SecurityGroups", [])
+    vpc_name = {v["VpcId"]: key(v, v["VpcId"]) for v in vpcs_raw}
+    subnet_name = {s["SubnetId"]: key(s, s["SubnetId"]) for s in subnets_raw}
+    igw_name = {g["InternetGatewayId"]: key(g, g["InternetGatewayId"]) for g in igws_raw}
+
+    vpcs: dict[str, Any] = {}
+    for v in vpcs_raw:
+        vpcs[key(v, v["VpcId"])] = {"name": tag_name(v), "cidr": v.get("CidrBlock"),
+                                    "is_default": bool(v.get("IsDefault"))}
+    subnets: dict[str, Any] = {}
+    for s in subnets_raw:
+        subnets[key(s, s["SubnetId"])] = {"name": tag_name(s), "cidr": s.get("CidrBlock"),
+                                          "vpc": vpc_name.get(s.get("VpcId", ""), ""),
+                                          "public": bool(s.get("MapPublicIpOnLaunch"))}
+    route_tables: dict[str, Any] = {}
+    for r in rtbs_raw:
+        routes = []
+        for x in r.get("Routes", []):
+            gateway = x.get("GatewayId")
+            local = x.get("Origin") == "CreateRouteTable" or not (gateway or x.get("NatGatewayId"))
+            target = "local" if local else f"igw:{igw_name.get(gateway, gateway)}"
+            routes.append({"destination": x.get("DestinationCidrBlock") or x.get("DestinationIpv6CidrBlock", ""),
+                           "target": target, "state": x.get("State", "active")})
+        associations = [{"subnet": subnet_name.get(a.get("SubnetId", ""), a.get("SubnetId", "")),
+                         "main": bool(a.get("Main"))} for a in r.get("Associations", [])]
+        route_tables[key(r, r["RouteTableId"])] = {
+            "name": tag_name(r), "vpc": vpc_name.get(r.get("VpcId", ""), ""),
+            "routes": sorted(routes, key=lambda x: (x["destination"] or "", x["target"])),
+            "associations": sorted(associations, key=lambda a: (not a["main"], a["subnet"]))}
+    internet_gateways: dict[str, Any] = {}
+    for g in igws_raw:
+        attachments = g.get("Attachments") or []
+        internet_gateways[key(g, g["InternetGatewayId"])] = {
+            "name": tag_name(g), "vpc": vpc_name.get(attachments[0].get("VpcId", ""), "") if attachments else ""}
+    security_groups: dict[str, Any] = {}
+    for g in sgs_raw:
+        security_groups[g.get("GroupName") or g["GroupId"]] = {
+            "name": g.get("GroupName", ""), "description": g.get("Description", ""),
+            "vpc": vpc_name.get(g.get("VpcId", ""), ""),
+            "ingress": _rules(g.get("IpPermissions", [])), "egress": _rules(g.get("IpPermissionsEgress", []))}
+    return {"vpcs": dict(sorted(vpcs.items())), "subnets": dict(sorted(subnets.items())),
+            "route_tables": dict(sorted(route_tables.items())),
+            "internet_gateways": dict(sorted(internet_gateways.items())),
+            "security_groups": dict(sorted(security_groups.items()))}
+
+
 def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Runs the lab's invocation probes FIRST (their output and side effects become evidence), then records
     function configuration. No timestamps, versions or code locations."""
@@ -218,7 +280,8 @@ def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: li
 
 
 COLLECTORS: dict[str, Callable[[emulators.EmulatorAdapter, str], dict[str, Any]]] = {
-    "s3": collect_s3, "dynamodb": collect_dynamodb, "iam": collect_iam, "ec2": collect_ec2, "lambda": collect_lambda}
+    "s3": collect_s3, "dynamodb": collect_dynamodb, "iam": collect_iam, "ec2": collect_ec2,
+    "vpc": collect_vpc, "lambda": collect_lambda}
 
 
 def canonical(obj: Any) -> bytes:

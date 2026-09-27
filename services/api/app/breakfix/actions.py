@@ -166,3 +166,138 @@ def _compile_remove_env(p: RemoveEnvVar) -> list[str]:
 register(BreakActionDef("lambda.remove_env_var", RemoveEnvVar, "lambda", ("lambda:UpdateFunctionConfiguration",),
                         _compile_remove_env,
                         lambda p: f"Function {p.function} is missing the environment variable {p.name}"))
+
+
+# -------------------------------------------------------------------------------------------- VPC
+NET_NAME = r"^[A-Za-z0-9][A-Za-z0-9 ._:/@()#+,=-]{0,254}$"
+
+
+def _vpc_id(name: str) -> str:
+    return (f'$(aws ec2 describe-vpcs --filters Name=tag:Name,Values={_q(name)} '
+            f'--query "Vpcs[0].VpcId" --output text)')
+
+
+def _subnet_id(name: str) -> str:
+    return (f'$(aws ec2 describe-subnets --filters Name=tag:Name,Values={_q(name)} '
+            f'--query "Subnets[0].SubnetId" --output text)')
+
+
+def _igw_id(name: str) -> str:
+    return (f'$(aws ec2 describe-internet-gateways --filters Name=tag:Name,Values={_q(name)} '
+            f'--query "InternetGateways[0].InternetGatewayId" --output text)')
+
+
+def _route_table_id(name: str) -> str:
+    return (f'$(aws ec2 describe-route-tables --filters Name=tag:Name,Values={_q(name)} '
+            f'--query "RouteTables[0].RouteTableId" --output text)')
+
+
+def _group_id(name: str) -> str:
+    return (f'$(aws ec2 describe-security-groups --filters Name=group-name,Values={_q(name)} '
+            f'--query "SecurityGroups[0].GroupId" --output text)')
+
+
+class CreateVpc(ActionParams):
+    name: str = Field(pattern=NET_NAME)
+    cidr: str = Field(pattern=CIDR)
+
+
+class CreateSubnet(ActionParams):
+    vpc: str = Field(pattern=NET_NAME)
+    name: str = Field(pattern=NET_NAME)
+    cidr: str = Field(pattern=CIDR)
+    public: bool = False
+
+
+class CreateInternetGateway(ActionParams):
+    vpc: str = Field(pattern=NET_NAME)
+    name: str = Field(pattern=NET_NAME)
+
+
+class CreateRouteTable(ActionParams):
+    vpc: str = Field(pattern=NET_NAME)
+    name: str = Field(pattern=NET_NAME)
+
+
+class CreateRoute(ActionParams):
+    route_table: str = Field(pattern=NET_NAME)
+    destination: str = Field(pattern=CIDR)
+    internet_gateway: str = Field(pattern=NET_NAME)
+
+
+class AssociateRouteTable(ActionParams):
+    route_table: str = Field(pattern=NET_NAME)
+    subnet: str = Field(pattern=NET_NAME)
+
+
+class CreateVpcSecurityGroup(ActionParams):
+    vpc: str = Field(pattern=NET_NAME)
+    group: str = Field(pattern=NET_NAME)
+
+
+class VpcIngressRule(ActionParams):
+    group: str = Field(pattern=NET_NAME)
+    protocol: Protocol = "tcp"
+    port: int = Field(ge=0, le=65535)
+    cidr: str = Field(pattern=CIDR)
+
+
+class DeleteRoute(ActionParams):
+    route_table: str = Field(pattern=NET_NAME)
+    destination: str = Field(pattern=CIDR)
+
+
+register(BreakActionDef("vpc.create_vpc", CreateVpc, "vpc", ("vpc:CreateVpc",),
+                        lambda p: [f'VPC_ID=$(aws ec2 create-vpc --cidr-block {_q(p.cidr)} '
+                                   f'--query "Vpc.VpcId" --output text)',
+                                   f'aws ec2 create-tags --resources "$VPC_ID" --tags Key=Name,Value={_q(p.name)}'],
+                        lambda p: f"VPC {p.name} exists ({p.cidr})"))
+register(BreakActionDef("vpc.create_subnet", CreateSubnet, "vpc",
+                        lambda p: ("vpc:CreateSubnet", "vpc:ModifySubnetAttribute") if p.public else ("vpc:CreateSubnet",),
+                        lambda p: [f'SUBNET_ID=$(aws ec2 create-subnet --vpc-id {_vpc_id(p.vpc)} '
+                                   f'--cidr-block {_q(p.cidr)} --availability-zone us-east-1a '
+                                   f'--query "Subnet.SubnetId" --output text)',
+                                   f'aws ec2 create-tags --resources "$SUBNET_ID" --tags Key=Name,Value={_q(p.name)}']
+                                  + ([f'aws ec2 modify-subnet-attribute --subnet-id "$SUBNET_ID" --map-public-ip-on-launch']
+                                     if p.public else []),
+                        lambda p: f"Subnet {p.name} in {p.vpc}" + (" (public)" if p.public else "")))
+register(BreakActionDef("vpc.create_internet_gateway", CreateInternetGateway, "vpc",
+                        ("vpc:CreateInternetGateway", "vpc:AttachInternetGateway"),
+                        lambda p: [f'IGW_ID=$(aws ec2 create-internet-gateway '
+                                   f'--query "InternetGateway.InternetGatewayId" --output text)',
+                                   f'aws ec2 create-tags --resources "$IGW_ID" --tags Key=Name,Value={_q(p.name)}',
+                                   f'aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID" '
+                                   f'--vpc-id {_vpc_id(p.vpc)}'],
+                        lambda p: f"{p.name} attached to {p.vpc}"))
+register(BreakActionDef("vpc.create_route_table", CreateRouteTable, "vpc", ("vpc:CreateRouteTable",),
+                        lambda p: [f'RTB_ID=$(aws ec2 create-route-table --vpc-id {_vpc_id(p.vpc)} '
+                                   f'--query "RouteTable.RouteTableId" --output text)',
+                                   f'aws ec2 create-tags --resources "$RTB_ID" --tags Key=Name,Value={_q(p.name)}'],
+                        lambda p: f"Route table {p.name} in {p.vpc}"))
+register(BreakActionDef("vpc.create_route", CreateRoute, "vpc", ("vpc:CreateRoute",),
+                        lambda p: [f'aws ec2 create-route --route-table-id {_route_table_id(p.route_table)} '
+                                   f'--destination-cidr-block {_q(p.destination)} '
+                                   f'--gateway-id {_igw_id(p.internet_gateway)}'],
+                        lambda p: f"{p.route_table} routes {p.destination} to {p.internet_gateway}"))
+register(BreakActionDef("vpc.associate_route_table", AssociateRouteTable, "vpc", ("vpc:AssociateRouteTable",),
+                        lambda p: [f'aws ec2 associate-route-table --route-table-id {_route_table_id(p.route_table)} '
+                                   f'--subnet-id {_subnet_id(p.subnet)}'],
+                        lambda p: f"{p.subnet} uses {p.route_table}"))
+register(BreakActionDef("vpc.create_security_group", CreateVpcSecurityGroup, "vpc", ("vpc:CreateSecurityGroup",),
+                        lambda p: [f'SG_ID=$(aws ec2 create-security-group --group-name {_q(p.group)} '
+                                   f'--description {_q("Created by Stackora break-fix setup")} '
+                                   f'--vpc-id {_vpc_id(p.vpc)} --query "GroupId" --output text)',
+                                   f'aws ec2 create-tags --resources "$SG_ID" --tags Key=Name,Value={_q(p.group)}'],
+                        lambda p: f"Security group {p.group} in {p.vpc}"))
+register(BreakActionDef("vpc.authorize_ingress", VpcIngressRule, "vpc", ("vpc:AuthorizeSecurityGroupIngress",),
+                        lambda p: [f'aws ec2 authorize-security-group-ingress --group-id {_group_id(p.group)} '
+                                   f'--protocol {p.protocol} --port {p.port} --cidr {_q(p.cidr)}'],
+                        lambda p: f"{p.group} allows {p.protocol}/{p.port} from {p.cidr}"))
+register(BreakActionDef("vpc.delete_route", DeleteRoute, "vpc", ("vpc:DeleteRoute",),
+                        lambda p: [f'aws ec2 delete-route --route-table-id {_route_table_id(p.route_table)} '
+                                   f'--destination-cidr-block {_q(p.destination)}'],
+                        lambda p: f"{p.route_table} has no route {p.destination}"))
+register(BreakActionDef("vpc.revoke_ingress", VpcIngressRule, "vpc", ("vpc:RevokeSecurityGroupIngress",),
+                        lambda p: [f'aws ec2 revoke-security-group-ingress --group-id {_group_id(p.group)} '
+                                   f'--protocol {p.protocol} --port {p.port} --cidr {_q(p.cidr)}'],
+                        lambda p: f"{p.group} no longer allows {p.protocol}/{p.port} from {p.cidr}"))

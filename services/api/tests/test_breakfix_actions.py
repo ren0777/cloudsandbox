@@ -137,7 +137,7 @@ def test_setup_job_compiles_actions_into_the_public_bundle():
     pkg = pack_from_files(_files())
     variables = compute_variables(pkg.definition, SAMPLE_SHORT)
     job = setup_job(pkg.public_bundle, pkg.definition, variables)
-    assert job is not None and job["timeout_s"] == 60
+    assert job is not None and job["timeout_s"] == 180  # CLI-heavy setups (e.g. a VPC network) need headroom
     raw = base64.b64decode(job["bundle_b64"])
     assert hashlib.sha256(raw).hexdigest() == job["sha256"]
     members = tar_members(raw)
@@ -159,3 +159,40 @@ def test_baseline_drives_the_expected_empty_score():
     # expected.yaml that still says 0 does not match the declared baseline
     _, errors = dr.expectations(_files(lab), pkg.definition)
     assert any("broken baseline must score 40" in e for e in errors), errors
+
+
+def test_compiler_covers_the_vpc_actions():
+    """The VPC catalogue compiles to deterministic AWS CLI; both the create and the break side are covered."""
+    specs = [
+        {"type": "vpc.create_vpc", "name": "cafe-vpc-abc123", "cidr": "10.0.0.0/16"},
+        {"type": "vpc.create_subnet", "vpc": "cafe-vpc-abc123", "name": "public-abc123",
+         "cidr": "10.0.1.0/24", "public": True},
+        {"type": "vpc.create_internet_gateway", "vpc": "cafe-vpc-abc123", "name": "igw-abc123"},
+        {"type": "vpc.create_route_table", "vpc": "cafe-vpc-abc123", "name": "rtb-abc123"},
+        {"type": "vpc.create_route", "route_table": "rtb-abc123", "destination": "0.0.0.0/0",
+         "internet_gateway": "igw-abc123"},
+        {"type": "vpc.associate_route_table", "route_table": "rtb-abc123", "subnet": "public-abc123"},
+        {"type": "vpc.create_security_group", "vpc": "cafe-vpc-abc123", "group": "web-abc123"},
+        {"type": "vpc.authorize_ingress", "group": "web-abc123", "protocol": "tcp", "port": 80,
+         "cidr": "0.0.0.0/0"},
+        {"type": "vpc.delete_route", "route_table": "rtb-abc123", "destination": "0.0.0.0/0"},
+        {"type": "vpc.revoke_ingress", "group": "web-abc123", "protocol": "tcp", "port": 80,
+         "cidr": "0.0.0.0/0"},
+    ]
+    script = breakfix.compile_actions(specs)
+    assert script == breakfix.compile_actions(specs)
+    for expected in (
+        'aws ec2 create-vpc --cidr-block 10.0.0.0/16 --query "Vpc.VpcId" --output text',
+        "Key=Name,Value=cafe-vpc-abc123",
+        "aws ec2 create-subnet --vpc-id $(aws ec2 describe-vpcs --filters Name=tag:Name,Values=cafe-vpc-abc123",
+        "--map-public-ip-on-launch",
+        'aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID"',
+        "aws ec2 create-route --route-table-id $(aws ec2 describe-route-tables",
+        "--gateway-id $(aws ec2 describe-internet-gateways",
+        "aws ec2 associate-route-table",
+        "aws ec2 authorize-security-group-ingress --group-id $(aws ec2 describe-security-groups",
+        "--protocol tcp --port 80 --cidr 0.0.0.0/0",
+        "aws ec2 delete-route",
+        "aws ec2 revoke-security-group-ingress",
+    ):
+        assert expected in script, expected

@@ -1,0 +1,4 @@
+# labtest expectations (PRIVATE). "empty" = the broken setup, untouched (the intact-network task still passes).
+empty: "25.00"
+partial: "65.00"
+solution: "100.00"

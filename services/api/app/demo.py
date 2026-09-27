@@ -32,7 +32,9 @@ DEMO_LABS = [("s3-basics", "Mission 1: CloudCafé goes online"),
              ("ec2-web-server", "Mission 4: A web server for CloudCafé"),
              ("lambda-basics", "Mission 5: CloudCafé's serverless checkout"),
              ("iam-breakfix", "Mission 6: The baristas are admins (break-fix)"),
-             ("lambda-dynamodb", "Mission 7: CloudCafé's serverless orders")]
+             ("lambda-dynamodb", "Mission 7: CloudCafé's serverless orders"),
+             ("vpc-basics", "Mission 8: CloudCafé's public network"),
+             ("vpc-breakfix", "Mission 9: The café's website went dark (break-fix)")]
 DEMO_USERS = [
     ("demo-admin", "Dana Admin", Role.admin, "dadmin"),
     ("demo-instructor", "Dr. Ira Instructor", Role.instructor, "dinstr"),

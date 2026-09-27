@@ -78,9 +78,11 @@ codename.
 - **Lambda + DynamoDB** combined pack ☑ (Mission 7, done — see STATUS 44a and D45): table + function that
   saves and totals an order; MiniStack declares the 12 DynamoDB contract ops; labtest 0/55/100 on MiniStack;
   template `lambda-dynamodb`.
-- **VPC** next: console, checks, capabilities on the primary engines, a lab pack and labtest. VPC unlocks
-  richer real-world labs (public/private subnets, routing, security groups) than another isolated service.
-- **SQS/SNS** after that, in the same shape.
+- **VPC** ☑ (Mission 8/9, done — see STATUS 45): console page, six checks, `vpc-basics` guided lab and
+  `vpc-breakfix` built from typed `vpc.*` break actions; labtest 0/50/100 and baseline 25/65/100 + Reset
+  on moto and floci; E2E builds and repairs a network in the VPC console.
+- **SQS** next, then **SNS**, in the same shape (capability declarations and contract tests already
+  exist for both). SQS unlocks queues/workers/DLQ scenarios; SNS adds fan-out to SQS and Lambda.
 - Each new lab must pass `app.labtest` (empty 0 / partial / solution 100) on every engine it may run on
   before it appears in the gallery.
 

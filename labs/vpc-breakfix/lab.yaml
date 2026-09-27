@@ -1,0 +1,81 @@
+schema_version: 1
+id: vpc-breakfix
+version: 1.0.0
+kind: break_fix
+title: "Mission 9: The café's website went dark (break-fix)"
+summary: The route to the internet and the HTTP rule were removed. Restore them without tearing the network down.
+story: |
+  **Incident report.** After a late-night "cleanup", CloudCafé's new public network stopped working: the
+  website is unreachable. Nothing was deleted — the VPC, the subnet, the internet gateway and the security
+  group are all still there — but two things are missing:
+
+  - the route table **{{ route_table_name }}** no longer routes **0.0.0.0/0** to **{{ igw_name }}**
+  - the security group **{{ sg_name }}** no longer allows **HTTP (80)** from anywhere
+
+  Your environment already contains this broken network. You don't need to build anything from scratch:
+  **find what is missing and put it back.**
+
+  Leave everything else exactly as it is. The bastion rule that allows **SSH only from {{ vpc_cidr }}**
+  must stay, and nobody outside the network should be able to reach SSH.
+
+  Work in the **VPC console**, with the **AWS CLI** in the terminal, or both. The **Architecture** tab
+  shows the network you actually have.
+services: [vpc]
+runtime: {emulator: default}
+duration_minutes: 40
+idle_minutes: 20
+max_attempts: 3
+variables:
+  vpc_name: "cafe-vpc-{{ student_short_id }}"
+  subnet_name: "cafe-public-{{ student_short_id }}"
+  igw_name: "cafe-igw-{{ student_short_id }}"
+  route_table_name: "cafe-public-rtb-{{ student_short_id }}"
+  sg_name: "cafe-web-sg-{{ student_short_id }}"
+  vpc_cidr: "10.0.0.0/16"
+  subnet_cidr: "10.0.1.0/24"
+break_actions:
+  - {type: vpc.create_vpc, name: "{{ vpc_name }}", cidr: "{{ vpc_cidr }}"}
+  - {type: vpc.create_subnet, vpc: "{{ vpc_name }}", name: "{{ subnet_name }}", cidr: "{{ subnet_cidr }}", public: true}
+  - {type: vpc.create_internet_gateway, vpc: "{{ vpc_name }}", name: "{{ igw_name }}"}
+  - {type: vpc.create_route_table, vpc: "{{ vpc_name }}", name: "{{ route_table_name }}"}
+  - {type: vpc.associate_route_table, route_table: "{{ route_table_name }}", subnet: "{{ subnet_name }}"}
+  - {type: vpc.create_security_group, vpc: "{{ vpc_name }}", group: "{{ sg_name }}"}
+  - {type: vpc.authorize_ingress, group: "{{ sg_name }}", protocol: tcp, port: 22, cidr: "{{ vpc_cidr }}"}
+baseline: {expected_score: "25.00"}
+requires:
+  - vpc:CreateRoute
+  - vpc:AuthorizeSecurityGroupIngress
+tasks:
+  - id: restore-route
+    title: "Restore the route from {{ route_table_name }} to the internet"
+    description: "All traffic (0.0.0.0/0) leaving the public subnet must go to {{ igw_name }} again."
+    hints:
+      - "Open your route table and look at its **Routes**. Compare them with what makes a subnet public."
+      - "The internet gateway is still attached; only the route in the route table is missing."
+      - "CLI: `aws ec2 describe-route-tables`, then `aws ec2 create-route --destination-cidr-block 0.0.0.0/0`."
+    marks: 40
+    checks:
+      - {type: vpc.route, route_table: "{{ route_table_name }}", destination: "0.0.0.0/0", target: "igw:{{ igw_name }}"}
+      - {type: vpc.subnet_route_table, subnet: "{{ subnet_name }}", route_table: "{{ route_table_name }}", hidden: true}
+  - id: reopen-http
+    title: "Reopen HTTP (80) on {{ sg_name }}"
+    description: "The security group must allow inbound HTTP (TCP port 80) from anywhere again."
+    hints:
+      - "Open the security group and compare its **Inbound rules** with what a web server needs."
+      - "Add HTTP from Anywhere-IPv4 (0.0.0.0/0). Leave the SSH rule untouched."
+      - "CLI: `aws ec2 authorize-security-group-ingress --group-id ... --protocol tcp --port 80 --cidr 0.0.0.0/0`."
+    marks: 35
+    checks:
+      - {type: vpc.security_group_rule, group: "{{ sg_name }}", direction: ingress, protocol: tcp, port: 80, cidr: 0.0.0.0/0}
+  - id: leave-network-intact
+    title: "Leave the rest of the network intact"
+    description: "The VPC, the subnet and the bastion's restricted SSH rule must all survive the repair."
+    hints:
+      - "Fix what is missing; don't delete and rebuild the network."
+      - "SSH stays limited to the VPC network ({{ vpc_cidr }}) — do not open it to the world."
+    marks: 25
+    checks:
+      - {type: vpc.exists, name: "{{ vpc_name }}", cidr: "{{ vpc_cidr }}"}
+      - {type: vpc.subnet, name: "{{ subnet_name }}", cidr: "{{ subnet_cidr }}", vpc: "{{ vpc_name }}", public: true, hidden: true}
+      - {type: vpc.security_group_rule, group: "{{ sg_name }}", direction: ingress, protocol: tcp, port: 22, cidr: "{{ vpc_cidr }}"}
+      - {type: vpc.security_group_rule, group: "{{ sg_name }}", direction: ingress, protocol: tcp, port: 22, cidr: "0.0.0.0/0", expect: absent, hidden: true}

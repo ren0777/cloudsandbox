@@ -25,6 +25,15 @@ CONSOLE_OPS: dict[str, tuple[str, ...]] = {
     "ec2": ("DescribeImages", "DescribeVpcs", "DescribeSubnets", "RunInstances", "DescribeInstances",
             "StopInstances", "StartInstances", "TerminateInstances", "CreateSecurityGroup",
             "DescribeSecurityGroups", "AuthorizeSecurityGroupIngress", "CreateKeyPair", "DescribeKeyPairs"),
+    # VPC rides the EC2 API; the adapter maps the service name to the ec2 client. Listed when the VPC
+    # console page exists - every operation the page calls, so the page is never half-working.
+    "vpc": ("DescribeVpcs", "CreateVpc", "DeleteVpc", "DescribeSubnets", "CreateSubnet", "DeleteSubnet",
+            "ModifySubnetAttribute", "DescribeRouteTables", "CreateRouteTable", "DeleteRouteTable",
+            "CreateRoute", "DeleteRoute", "AssociateRouteTable", "DisassociateRouteTable",
+            "DescribeInternetGateways", "CreateInternetGateway", "AttachInternetGateway",
+            "DetachInternetGateway", "DeleteInternetGateway", "DescribeSecurityGroups",
+            "CreateSecurityGroup", "DeleteSecurityGroup", "AuthorizeSecurityGroupIngress",
+            "RevokeSecurityGroupIngress", "AuthorizeSecurityGroupEgress", "RevokeSecurityGroupEgress"),
     "lambda": ("ListFunctions", "CreateFunction", "GetFunction", "GetFunctionConfiguration",
                "UpdateFunctionCode", "UpdateFunctionConfiguration", "DeleteFunction"),
 }
