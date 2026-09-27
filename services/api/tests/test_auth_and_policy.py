@@ -80,6 +80,30 @@ async def test_login_rate_limited(world):
     assert codes[-1] == 429 and codes[0] == 401
 
 
+async def test_demo_accounts_public_only_when_seeded_and_in_demo_mode(world, monkeypatch):
+    """The login page's one-click demo sign-in: the endpoint is public, but lists accounts only while
+    CL_DEMO_MODE is on AND the demo reset has actually seeded them."""
+    from app.auth.routes import create_user
+    from app.config import get_settings
+    from app.db import sessionmaker
+    from app.models import Role
+
+    c = client()
+    empty = {"enabled": False, "password": None, "accounts": []}
+    assert (await c.get("/api/auth/demo-accounts")).json() == empty
+    monkeypatch.setattr(get_settings(), "demo_mode", True)
+    assert (await c.get("/api/auth/demo-accounts")).json() == empty, "not seeded yet: no dead buttons"
+
+    async with sessionmaker()() as db:
+        await create_user(db, "demo-student1@cloudlabs.demo", "Sam Student", Role.student,
+                          "cloudlabs-demo", short_id="demo01")
+        await db.commit()
+    b = (await c.get("/api/auth/demo-accounts")).json()
+    assert b["enabled"] is True and b["password"] == "cloudlabs-demo"
+    assert [a["email"] for a in b["accounts"]] == ["demo-student1@cloudlabs.demo"]
+    assert b["accounts"][0]["role"] == "student" and b["accounts"][0]["name"] == "Sam Student"
+
+
 async def test_unauthenticated_is_401():
     r = await client().get("/api/me/assignments")
     assert r.status_code == 401 and r.json()["error"]["code"] == "unauthenticated"

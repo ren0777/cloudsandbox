@@ -27,7 +27,8 @@ database, runner and sandbox images.
 | Instructor | `demo-instructor@cloudlabs.demo` | `cloudlabs-demo` |
 | Admin | `demo-admin@cloudlabs.demo` | `cloudlabs-demo` |
 
-Open **http://localhost:3000**. Run `demo-reset` again before every presentation.
+Open **http://localhost:3000**. While `CL_DEMO_MODE=true` the login page lists these accounts (with the
+password) and signs you in with one click. Run `demo-reset` again before every presentation.
 
 ## 1. Student starts the lab
 1. Sign in as **demo-student1**. *My labs* shows "Mission 1: CloudCafé goes online".

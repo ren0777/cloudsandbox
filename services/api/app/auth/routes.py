@@ -209,5 +209,20 @@ async def change_password(body: ChangePasswordIn, user: User = Depends(Authz(Act
     return user_out(u)
 
 
+@router.get("/demo-accounts")
+async def demo_accounts(db: AsyncSession = Depends(get_db)):
+    """Demo Mode only (PLAN §16): the seeded demo accounts and their shared password, so the login page can
+    offer one-click sign-in. Empty when CL_DEMO_MODE is off or the demo reset has not run, so a real
+    deployment never advertises accounts and a fresh stack shows no dead buttons."""
+    if not get_settings().demo_mode:
+        return {"enabled": False, "password": None, "accounts": []}
+    from ..demo import DEMO_DOMAIN, DEMO_PASSWORD, DEMO_USERS
+    emails = [f"{short}@{DEMO_DOMAIN}" for short, _name, _role, _sid in DEMO_USERS]
+    found = {u.email: u for u in (await db.scalars(select(User).where(User.email.in_(emails)))).all()}
+    accounts = [{"email": e, "name": found[e].name, "role": found[e].role.value} for e in emails if e in found]
+    return {"enabled": bool(accounts), "password": DEMO_PASSWORD if accounts else None, "accounts": accounts}
+
+
 PUBLIC_ROUTES = {("POST", "/api/auth/login"), ("POST", "/api/auth/refresh"),
-                 ("POST", "/api/auth/logout"), ("POST", "/api/auth/register")}
+                 ("POST", "/api/auth/logout"), ("POST", "/api/auth/register"),
+                 ("GET", "/api/auth/demo-accounts")}

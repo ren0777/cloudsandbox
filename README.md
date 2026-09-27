@@ -37,6 +37,7 @@ scripts/demo-reset.sh
 ```
 The first build takes several minutes. Then sign in at http://localhost:3000 with password `cloudlabs-demo` as
 `demo-student1@cloudlabs.demo` (students 1–3), `demo-instructor@cloudlabs.demo` or `demo-admin@cloudlabs.demo`.
+While `CL_DEMO_MODE=true` the login page lists these accounts, so you can sign in with one click.
 Demo accounts exist only while `CL_DEMO_MODE=true` (the laptop default). The teacher walkthrough is in
 [docs/DEMO.md](docs/DEMO.md).
 

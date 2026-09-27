@@ -91,6 +91,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | # | Milestone | State | Verification evidence |
 |---|---|---|---|
 | 40 | Template gallery and guided New-lab start | ☑ | `GET builder/templates` (curated, resolved against the latest built-in version, `available: false` when the pack is not installed) and `POST builder/drafts {source: "template", template_id, title?}` → a fresh draft: id `<title-slug>-<short id>`, version `1.0.0`, the author's title, all files carried (a break-fix `public/setup.sh` stays read-only), audited with `template_id`. Six templates from the built-in missions. UI: New-lab gallery (Start from scratch + cards with services/difficulty), dialogs scroll. `tests/test_lab_builder.py` **16 passed** (2 new); fast suite **267 passed, 29 deselected**; `tsc --noEmit` clean; `e2e/lab-builder.spec.ts` **2/2** (new template test on the real stack) (2026-09-27) |
+| 40a | Demo one-click sign-in on the login page | ☑ | Public `GET /api/auth/demo-accounts` returns the seeded demo accounts and the shared password only while `CL_DEMO_MODE=true` **and** only accounts that exist in the DB (a fresh, unseeded stack shows nothing). The login page renders the password and role buttons that sign in directly. `tests/test_auth_and_policy.py` **15 passed**; `e2e/login.spec.ts` **1/1** (2026-09-27) |
 | 41 | Typed break actions (declarative starting states) | ◐ | **Core + UI shipped; interactive preview sandbox pending (M41b).** `app/breakfix/` registry + pure compiler; schema `break_actions` + `baseline.expected_score` (below full marks, `empty` must match); import validation (unknown type, params, service, engine capabilities); `setup_job` compiles actions into the public setup bundle; `GET builder/break-actions` + `POST builder/break-actions/summary`; Starting state tab (typed forms from each action's Pydantic schema, Broken State Summary, kind toggle); labtest adds a **reset** scenario for break-fix packs. `tests/test_breakfix_actions.py` 13 passed; `tests/test_lab_builder.py` 17 passed; real compiled pack on moto+floci: **baseline 0 and 40 → solution 100 → Reset reproduces the baseline**; `e2e/lab-builder.spec.ts` 3/3; fast suite **281 passed, 29 deselected** (one expected-message update in `test_labs_and_grader.py`) |
 
 ## Implementation decisions log
@@ -302,3 +303,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   Pydantic schema, shows the Broken State Summary, and never exposes a raw setup editor. labtest adds a
   `reset` scenario for break-fix packs (setup → baseline → Reset → baseline, which must match). The
   interactive preview sandbox (M41b) is not built yet.
+- **D41 — Demo one-click sign-in.** The login page lists the seeded demo accounts and their shared password,
+  so a demo starts with one click instead of typing. The data comes from a public `GET /api/auth/demo-accounts`
+  that is empty unless `CL_DEMO_MODE=true`, and it only lists accounts that actually exist (the endpoint reads
+  the DB), so a fresh stack or a real deployment never advertises credentials or dead buttons.
