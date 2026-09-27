@@ -42,7 +42,7 @@ def engine(request, monkeypatch):
     """Run the test with this engine as the platform default (labs use runtime.emulator: default)."""
     monkeypatch.setattr(get_settings(), "default_emulator", request.param)
     return request.param
-ORIGIN = "http://localhost:3000"
+ORIGIN = get_settings().allowed_origins[0]  # an allowed browser origin for this deployment
 BUCKET = "cafe-alice1-site"
 
 

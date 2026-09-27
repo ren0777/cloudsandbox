@@ -137,9 +137,6 @@ async def test_preview_reconciler_keeps_it_then_expires_it(world, fake_runner):
 
 
 # ------------------------------------------------------------------------------- real runtime (docker)
-ORIGIN = "http://testserver"
-
-
 @pytest.fixture
 async def live(real_runner):
     """A real uvicorn server for the WebSocket test (the in-process client cannot open one)."""
