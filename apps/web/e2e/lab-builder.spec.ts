@@ -130,3 +130,46 @@ test("instructor authors a break-fix starting state with typed actions", async (
   await expect(page.getByTestId("save-draft")).toBeDisabled();
   await expect(page.getByTestId("validation-ok")).toBeVisible();
 });
+
+// Phase 9 milestone 42: preview the authored starting state in a real sandbox, inspect it, reset and stop,
+// and see the publish-readiness checklist that gates publishing.
+test("instructor previews the starting state and sees the publish readiness", async ({ page }) => {
+  test.setTimeout(300_000);
+  await signIn(page, "demo-instructor@cloudlabs.demo");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Labs", exact: true }).click();
+  await page.getByTestId("new-lab").click();
+  await page.getByTestId("new-lab-title").fill("Preview walkthrough");
+  await page.getByTestId("new-lab-create").click();
+  await page.waitForURL(/\/instructor\/labs\/drafts\//);
+
+  // the readiness checklist is visible and clearly not ready before a test run
+  await page.getByTestId("tab-test").click();
+  await expect(page.getByTestId("readiness")).toBeVisible();
+  await expect(page.getByTestId("readiness-status")).toHaveText("Not ready");
+  await expect(page.getByTestId("readiness-baseline")).toContainText("not run yet");
+  await expect(page.getByTestId("publish")).toBeDisabled();
+
+  // author a break-fix starting state, then launch the preview sandbox
+  await page.getByTestId("tab-start").click();
+  await page.getByTestId("make-break-fix").click();
+  await page.getByTestId("add-break-action").click();
+  await page.getByTestId("break-action-type").selectOption("s3.create_bucket");
+  await page.getByTestId("param-bucket").fill("{{ bucket }}");
+  await page.getByTestId("save-draft").click();
+  await expect(page.getByTestId("save-draft")).toBeDisabled();
+  await page.getByTestId("open-preview-sandbox").click();
+  await page.waitForURL(/\/preview$/);
+
+  await expect(page.getByTestId("preview-status")).toHaveText("Stopped");
+  await page.getByTestId("preview-start").click();
+  await expect(page.getByTestId("preview-status")).toContainText("Running", { timeout: 120_000 });
+  await expect(page.locator(".console")).toBeVisible();
+  await page.screenshot({ path: "../../docs/screenshots/24-preview-sandbox.png", fullPage: true });
+  await page.getByTestId("preview-tab-terminal").click();
+  await expect(page.locator(".xterm")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("preview-tab-console").click();
+  await page.getByTestId("preview-reset").click();
+  await expect(page.getByTestId("preview-status")).toContainText("Running", { timeout: 120_000 });
+  await page.getByTestId("preview-stop").click();
+  await expect(page.getByTestId("preview-status")).toHaveText("Stopped", { timeout: 60_000 });
+});

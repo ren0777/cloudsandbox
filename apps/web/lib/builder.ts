@@ -89,6 +89,23 @@ export type Template = {
   highlights: string[]; source_lab_id: string; available: boolean; latest_version: string | null;
 };
 
+/** The interactive preview sandbox of a draft (phase 9 M42). It is not a session: no attempt or grade. */
+export type PreviewSandbox = {
+  status: "running" | "stopped";
+  sandbox_id: string | null;
+  engine: string | null;
+  started_at: string | null;
+  last_active: string | null;
+  error: string | null;
+  ws_path: string;
+  console: string | null;
+  terminal_ticket: string | null;
+};
+
+/** The publish-readiness checklist (M42): exactly what the publish gate requires, one row each. */
+export type ReadinessCheck = { id: string; label: string; ok: boolean; detail: string | null; errors: ErrorRow[] };
+export type Readiness = { ready: boolean; checks: ReadinessCheck[] };
+
 export type PreviewTask = { id: string; title: string; description: string; hints: string[]; marks: string };
 export type Preview = {
   lab: { id: string; version: string; title: string; summary: string; story: string; services: string[]; kind: string;

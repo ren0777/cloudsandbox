@@ -161,7 +161,7 @@ export default function DraftEditor() {
                 <fieldset disabled={readOnly} className="lb-plain" key={rev}>
                   {tab === "overview" && <OverviewTab lab={lab} catalogue={catalogue} validation={draft.validation} onChange={setLab} />}
                   {tab === "tasks" && <TasksTab lab={lab} catalogue={catalogue} validation={draft.validation} focusTask={focusTask} onChange={setLab} />}
-                  {tab === "start" && <StartingStateTab lab={lab} validation={draft.validation} onChange={setLab} />}
+                  {tab === "start" && <StartingStateTab lab={lab} draftId={draft.id} validation={draft.validation} onChange={setLab} />}
                   {tab === "scripts" && <ScriptsTab content={content} readOnlyFiles={draft.read_only_files} validation={draft.validation} onFile={setFile} />}
                 </fieldset>
               )}

@@ -425,6 +425,71 @@ async def preview_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.l
     return {"lab": student_lab_view(pkg.definition, variables), "variables": variables}
 
 
+# --------------------------------------------------------------------------------- publish readiness
+def _short_sha(v: str | None) -> str:
+    return (v or "—")[:12]
+
+
+async def _readiness(d: LabDraft) -> dict[str, Any]:
+    """The publish gate as a checklist: exactly what `publish` requires, one row each, with row-level errors.
+    The gate itself is still enforced by `publish`; this makes it legible before the author clicks."""
+    lab = d.content.get("lab", {})
+    pkg, errors = dr.build(d.content)
+    # `dr.build` returns pack errors when the pack is invalid, and scenario errors when it is valid.
+    pack_errors = errors if pkg is None else []
+    scenario_errors = [] if pkg is None else errors
+    checks: list[dict[str, Any]] = []
+
+    def row(cid: str, label: str, ok: bool, *, errors: list[dict] | None = None,
+            detail: str | None = None) -> None:
+        checks.append({"id": cid, "label": label, "ok": bool(ok), "errors": errors or [], "detail": detail})
+
+    row("validation", "Valid lab pack (schema, services, ownership)", pkg is not None,
+        errors=[dr.row_error(e, lab) for e in pack_errors])
+    cap_errors = [dr.row_error(e, lab) for e in pack_errors if "unsupported emulator operations" in e]
+    row("capabilities", "Checks and break actions supported on every engine the lab may run on",
+        not cap_errors, errors=cap_errors)
+    row("scenarios", "Test scenarios configured (baseline, reference solution, optional partial)",
+        pkg is not None and not scenario_errors,
+        errors=[dr.row_error(e, lab) for e in scenario_errors])
+
+    lt = d.last_test or {}
+    expected = lt.get("expected") or {}
+    by_scenario: dict[str, list[dict[str, Any]]] = {}
+    for s in lt.get("scenarios") or []:
+        by_scenario.setdefault(str(s.get("scenario")), []).append(s)
+
+    def scenario_row(cid: str, label: str, name: str, want: str | None) -> None:
+        rows = by_scenario.get(name, [])
+        ok = bool(rows) and want is not None and all(r.get("ok") and r.get("actual") == want for r in rows)
+        detail = " · ".join(f"{r.get('engine')} {r.get('actual') or '—'}" for r in rows) or "not run yet"
+        row(cid, label, ok, detail=detail)
+
+    full = expected.get("solution")
+    if full is None and pkg is not None:
+        full = str(pkg.definition.max_score.quantize(Decimal("0.01")))
+    base = expected.get("empty", "0.00")
+    scenario_row("baseline", f"Baseline matches baseline.expected_score ({base})", "empty", base)
+    scenario_row("solution", f"Reference solution reaches full marks ({full or '?'})", "solution", full)
+    if pkg is not None and pkg.definition.kind == "break_fix":
+        scenario_row("reset", f"Reset reproduces the baseline ({base})", "reset", base)
+    else:
+        row("reset", "Reset reproduces the baseline", True, detail="not applicable to a guided lab")
+    current = (d.last_validation or {}).get("content_sha256")
+    row("current", "Test passed on the current content",
+        lt.get("status") == "passed" and d.tested_sha256 is not None and d.tested_sha256 == current,
+        detail=f"tested {_short_sha(d.tested_sha256)} · current {_short_sha(current)}")
+    return {"ready": all(c["ok"] for c in checks), "checks": checks}
+
+
+@router.get("/drafts/{draft_id}/readiness")
+async def readiness(draft_id: uuid.UUID, user: User = Depends(Authz(Action.lab_manage)),
+                    db: AsyncSession = Depends(get_db)):
+    """The publish-readiness checklist: schema/capability validation, the baseline, the reference solution,
+    Reset reproducibility, and a passing test of the current content."""
+    return await _readiness(await _load(db, user, draft_id))
+
+
 # ------------------------------------------------------------------------ test run + publish gate
 def _stale(d: LabDraft) -> bool:
     if d.status != "testing":

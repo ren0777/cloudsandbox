@@ -51,11 +51,11 @@ Public product name is **Stackora**; a premium marketing page at `/` (hero, serv
 Apache-2.0, CTAs). The authenticated app stays behind `/login`; internal identifiers keep the `cloudlabs`
 codename.
 
-### 42 Preview, test and publish clarity
-- An interactive **preview sandbox** (M41b): launch the authored starting state and inspect it in the console
-  and terminal, with Reset reconstructing it. Never creates an attempt, grade, XP, badge or leaderboard event.
-- A **publish-readiness checklist** (valid? tested on the *current* content? version free? title?) as the
-  first thing on the Test tab, with one next action.
+### 42 Preview, test and publish clarity ☑ (done — see STATUS 42 and D43)
+- Interactive **preview sandbox**: launch the authored starting state and inspect it in the console and
+  terminal, with Reset reconstructing it. Never creates an attempt, grade, XP, badge or leaderboard event.
+- **Publish-readiness checklist** (validation, capabilities, baseline, solution, reset, current content) as
+  the first thing on the Test tab, with row-level errors; the Publish button waits for all of it.
 - Test results: per-scenario summary that says what to fix, with the failing task/check linked to its row.
 - Preview: choose the sample variables / student identity, and show "what the student sees" next to "what
   is graded" (without leaking hidden checks).

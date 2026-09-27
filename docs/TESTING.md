@@ -77,6 +77,13 @@ journey with the session freeze, and terminal ticket rules. Run the browser E2E 
   saving a break-fix draft and the Broken State Summary. `labtest` adds a `reset` scenario for break-fix
   packs; the real-runtime check (baseline 0 and 40 → solution 100 → Reset reproduces the baseline) is verified
   on moto and floci. E2E `lab-builder.spec.ts` has a Starting-state test.
+- **Phase 9 (preview + readiness, M42):** `test_lab_preview.py` covers the preview lifecycle (start, console
+  calls through the student routes, terminal ticket, reset, stop), ownership (404 for another instructor,
+  404 for a student on console/terminal, 403 on `lab_manage` routes), the reconciler keeping a running
+  preview and expiring an idle one, and — docker-marked — a real break-fix preview where the baseline scores
+  0, Reset reproduces it, the console and terminal work, and no session/attempt/grade exists. Readiness tests
+  in `test_lab_builder_publish.py` cover the checklist mirroring the gate, the guided-lab N/A reset row, and
+  unsupported engines blocking test/publish. E2E `lab-builder.spec.ts` walks the preview and the checklist.
 - **E2E:** the DEMO.md flow in Chromium, including `docker ps` cleanup checks. It writes screenshots to
   `docs/screenshots/`.
 

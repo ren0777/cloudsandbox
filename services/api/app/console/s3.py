@@ -15,7 +15,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.policy import Action, Authz
+from ..auth.policy import Action, AuthzAny
 from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError
@@ -105,7 +105,7 @@ def _access(pab: dict, policy: str | None) -> str:
 
 
 @router.get("/buckets")
-async def list_buckets(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_buckets(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     out = await _call(sess, "list_buckets")
@@ -118,7 +118,7 @@ async def list_buckets(session_id: uuid.UUID, user: User = Depends(Authz(Action.
 
 @router.post("/buckets", status_code=201)
 async def create_bucket(session_id: uuid.UUID, body: CreateBucketIn,
-                        user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                        user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     if body.region not in SUPPORTED_REGIONS:
         raise ApiError("not_in_simulator", "The Stackora simulator only provides the us-east-1 Region.", 400)
@@ -139,14 +139,14 @@ async def create_bucket(session_id: uuid.UUID, body: CreateBucketIn,
 
 
 @router.delete("/buckets/{bucket}", status_code=204)
-async def delete_bucket(session_id: uuid.UUID, bucket: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_bucket(session_id: uuid.UUID, bucket: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                         db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     await _call(sess, "delete_bucket", Bucket=bucket)
 
 
 @router.get("/buckets/{bucket}")
-async def bucket_details(session_id: uuid.UUID, bucket: str, user: User = Depends(Authz(Action.session_use)),
+async def bucket_details(session_id: uuid.UUID, bucket: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                          db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     v = await _call(sess, "get_bucket_versioning", Bucket=bucket)
@@ -163,7 +163,7 @@ async def bucket_details(session_id: uuid.UUID, bucket: str, user: User = Depend
 
 @router.put("/buckets/{bucket}/versioning")
 async def put_versioning(session_id: uuid.UUID, bucket: str, body: VersioningIn,
-                         user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                         user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     await _call(sess, "put_bucket_versioning", Bucket=bucket, VersioningConfiguration={"Status": body.status})
     return {"versioning": body.status}
@@ -171,7 +171,7 @@ async def put_versioning(session_id: uuid.UUID, bucket: str, body: VersioningIn,
 
 @router.put("/buckets/{bucket}/public-access-block")
 async def put_public_access_block(session_id: uuid.UUID, bucket: str, body: PublicAccessBlockIn,
-                                  user: User = Depends(Authz(Action.session_use)),
+                                  user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                                   db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     cfg = {"BlockPublicAcls": body.block_public_acls, "IgnorePublicAcls": body.ignore_public_acls,
@@ -182,7 +182,7 @@ async def put_public_access_block(session_id: uuid.UUID, bucket: str, body: Publ
 
 @router.put("/buckets/{bucket}/policy")
 async def put_policy(session_id: uuid.UUID, bucket: str, body: PolicyIn,
-                     user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                     user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     try:
         json.loads(body.policy)
@@ -193,7 +193,7 @@ async def put_policy(session_id: uuid.UUID, bucket: str, body: PolicyIn,
 
 
 @router.delete("/buckets/{bucket}/policy", status_code=204)
-async def delete_policy(session_id: uuid.UUID, bucket: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_policy(session_id: uuid.UUID, bucket: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                         db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     await _call(sess, "delete_bucket_policy", Bucket=bucket)
@@ -201,7 +201,7 @@ async def delete_policy(session_id: uuid.UUID, bucket: str, user: User = Depends
 
 @router.put("/buckets/{bucket}/tags")
 async def put_tags(session_id: uuid.UUID, bucket: str, body: TagsIn,
-                   user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                   user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     if body.tags:
         await _call(sess, "put_bucket_tagging", Bucket=bucket,
@@ -213,7 +213,7 @@ async def put_tags(session_id: uuid.UUID, bucket: str, body: TagsIn,
 
 @router.get("/buckets/{bucket}/objects")
 async def list_objects(session_id: uuid.UUID, bucket: str, prefix: str = "",
-                       user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                       user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     out = await _call(sess, "list_objects_v2", Bucket=bucket, Prefix=prefix, MaxKeys=1000)
     return {"objects": [{"key": o["Key"], "size": o["Size"], "last_modified": o.get("LastModified"),
@@ -224,7 +224,7 @@ async def list_objects(session_id: uuid.UUID, bucket: str, prefix: str = "",
 @router.post("/buckets/{bucket}/objects", status_code=201)
 async def upload_object(session_id: uuid.UUID, bucket: str, file: UploadFile = File(...),
                         key: str | None = Query(None, max_length=1024),
-                        user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                        user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     limit = get_settings().console_max_upload_bytes
     data = await file.read(limit + 1)
@@ -239,14 +239,14 @@ async def upload_object(session_id: uuid.UUID, bucket: str, file: UploadFile = F
 
 @router.delete("/buckets/{bucket}/objects", status_code=204)
 async def delete_object(session_id: uuid.UUID, bucket: str, key: str = Query(..., max_length=1024),
-                        user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                        user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     await _call(sess, "delete_object", Bucket=bucket, Key=key)
 
 
 @router.get("/buckets/{bucket}/objects/download")
 async def download_object(session_id: uuid.UUID, bucket: str, key: str = Query(..., max_length=1024),
-                          user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                          user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await _session(session_id, user, db)
     out = await _call(sess, "get_object", Bucket=bucket, Key=key)
     body = await asyncio.to_thread(out["Body"].read)

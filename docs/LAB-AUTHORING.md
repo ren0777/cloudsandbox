@@ -179,13 +179,24 @@ Instructors can create, test and publish labs from the browser instead of editin
 - **Editable vs read-only files.** Only `private/solution.sh`, `private/partial.sh`,
   `private/expected.yaml` and `private/notes.md` are editable. Any other file from a clone or import (for
   example a break-fix `setup.sh`) is carried unchanged and shown read-only; v1 does not author setup scripts.
+- **Preview sandbox.** From the Starting state tab, *Launch preview sandbox* opens the declared starting state
+  in a **real isolated sandbox** — the same sandbox a student lab gets — inspectable in the AWS-style console
+  and the browser terminal. **Reset** re-runs the declared typed actions, so the broken state comes back
+  identically. A preview is **not a session**: it creates no attempt, grade, XP, badge or leaderboard event,
+  and only the draft's author (or an admin) can see it.
+- **Publish readiness.** The Test & publish tab lists every gate before the Publish button: schema/services/
+  ownership validation, engine capability support, the baseline against `baseline.expected_score`, the
+  reference solution at full marks, Reset reproducing the baseline, and a passing test of the **current**
+  content — each with row-level errors. Publishing is enabled only when every row passes.
 - **Validation** is always shown, and each error is placed on the row that caused it (a task/check/field, or
   a file). Drafts save even while invalid — they are work in progress.
 - **Test & publish gate.** A lab can only be published after a test run in **real sandboxes** on every engine
-  the lab may run on: an untouched sandbox must score `0`, `private/partial.sh` (if present) must reach the
-  score in `expected.yaml`, and the reference solution must score full marks. The run is asynchronous and
-  per-check results appear as they land. Publishing is allowed only while the last test passed on the
-  **current** content hash — editing even `notes.md` invalidates it and requires a new run.
+  the lab may run on: an untouched sandbox must score its baseline (`baseline.expected_score`, default `0`; a
+  break-fix lab may start partly correct), `private/partial.sh` (if present) must reach the score in
+  `expected.yaml`, and the reference solution must score full marks. For a break-fix lab the run also resets
+  the sandbox and re-scores it, so Reset must reproduce the baseline. The run is asynchronous and per-check
+  results appear as they land. Publishing is allowed only while the last test passed on the **current**
+  content hash — editing even `notes.md` invalidates it and requires a new run.
 - **Publishing** imports an immutable lab version owned by the author and records `lab.published`. The lab is
   **private to its author (and admins)** until the author marks it *shared*, which makes it visible to every
   instructor to assign or clone. Versions are immutable: editing a published lab means cloning it into a new

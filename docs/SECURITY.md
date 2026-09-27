@@ -38,6 +38,14 @@ refuses an id that belongs to another owner, so a draft can never add a version 
 someone else's lab. Draft creation, publishing and sharing are audited (`lab.draft_created`, `lab.published`,
 `lab.shared`).
 
+The **preview sandbox** (phase 9, M42) lets an author inspect the declared starting state in a real runner
+sandbox. It is resolved by sandbox id and is **owner/admin only**: the console and terminal routes accept
+either the student's `session.use` or the instructor's `lab.manage`, but the resource check decides, and
+anyone else — including a student — gets **404**. The sandbox has the same isolation, limits and compiled
+setup as a student lab, but it is not a session: no attempt, grade, XP, badge or leaderboard row can be
+created from it, and it never appears in a gradebook. It expires after `preview_ttl_s` idle (the reconciler
+destroys it), and the terminal credential is encrypted at rest like a session's.
+
 ## Staff actions and accounts (phase 5)
 - **Role matrix additions:** `course.manage` (courses, roster, enrolments), `session.manage` (live view,
   terminate/extend), `audit.view` for instructors and admins; `admin` for users, course staff, all sessions and

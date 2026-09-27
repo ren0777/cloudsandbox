@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.policy import Action, Authz
+from ..auth.policy import Action, AuthzAny
 from ..db import get_db
 from ..errors import ApiError
 from ..grader.iam_eval import parse_document
@@ -111,7 +111,7 @@ async def _fetch_code(sess: LabSession, location: str) -> dict[str, str] | None:
 
 
 @router.get("/functions")
-async def list_functions(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_functions(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                          db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     fns = (await _call(sess, "list_functions")).get("Functions", [])
@@ -119,7 +119,7 @@ async def list_functions(session_id: uuid.UUID, user: User = Depends(Authz(Actio
 
 
 @router.get("/execution-roles")
-async def execution_roles(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def execution_roles(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                           db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     roles = (await aws_call(sess, "iam", "list_roles")).get("Roles", [])
@@ -132,7 +132,7 @@ async def execution_roles(session_id: uuid.UUID, user: User = Depends(Authz(Acti
 
 
 @router.post("/functions", status_code=201)
-async def create_function(session_id: uuid.UUID, body: CreateFunctionIn, user: User = Depends(Authz(Action.session_use)),
+async def create_function(session_id: uuid.UUID, body: CreateFunctionIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                           db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     if body.architecture != "x86_64":
@@ -152,7 +152,7 @@ async def create_function(session_id: uuid.UUID, body: CreateFunctionIn, user: U
 
 
 @router.get("/functions/{name}")
-async def get_function(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def get_function(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     out = await _call(sess, "get_function", FunctionName=name)
@@ -161,7 +161,7 @@ async def get_function(session_id: uuid.UUID, name: str, user: User = Depends(Au
 
 
 @router.put("/functions/{name}/code")
-async def deploy_code(session_id: uuid.UUID, name: str, body: CodeIn, user: User = Depends(Authz(Action.session_use)),
+async def deploy_code(session_id: uuid.UUID, name: str, body: CodeIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                       db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     await _call(sess, "update_function_code", FunctionName=name, ZipFile=_zip(body.files))
@@ -170,7 +170,7 @@ async def deploy_code(session_id: uuid.UUID, name: str, body: CodeIn, user: User
 
 @router.put("/functions/{name}/configuration")
 async def update_configuration(session_id: uuid.UUID, name: str, body: ConfigIn,
-                               user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                               user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     kw: dict[str, Any] = {"FunctionName": name, "MemorySize": body.memory, "Timeout": body.timeout,
                           "Environment": {"Variables": body.env}}
@@ -181,7 +181,7 @@ async def update_configuration(session_id: uuid.UUID, name: str, body: ConfigIn,
 
 
 @router.post("/functions/{name}/invoke")
-async def invoke(session_id: uuid.UUID, name: str, body: InvokeIn, user: User = Depends(Authz(Action.session_use)),
+async def invoke(session_id: uuid.UUID, name: str, body: InvokeIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                  db: AsyncSession = Depends(get_db)):
     """The console's Test button."""
     sess = await console_session(session_id, user, db)
@@ -198,7 +198,7 @@ async def invoke(session_id: uuid.UUID, name: str, body: InvokeIn, user: User = 
 
 
 @router.delete("/functions/{name}", status_code=204)
-async def delete_function(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_function(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                           db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     await _call(sess, "delete_function", FunctionName=name)

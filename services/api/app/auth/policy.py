@@ -92,6 +92,29 @@ class Authz:
         return user
 
 
+class AuthzAny(Authz):
+    """Like `Authz`, but the route accepts any of several actions. Used by the console and terminal routes,
+    which serve both a student's own session and an instructor's preview sandbox: the role matrix lets the
+    request through, and the resource-level check (session ownership, or draft ownership for a preview) is
+    what actually decides access."""
+
+    def __init__(self, *actions: Action):
+        if not actions:
+            raise ValueError("at least one action is required")
+        self.actions = actions
+        self.action = actions[0]
+
+    async def __call__(self, request: Request, user: User = Depends(current_user)) -> User:
+        check_csrf(request)
+        if user.must_change_password and Action.me not in self.actions:
+            raise ApiError("password_change_required", "choose a new password before continuing", 403)
+        if not any(user.role in MATRIX[a] for a in self.actions):
+            log.warning("authz.denied", user_id=str(user.id),
+                        action="|".join(a.value for a in self.actions), role=user.role.value)
+            raise ApiError("forbidden", "you are not allowed to do this", 403)
+        return user
+
+
 # ---------------------------------------------------------------------------- resource-level checks
 async def is_course_staff(db: AsyncSession, user: User, course_id: uuid.UUID) -> bool:
     if user.role == Role.admin:

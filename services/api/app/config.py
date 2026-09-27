@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # Lab Builder test runs (phase 8): one sandbox at a time per run, on the platform runner
     builder_max_concurrent_tests: int = 2
     builder_test_timeout_s: float = 900.0  # a run still "testing" after this is reported as interrupted
+    # Interactive preview sandboxes (M42): idle lifetime and how many one author may keep running.
+    preview_ttl_s: int = 1800
+    preview_max_per_user: int = 2
     default_emulator: str = "floci"  # engine for labs with runtime.emulator = default (promoted, EMULATOR-EVALUATION.md)
     grader_version: str = "1.0.0"
 

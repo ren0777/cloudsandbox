@@ -41,7 +41,7 @@ from ..labs.importer import definition_of
 from ..models import Attempt, LabDraft, LabSession, LabVersion, Runner, SessionEvent, SessionState as S
 from ..obs.logging import log
 from ..runtime.fleet import runner_lost
-from ..runtime.runner_client import RunnerError, client_for
+from ..runtime.runner_client import RunnerError, client_for, get_runner
 from . import service
 from . import state as st
 
@@ -65,6 +65,7 @@ async def reconcile_once() -> dict[str, int]:
         part = await _lost_runner(r) if runner_lost(r) else await _reconcile_runner(r)
         for k, v in part.items():
             stats[k] = stats.get(k, 0) + v
+    await _sweep_previews(stats)
     return stats
 
 
@@ -122,7 +123,7 @@ async def _reconcile_runner(r: Runner) -> dict[str, int]:
         rows = list((await db.scalars(select(LabSession).where(
             LabSession.env == s.env, LabSession.runner_id == r.id,
             or_(LabSession.state.notin_([S.TERMINATED, S.FAILED]), LabSession.id.in_(live_ids))))).all())
-    known = {str(r.id) for r in rows} | await _builder_test_sandboxes()
+    known = {str(r.id) for r in rows} | await _builder_test_sandboxes() | await _preview_sandboxes()
     async with sessionmaker()() as db:  # rows for live sandboxes may be in any env-matching state
         if live_ids:
             known |= {str(i) for i in (await db.scalars(select(LabSession.id).where(
@@ -212,6 +213,40 @@ async def _builder_test_sandboxes() -> set[str]:
     async with sessionmaker()() as db:
         runs = (await db.scalars(select(LabDraft.last_test).where(LabDraft.status == "testing"))).all()
     return {sid for lt in runs for sid in (lt or {}).get("sandbox_ids", [])}
+
+
+async def _preview_sandboxes() -> set[str]:
+    """Preview sandboxes of running previews (M42): real sandboxes with no session row, so the orphan sweep
+    must treat them as known. Abandoned previews are destroyed by `_sweep_previews`."""
+    async with sessionmaker()() as db:
+        rows = (await db.scalars(select(LabDraft.last_preview).where(
+            LabDraft.last_preview["status"].astext == "running"))).all()
+    return {str((lp or {}).get("sandbox_id")) for lp in rows if (lp or {}).get("sandbox_id")}
+
+
+async def _sweep_previews(stats: dict[str, int]) -> None:
+    """Destroy preview sandboxes idle past `preview_ttl_s`: unlike sessions, nothing else times them out."""
+    from ..instructor import preview
+    async with sessionmaker()() as db:
+        rows = list((await db.scalars(select(LabDraft).where(
+            LabDraft.last_preview["status"].astext == "running"))).all())
+    for d in rows:
+        lp = d.last_preview or {}
+        if not preview._stale(lp):
+            continue
+        sid = str(lp.get("sandbox_id"))
+        try:
+            await get_runner().destroy_sandbox(sid)
+        except RunnerError as e:
+            log.warning("preview.destroy.failed", draft_id=str(d.id), sandbox_id=sid, error=e.message)
+        async with sessionmaker()() as db:
+            fresh = await db.get(LabDraft, d.id)
+            if fresh is not None and (fresh.last_preview or {}).get("sandbox_id") == lp.get("sandbox_id"):
+                fresh.last_preview = {**fresh.last_preview, "status": "stopped",
+                                      "stopped_at": st.now().isoformat(), "error": "the preview expired",
+                                      "ttyd_cred_enc": None, "emulator_endpoint": None}
+                await db.commit()
+        stats["preview_expired"] = stats.get("preview_expired", 0) + 1
 
 
 async def _recover_submitting(sess: LabSession, sb: dict | None) -> None:

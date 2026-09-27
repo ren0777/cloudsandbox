@@ -1,11 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ErrorBanner } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { Draft, LabVersionRow, ScenarioOut } from "@/lib/builder";
+import type { Draft, LabVersionRow, Readiness, ScenarioOut } from "@/lib/builder";
 import { fmtDate } from "@/lib/format";
+import { ErrorList } from "./validation";
 
 const SCENARIO_LABEL: Record<string, string> = {
   empty: "Untouched sandbox", partial: "Partial solution", solution: "Reference solution",
@@ -17,11 +18,19 @@ export function TestPublishTab({ draft, dirty, onRun, onPublished }: {
 }) {
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState<"test" | "publish" | null>(null);
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
   const t = draft.last_test;
   const current = draft.validation?.content_sha256 ?? null;
   const stale = !!t && t.status !== "running" && t.content_sha256 !== current;
   const canTest = draft.status !== "testing" && draft.status !== "published" && !!draft.validation?.ok;
-  const canPublish = draft.status === "passed" && draft.tested_sha256 === current && !dirty;
+  const canPublish = draft.status === "passed" && draft.tested_sha256 === current && !dirty
+    && (readiness?.ready ?? false);
+
+  const refreshReadiness = useCallback(async () => {
+    try { setReadiness(await api<Readiness>(`/api/instructor/builder/drafts/${draft.id}/readiness`)); }
+    catch (e) { setError(e); }
+  }, [draft.id]);
+  useEffect(() => { void refreshReadiness(); }, [refreshReadiness, draft]);
 
   async function run() {
     setBusy("test"); setError(null);
@@ -37,6 +46,10 @@ export function TestPublishTab({ draft, dirty, onRun, onPublished }: {
 
   return (
     <div className="stack" style={{ gap: 18 }}>
+      <ReadinessPanel readiness={readiness} />
+
+      <hr className="rule" style={{ margin: 0 }} />
+
       <section className="stack">
         <h3>1 · Test in real sandboxes</h3>
         <p className="small muted" style={{ margin: 0 }}>Each scenario starts a fresh sandbox, runs the private script and grades it:
@@ -63,13 +76,45 @@ export function TestPublishTab({ draft, dirty, onRun, onPublished }: {
             <div className="row">
               <button className="primary" onClick={() => void publish()} disabled={!canPublish || busy !== null} data-testid="publish">
                 {busy === "publish" ? <><span className="spinner" /> Publishing…</> : "Publish"}</button>
-              {!canPublish && <span className="small muted">Needs a passing test of the current content.</span>}
+              {!canPublish && <span className="small muted">Complete every readiness check first.</span>}
             </div>
           </>
         )}
       </section>
       <ErrorBanner error={error} />
     </div>
+  );
+}
+
+function ReadinessPanel({ readiness }: { readiness: Readiness | null }) {
+  if (!readiness) return null;
+  return (
+    <section className="card" style={{ margin: 0 }} data-testid="readiness">
+      <div className="row between">
+        <h3 style={{ margin: 0 }}>Publish readiness</h3>
+        <span className={`pill ${readiness.ready ? "pass" : "warn"}`} data-testid="readiness-status">
+          {readiness.ready ? "Ready to publish" : "Not ready"}
+        </span>
+      </div>
+      <ul className="stack" style={{ gap: 8, listStyle: "none", padding: 0, margin: "10px 0 0" }}>
+        {readiness.checks.map((c) => (
+          <li key={c.id} data-testid={`readiness-${c.id}`}>
+            <div className="row" style={{ gap: 8, alignItems: "baseline" }}>
+              <span className={`pill ${c.ok ? "pass" : "fail"}`} aria-hidden>{c.ok ? "✓" : "✗"}</span>
+              <span>{c.label}</span>
+              {c.detail && <span className="small muted">{c.detail}</span>}
+            </div>
+            <ErrorList rows={c.errors} />
+          </li>
+        ))}
+      </ul>
+      <p className="small muted" style={{ margin: "10px 0 0" }}>
+        Publishing is allowed only when every check above passes: the pack validates, every check and break
+        action is supported on the engines the lab may run on, the baseline matches{" "}
+        <span className="mono">baseline.expected_score</span>, the reference solution reaches full marks,
+        Reset reproduces the baseline, and the test passed on the current content.
+      </p>
+    </section>
   );
 }
 

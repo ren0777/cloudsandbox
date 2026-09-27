@@ -2,6 +2,7 @@
 // Starting state (phase 9, milestone 41): a break-fix lab's broken environment is built from typed break
 // actions, never from instructor-written shell. The API compiles these actions into the setup each student
 // gets; this tab edits the actions, the expected baseline score and shows the Broken State Summary.
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { type BreakAction, defaultParams, type JsonSchema, type Lab, maxScore, type Validation } from "@/lib/builder";
@@ -13,8 +14,8 @@ type Summary = { lines: { type: string; service: string; summary: string }[]; er
 
 const paramsOf = (a: BreakAction) => Object.fromEntries(Object.entries(a).filter(([k]) => k !== "type"));
 
-export function StartingStateTab({ lab, validation, onChange }: {
-  lab: Lab; validation: Validation | null; onChange: (lab: Lab) => void;
+export function StartingStateTab({ lab, draftId, validation, onChange }: {
+  lab: Lab; draftId: string; validation: Validation | null; onChange: (lab: Lab) => void;
 }) {
   const [defs, setDefs] = useState<ActionDef[] | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -178,8 +179,11 @@ export function StartingStateTab({ lab, validation, onChange }: {
         </>
       )}
       <p className="small muted" style={{ margin: 0 }}>
-        Previewing the broken sandbox interactively (console and terminal before the test run) is the next
-        milestone-41 step.
+        Preview the broken sandbox interactively in the console and terminal, then run the baseline on the
+        Test tab.{" "}
+        <Link href={`/instructor/labs/drafts/${draftId}/preview`} data-testid="open-preview-sandbox">
+          Launch preview sandbox →
+        </Link>
       </p>
     </div>
   );

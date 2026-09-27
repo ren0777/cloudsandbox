@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.policy import Action, Authz
+from ..auth.policy import Action, AuthzAny
 from ..db import get_db
 from ..errors import ApiError
 from ..grader.checks.dynamodb import canonical_number
@@ -135,7 +135,7 @@ def _summary(d: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/tables")
-async def list_tables(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_tables(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                       db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     names = (await _call(sess, "list_tables", Limit=100)).get("TableNames", [])
@@ -147,7 +147,7 @@ async def list_tables(session_id: uuid.UUID, user: User = Depends(Authz(Action.s
 
 
 @router.post("/tables", status_code=201)
-async def create_table(session_id: uuid.UUID, body: CreateTableIn, user: User = Depends(Authz(Action.session_use)),
+async def create_table(session_id: uuid.UUID, body: CreateTableIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     attrs = [{"AttributeName": body.partition_key.name, "AttributeType": body.partition_key.type}]
@@ -169,7 +169,7 @@ async def create_table(session_id: uuid.UUID, body: CreateTableIn, user: User = 
 
 
 @router.get("/tables/{table}")
-async def table_details(session_id: uuid.UUID, table: str, user: User = Depends(Authz(Action.session_use)),
+async def table_details(session_id: uuid.UUID, table: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                         db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     s = _summary((await _call(sess, "describe_table", TableName=table))["Table"])
@@ -182,7 +182,7 @@ async def table_details(session_id: uuid.UUID, table: str, user: User = Depends(
 
 
 @router.delete("/tables/{table}", status_code=204)
-async def delete_table(session_id: uuid.UUID, table: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_table(session_id: uuid.UUID, table: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     await _call(sess, "delete_table", TableName=table)
@@ -190,7 +190,7 @@ async def delete_table(session_id: uuid.UUID, table: str, user: User = Depends(A
 
 @router.put("/tables/{table}/capacity")
 async def update_capacity(session_id: uuid.UUID, table: str, body: CapacityIn,
-                          user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                          user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     kw: dict[str, Any] = {"TableName": table, "BillingMode": body.billing_mode}
     if body.billing_mode == "PROVISIONED":
@@ -201,7 +201,7 @@ async def update_capacity(session_id: uuid.UUID, table: str, body: CapacityIn,
 
 
 @router.get("/tables/{table}/items")
-async def explore_items(session_id: uuid.UUID, table: str, user: User = Depends(Authz(Action.session_use)),
+async def explore_items(session_id: uuid.UUID, table: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                         db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     s = _summary((await _call(sess, "describe_table", TableName=table))["Table"])
@@ -224,7 +224,7 @@ async def explore_items(session_id: uuid.UUID, table: str, user: User = Depends(
 
 @router.post("/tables/{table}/items", status_code=201)
 async def put_item(session_id: uuid.UUID, table: str, body: PutItemIn,
-                   user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                   user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     names = [a.name for a in body.attributes]
     if len(names) != len(set(names)):
@@ -235,7 +235,7 @@ async def put_item(session_id: uuid.UUID, table: str, body: PutItemIn,
 
 @router.post("/tables/{table}/items/delete", status_code=204)
 async def delete_item(session_id: uuid.UUID, table: str, body: DeleteItemIn,
-                      user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                      user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     key = {k: ({"N": canonical_number(v.value)} if v.type == "N" else {v.type: v.value}) for k, v in body.key.items()}
     await _call(sess, "delete_item", TableName=table, Key=key)
