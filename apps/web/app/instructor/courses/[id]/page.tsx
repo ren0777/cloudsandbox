@@ -47,6 +47,7 @@ export default function CoursePage() {
           <div className="row">
             <Link href={`/instructor/courses/${id}/live`} className="btn small" data-testid="open-live">Live</Link>
             <Link href={`/instructor/courses/${id}/gradebook`} className="btn small" data-testid="open-gradebook">Gradebook</Link>
+            <Link href={`/instructor/courses/${id}/analytics`} className="btn small" data-testid="open-analytics">Analytics</Link>
             <Link href={`/instructor/courses/${id}/audit`} className="btn small">Activity log</Link>
           </div>
         </div>

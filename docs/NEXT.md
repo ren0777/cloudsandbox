@@ -1,8 +1,9 @@
-# Next: Authoring excellence (phase 9)
+# Next: authoring excellence (phase 9) → quality + teaching value (phase 10)
 
 Hand-off for the next working session. Read `CLAUDE.md` and `docs/PLAN.md` first.
 State: **v0.2.0 is released** (`main` = merge `61770d8`, tag `v0.2.0`). Phase 8 (Instructor Lab Builder,
 milestones 36–39) is complete and fully regressed; decisions D29–D38 are in `docs/STATUS.md`.
+Phase 9 milestones 40–44a are done; **phase 10 (milestones 45–49) is the batch described below.**
 
 ## Owner's direction (2026-09-27)
 The roadmap is deliberately **not** "more services". Order of value:
@@ -76,15 +77,64 @@ codename.
 - Each new lab must pass `app.labtest` (empty 0 / partial / solution 100) on every engine it may run on
   before it appears in the gallery.
 
-## After phase 9
-Deploy on a real server (docs/DEPLOYMENT.md) → run it with actual students → collect feedback → expand AWS
-coverage in the order the feedback justifies (VPC first, then SQS/SNS).
+## Phase 10: quality + teaching value (the current batch)
+
+**Scope rule (owner, 2026-09-27):** no new AWS service coverage in this phase — no VPC, SQS, SNS, Redis,
+dark mode, command palette, i18n, audit proxy, LTI, SSO or notifications. The **audit proxy / `audit.*`
+checks are the next major architecture milestone after this batch.** Preserve the architecture, grading
+semantics, sandbox isolation, emulator abstraction, immutable evidence, audit guarantees and multi-runner
+behaviour throughout.
+
+Build in this order; each sub-milestone must be green before starting the next.
+
+### 45 Authorization coverage guard ☑ (done — see STATUS 45 and D46)
+- `services/api/tests/test_authz_coverage.py` restored as the file `app/main.py` and `app/auth/policy.py`
+  already referred to (it lived inside `test_auth_and_policy.py` before).
+- Guards: every route carries `Authz(action)` or is on a **reviewed allowlist held in the test**; no
+  resource-scoped path may be public; every `Authz` action has a `MATRIX` row (else 500 instead of 403);
+  no route is both public and protected; a **non-vacuity self-test** proves the checker flags a new
+  unprotected route; every protected route answers **401** to an anonymous caller (141 routes); cross-resource
+  access stays **404, wrong role 403**.
+
+### 46 Lab Builder autosave + undo/redo ☑ (done — see STATUS 46 and D48)
+- Debounced autosave of dirty drafts with `Saving… / Saved / Save failed` states, save-on-leave, and no
+  silent loss when switching tabs or routes.
+- Optimistic concurrency: a save carries the content revision (`drafts.rev`) it was based on and **does
+  not** overwrite newer server state (409 `stale_revision`).
+- Undo/redo for meaningful edits (coalesced keystrokes), keyboard shortcuts, YAML ⇄ form stay consistent.
+- Published immutable versions untouched. Tests: autosave, failed save, undo, redo, stale revision.
+
+### 47 Single-check live runner ☑ (done — see STATUS 47 and D49)
+- From the Lab Builder, run **one** check against the preview sandbox and see type, expected, actual,
+  pass/fail, marks possible, the normal grader message and a clear capability/unsupported reason.
+- Same deterministic check code as final grading; **never** an attempt, grade, XP, badge, leaderboard event
+  or immutable evidence; ownership, freeze and capability rules respected; nothing calls an emulator
+  directly from the browser; serialised and rate-limited. Backend + browser tests.
+
+### 48 Attempt diff ("since your last attempt") ☑ (done — see STATUS 48 and D51)
+- Student- and instructor-facing comparison of two attempts from **stored** grade results only (never a
+  live sandbox): fixed / regressed / unchanged / added / removed, first attempt handled gracefully,
+  regraded attempts correct. Students never see `expected`/`actual`. Original evidence and grades untouched.
+
+### 49 Instructor course analytics ☑ (done — see STATUS 49 and D52)
+- Per course: average score, submission rate, average attempts, average completion time, most-failed
+  tasks, most-missed checks, late count, and infrastructure interruptions counted **separately**.
+- Staff only see their own courses (admins see all); no live-sandbox queries; a fixed query count (no N+1);
+  empty states. CSV export left for later.
+
+## After phase 10
+Deploy on a real server (docs/DEPLOYMENT.md) → run it with actual students → collect feedback → the audit
+proxy (`audit.*`) → expand AWS coverage in the order the feedback justifies (VPC first, then SQS/SNS).
 
 ## Verification
 - API: `tests/test_lab_builder.py` (templates catalogue/create/errors, drafts, publish gate) — fast suite
   must stay green; `scripts/test-api.sh` for the full suite before a release.
+- Phase 10: `tests/test_authz_coverage.py` (route coverage + the 401 sweep),
+  `tests/test_lab_builder_autosave.py`, `tests/test_preview_check.py`, `tests/test_attempt_diff.py`,
+  `tests/test_course_analytics.py` — all inside `scripts/test-api.sh -m "not docker"`.
 - E2E: `apps/web/e2e/lab-builder.spec.ts` on the compose stack (template gallery + the full clone/test/
-  publish/assign journey).
+  publish/assign journey), plus `lab-builder-autosave.spec.ts`, `lab-builder-check-run.spec.ts` and
+  `instructor-analytics.spec.ts`. `instructor-first-run.spec.ts` is the M43 acceptance journey.
 - Docs: LAB-AUTHORING (builder section), STATUS (milestones and decisions), DEMO (optional walkthrough).
 
 ## How to run

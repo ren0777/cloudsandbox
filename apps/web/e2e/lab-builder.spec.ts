@@ -9,6 +9,21 @@ const NEW_TITLE = "Create the café's S3 bucket {{ bucket }}";
 const ASSIGNMENT = "Builder mission";
 const shot = (page: Page, name: string) => page.screenshot({ path: `../../docs/screenshots/${name}.png`, fullPage: true });
 
+/** Edits autosave (M46), so by the time a test clicks Save the button may already be idle. Save if there is
+ * anything to save, and always assert the draft really settled. */
+async function saveDraft(page: Page) {
+  const btn = page.getByTestId("save-draft");
+  const state = page.getByTestId("save-state");
+  // Edits autosave ~800 ms after typing (M46), so the button may already be idle by the time we click —
+  // and it can go idle *during* the click. Give the manual save a short leash and assert the outcome,
+  // which is what the test actually cares about: the draft settled and nothing is left unsaved.
+  if (await btn.isEnabled().catch(() => false)) {
+    await btn.click({ timeout: 2_000 }).catch(() => undefined);
+  }
+  await expect(state).toHaveText("Saved", { timeout: 20_000 });
+  await expect(btn).toBeDisabled();
+}
+
 async function signIn(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
@@ -36,8 +51,7 @@ test("instructor clones, tests and publishes a lab; a student starts it", async 
   await first.getByTestId("task-title").fill(NEW_TITLE);
   await expect(first.getByTestId("check-card").first().getByTestId("check-type")).toHaveValue("s3.bucket_exists");
   await shot(page, "21-builder-tasks");
-  await page.getByTestId("save-draft").click();
-  await expect(page.getByTestId("save-draft")).toBeDisabled();
+  await saveDraft(page);
   await expect(page.getByTestId("validation-ok")).toBeVisible();
 
   // The student preview shows the rendered task, never the checks
@@ -126,8 +140,7 @@ test("instructor authors a break-fix starting state with typed actions", async (
   await page.getByTestId("param-bucket").fill("{{ bucket }}");
   await expect(page.getByTestId("broken-state")).toContainText("Bucket lab-");
   await expect(page.getByTestId("baseline-score")).toHaveValue("0");
-  await page.getByTestId("save-draft").click();
-  await expect(page.getByTestId("save-draft")).toBeDisabled();
+  await saveDraft(page);
   await expect(page.getByTestId("validation-ok")).toBeVisible();
 });
 
@@ -155,8 +168,7 @@ test("instructor previews the starting state and sees the publish readiness", as
   await page.getByTestId("add-break-action").click();
   await page.getByTestId("break-action-type").selectOption("s3.create_bucket");
   await page.getByTestId("param-bucket").fill("{{ bucket }}");
-  await page.getByTestId("save-draft").click();
-  await expect(page.getByTestId("save-draft")).toBeDisabled();
+  await saveDraft(page);
   await page.getByTestId("open-preview-sandbox").click();
   await page.waitForURL(/\/preview$/);
 

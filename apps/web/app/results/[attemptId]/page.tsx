@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { Shell } from "@/components/shell";
 import { ArchitectureDiagram, CostMeter } from "@/components/architecture-diagram";
+import { AttemptDiffPanel } from "@/components/attempt-diff";
 import { BadgesEarned } from "@/components/progress-card";
 import { ErrorBanner, ScoreRing } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -63,6 +64,7 @@ function Result() {
             </div>
           ))}
         </div>
+        <AttemptDiffPanel attemptId={attempt.id} />
         {r.insights && (
           <section className="card stack" data-testid="result-architecture">
             <div><h2>What you built</h2><p className="small muted" style={{ margin: "4px 0 0" }}>Your resources at the moment this attempt was graded.</p></div>

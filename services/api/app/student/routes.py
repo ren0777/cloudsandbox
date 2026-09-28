@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.policy import Action, Authz, load_assignment_for, load_own_attempt, load_session_for
 from ..console.common import sandbox_engine
 from ..db import get_db, sessionmaker
+from ..diff import diff_for
 from ..errors import ApiError
 from ..grader.grade import student_view
 from ..idempotency import run_idempotent
@@ -230,6 +231,15 @@ async def get_attempt(attempt_id: uuid.UUID, user: User = Depends(Authz(Action.a
                       db: AsyncSession = Depends(get_db)):
     at = await load_own_attempt(db, user, attempt_id)
     return await _attempt_result(at.id)
+
+
+@router.get("/attempts/{attempt_id}/diff")
+async def attempt_diff(attempt_id: uuid.UUID, user: User = Depends(Authz(Action.attempt_view_own)),
+                       db: AsyncSession = Depends(get_db)):
+    """This attempt against the previous one that counted — stored grade results only, never a sandbox.
+    Students never see `expected`/`actual` here (PLAN §7b); the instructor's copy does."""
+    at = await load_own_attempt(db, user, attempt_id)
+    return await diff_for(db, at, public=True)
 
 
 @router.get("/console/services")

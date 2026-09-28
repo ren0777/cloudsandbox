@@ -183,9 +183,13 @@ async def _out(db: AsyncSession, d: LabDraft, full: bool = True) -> dict[str, An
          "base_lab_version_id": str(d.base_lab_version_id) if d.base_lab_version_id else None,
          "published_version_id": str(d.published_version_id) if d.published_version_id else None,
          "validation": d.last_validation, "tested_sha256": d.tested_sha256,
-         "created_at": d.created_at, "updated_at": d.updated_at}
+         "created_at": d.created_at, "updated_at": d.updated_at,
+         # whether the preview sandbox is up — the Tasks tab needs it to offer "run this check" (M47)
+         "preview_status": (d.last_preview or {}).get("status") or "stopped"}
     if full:
-        o.update(content=d.content, last_test=d.last_test, **_files_info(d.content))
+        o.update(content=d.content, last_test=d.last_test, rev=dr.fingerprint(d.content), **_files_info(d.content))
+    else:
+        o["rev"] = dr.fingerprint(d.content)
     return o
 
 
@@ -345,6 +349,20 @@ async def _save(db: AsyncSession, d: LabDraft, content: dict[str, Any]) -> dict[
 class DraftUpdate(BaseModel):
     lab: dict[str, Any] | None = None
     files: dict[str, str] | None = None
+    base_rev: str | None = Field(default=None, description="the draft rev this edit was based on")
+
+
+def _require_current(d: LabDraft, base_rev: str | None) -> None:
+    """Optimistic concurrency for the builder (M46): an autosave that still carries the rev it was edited
+    from must never overwrite content someone else has saved since — another tab, a revalidate, a test run.
+    Omitting `base_rev` is allowed for callers that have already re-read the draft (the import/clone paths)."""
+    if base_rev is None:
+        return
+    current = dr.fingerprint(d.content)
+    if base_rev != current:
+        raise ApiError("stale_revision",
+                       "this draft was changed somewhere else (another tab, or a test run); reload it so "
+                       "your changes don't overwrite the newer version", 409, extra={"rev": current})
 
 
 @router.put("/drafts/{draft_id}")
@@ -354,6 +372,7 @@ async def update_draft(draft_id: uuid.UUID, body: DraftUpdate, user: User = Depe
     progress); the response carries the validation result for the always-visible validation panel."""
     d = await _load(db, user, draft_id, for_update=True)
     _ensure_editable(d)
+    _require_current(d, body.base_rev)
     try:
         content = dr.apply_edit(d.content, body.lab, body.files)
     except LabValidationError as e:
@@ -374,6 +393,7 @@ async def delete_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.la
 
 class YamlIn(BaseModel):
     yaml: str = Field(max_length=dr.MAX_LAB_JSON_BYTES)
+    base_rev: str | None = None
 
 
 @router.get("/drafts/{draft_id}/yaml")
@@ -390,6 +410,7 @@ async def put_yaml(draft_id: uuid.UUID, body: YamlIn, user: User = Depends(Authz
     exactly like a form save. YAML comments are not kept: the draft stores the lab as JSON."""
     d = await _load(db, user, draft_id, for_update=True)
     _ensure_editable(d)
+    _require_current(d, body.base_rev)
     try:
         lab = dr.yaml_to_lab(body.yaml)
         content = dr.apply_edit(d.content, lab, None)

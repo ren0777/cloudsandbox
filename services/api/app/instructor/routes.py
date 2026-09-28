@@ -25,6 +25,7 @@ from ..auth.policy import (
 )
 from ..config import get_settings
 from ..db import get_db
+from ..diff import diff_for
 from ..errors import ApiError, not_found
 from ..grader.grade import grade, to_json
 from ..insights import insights
@@ -159,6 +160,16 @@ async def attempt_detail(attempt_id: uuid.UUID, user: User = Depends(Authz(Actio
         "events": [{"from": e.from_state, "to": e.to_state, "reason": e.reason, "actor": e.actor,
                     "request_id": e.request_id, "at": e.created_at} for e in events],
     }
+
+
+@router.get("/attempts/{attempt_id}/diff")
+async def attempt_diff(attempt_id: uuid.UUID, user: User = Depends(Authz(Action.results_view)),
+                       db: AsyncSession = Depends(get_db)):
+    """The same comparison the student gets, plus `expected`/`actual` — still from stored grade results
+    only, so an instructor can review a diff without a sandbox being involved."""
+    at = await load_attempt_for_staff(db, user, attempt_id)
+    bind(attempt_id=at.id, session_id=at.session_id)
+    return await diff_for(db, at, public=False)
 
 
 class RegradeIn(BaseModel):

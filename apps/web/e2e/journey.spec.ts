@@ -6,6 +6,9 @@ import { expect, type Page, test } from "@playwright/test";
 // instructor sees result + per-check evidence → sandbox cleaned up.
 
 const PASSWORD = "cloudlabs-demo";
+// An isolated Compose project runs under its own runner id (infra/docker-compose.*.yml), so the admin's
+// runner row must not be hardcoded — the same rule fleet.spec.ts already follows for runner2.
+const RUNNER_ID = process.env.CLOUDLABS_RUNNER_ID ?? "runner-local-1";
 const BUCKET = "cafe-demo01-site";
 let sessionId = "";
 const shot = (page: Page, name: string) => page.screenshot({ path: `../../docs/screenshots/${name}.png` });
@@ -127,7 +130,8 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
   test("admin sees runtime status", async ({ page }) => {
     await signIn(page, "demo-admin@cloudlabs.demo");
     await expect(page.getByRole("heading", { name: "Runtime status" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "runner-local-1" })).toBeVisible();
+    // anchored: "runner-m45" must not also match "runner-m45-2" when a second runner is registered
+    await expect(page.getByRole("cell", { name: new RegExp(`^${RUNNER_ID} `) })).toBeVisible();
     await expect(page.getByText("Healthy").first()).toBeVisible();
     await shot(page, "07-runtime-status");
   });

@@ -184,6 +184,17 @@ Instructors can create, test and publish labs from the browser instead of editin
   and the browser terminal. **Reset** re-runs the declared typed actions, so the broken state comes back
   identically. A preview is **not a session**: it creates no attempt, grade, XP, badge or leaderboard event,
   and only the draft's author (or an admin) can see it.
+- **Autosave and undo.** Every edit is saved about a second after you stop typing; the header shows
+  *Saving… / Saved / Save failed*, and a failed save offers *Try again* (it is never retried in a loop).
+  **Undo**/**Redo** (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z) walk your edits in meaningful steps — a burst of typing
+  counts as one — and switching tabs or leaving the page never discards work. If the draft is saved
+  somewhere else meanwhile (another tab, a test run) the builder refuses to overwrite it and offers
+  *Reload draft* instead; published, immutable versions are never touched.
+- **Run this check.** On the Tasks tab each check can be run on its own against the running preview
+  sandbox. It returns the grader's own **expected / actual, pass/fail, marks possible and message** — the
+  same check function and evidence capture final grading uses — without creating an attempt, grade, badge
+  or evidence row. A check the engine cannot answer says so and names the operation; runs are spaced about
+  a second apart, and an invalid pack reports the same row-level errors as the validation panel.
 - **Publish readiness.** The Test & publish tab lists every gate before the Publish button: schema/services/
   ownership validation, engine capability support, the baseline against `baseline.expected_score`, the
   reference solution at full marks, Reset reproducing the baseline, and a passing test of the **current**
