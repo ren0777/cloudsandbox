@@ -18,7 +18,7 @@ title: "Mission 1: CloudCafé goes online"
 summary: One line for the lab card.
 story: |                          # markdown-lite: paragraphs, **bold**, `code`; may use variables
   Your bucket is **{{ bucket }}**.
-services: [s3]                    # s3 | dynamodb | iam | ec2 available; lambda later
+services: [s3]                    # s3 | dynamodb | iam | ec2 | lambda | vpc | sqs | sns available
 runtime: {emulator: default}      # platform default engine; name an engine only if a lab truly needs it
 duration_minutes: 45              # hard TTL (capped at 120)
 idle_minutes: 20                  # optional (clamped to 10–30)
@@ -72,6 +72,21 @@ tasks:
 | `ec2.key_pair_exists` | `key` | the key pair exists |
 | `ec2.running_instance_count` | `min`, `max` | the number of running instances is within the bounds (use `min: 1` so an empty sandbox can't pass) |
 
+| `vpc.exists` | `name` (Name tag), `cidr` | a VPC with that name and CIDR block exists |
+| `vpc.subnet` | `name`, `cidr`, `vpc`?, `public`? | a subnet with that name/CIDR; optionally in that VPC and public (`MapPublicIpOnLaunch`) |
+| `vpc.route` | `route_table`, `destination`, `target` (`igw:<name>` or `local`), `expect` (present/absent) | the route table has (or lacks) that route |
+| `vpc.subnet_route_table` | `subnet`, `route_table`, `expect` (present/absent) | the subnet is (or is no longer) associated with the route table |
+| `vpc.internet_gateway_attached` | `internet_gateway`, `vpc`, `expect` (present/absent) | the gateway is (or is no longer) attached to the VPC |
+| `vpc.security_group_rule` | `group`, `direction` (ingress/egress), `protocol`, `port`, `cidr`, `expect` (present/absent) | the rule is present/absent (an "All traffic" rule covers every port) |
+
+| `sqs.queue_exists` | `name`, `fifo`? | a queue with that name exists (optionally Standard or FIFO) |
+| `sqs.queue_attribute` | `queue`, `attribute` (`visibility_timeout` / `retention_period` / `delay_seconds`), `value` | the queue attribute has that integer value |
+| `sqs.queue_tag` | `queue`, `key`, `value` | the queue has that tag |
+| `sqs.message_present` | `queue`, `body_contains`? | a message is on the queue (probe: peeks up to 10 messages with visibility 0 — nothing is consumed, so grading never steals the student's message) |
+
+| `sns.topic_exists` | `name`, `display_name`? | the topic exists, optionally with that display name |
+| `sns.subscription` | `topic`, `queue`, `expect` (present/absent) | the queue is (or no longer is) subscribed to the topic over SQS. Combine with `sqs.message_present` to grade real delivery: SNS has no egress, so in-sandbox queue delivery is the only safe target |
+
 | `lambda.function` | `name`, `runtime`?, `handler`?, `role_name`?, `env` {K: V}?, `memory_min`?, `timeout_min`? | the function exists with those settings |
 | `lambda.invoke_returns` | `name`, `payload` (event), `expect` | invoking the function with `payload` returns a response containing `expect` (dicts match as a subset, numbers with float tolerance) |
 
@@ -104,6 +119,7 @@ break_actions:
   - {type: iam.attach_managed_policy, target_type: group, target: "{{ group }}", policy: AdministratorAccess}
   - {type: s3.disable_versioning, bucket: "{{ bucket }}"}
   - {type: ec2.authorize_ingress, group: "{{ group }}", protocol: tcp, port: 22, cidr: 0.0.0.0/0}
+  - {type: vpc.delete_route, route_table: "{{ route_table_name }}", destination: "0.0.0.0/0"}
   - {type: lambda.remove_env_var, function: "{{ function }}", name: TABLE_NAME}
 baseline: {expected_score: "0.00"}   # or e.g. "40.00" when the lab intentionally starts partly correct
 ```
@@ -111,10 +127,17 @@ baseline: {expected_score: "0.00"}   # or e.g. "40.00" when the lab intentionall
 The catalogue (services, action types, parameter JSON Schema) is `GET /api/instructor/builder/break-actions`;
 the Lab Builder's **Starting state** tab generates its forms from it and shows the Broken State Summary. The
 catalogue covers IAM (create group/user, membership, attach/detach a managed policy), S3 (create bucket,
-versioning, bucket policy, public access, tags), EC2 (security group, ingress rules) and Lambda (remove an
-environment variable); new typed actions are added in `services/api/app/breakfix/`. Import-time validation
-rejects an unknown action, bad parameters, a service not listed in `services`, and any action an engine
-cannot perform.
+versioning, bucket policy, public access, tags), EC2 (security group, ingress rules), VPC (create a VPC,
+subnet, internet gateway, route table, route, association, security group; authorize/revoke ingress and
+delete a route), SQS (create a queue with attributes, set an attribute, send a message, delete a queue),
+SNS (create/delete a topic, subscribe an SQS queue, unsubscribe it, publish) and Lambda (remove an
+environment variable); new typed actions are added in `services/api/app/breakfix/`. Import-time
+validation rejects an unknown action, bad parameters, a service not listed in `services`, and any action
+an engine cannot perform.
+
+**SNS CLI note:** the AWS CLI v2 exposes the SNS `Endpoint` parameter as
+`--notification-endpoint` (`--endpoint` is parsed as the global `--endpoint-url`). The compiled actions
+use the correct flag; an authored script must too.
 
 Rules of thumb:
 - The untouched broken state must score `baseline.expected_score` (0 unless the lab starts partly correct);
@@ -127,6 +150,8 @@ Rules of thumb:
   work well here.
 - The compiled setup isn't secret (it describes the problem). Keep solutions in `private/`.
 - The baseline is captured after setup, so an untouched auto-submit doesn't use an attempt.
+- A compiled setup is a sequence of AWS CLI calls and gets the runner's **180 s** job cap (a whole VPC
+  network is ~30 calls); a legacy `setup` script keeps its own `timeout_s` (max 180 s) for the same reason.
 
 Legacy packs (like `labs/iam-breakfix`) may instead carry a `setup` script in `public/`; it runs the same
 way. A lab uses `break_actions` **or** a setup script, never both; the Lab Builder carries a legacy setup

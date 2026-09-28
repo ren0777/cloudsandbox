@@ -226,7 +226,10 @@ def setup_job(pkg_public_bundle: bytes, definition: LabDefinition, variables: di
     if definition.setup:
         script, timeout_s, extra = definition.setup.script, definition.setup.timeout_s, {}
     elif definition.break_actions:
-        script, timeout_s = "_cloudlabs_break_actions.sh", 60
+        # A compiled setup is a sequence of AWS CLI calls (one or more per action, each with CLI startup
+        # cost); a full VPC network is ~30 calls even on a fast host. 180 s is the runner's job cap and
+        # leaves headroom, where the old 60 s could time out a legitimate setup under load.
+        script, timeout_s = "_cloudlabs_break_actions.sh", 180
         rendered = render_break_actions(definition.break_actions, variables)
         text = breakfix.compile_actions([{"type": a.type, **a.params} for a in rendered])
         extra = {f"public/{script}": text.encode()}

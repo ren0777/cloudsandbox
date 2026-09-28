@@ -1,0 +1,106 @@
+schema_version: 1
+id: vpc-basics
+version: 1.0.0
+title: "Mission 8: CloudCafé's public network"
+summary: Build a VPC with a public subnet, an internet gateway, a route to the internet and a web security group.
+story: |
+  **CloudCafé** is moving its food-truck website off the shared default network. The menu page has to be
+  reachable from the internet, so the new **VPC** needs a **public subnet**: a subnet whose traffic is
+  routed to an internet gateway.
+
+  Build the network the way a cloud engineer would, in the **VPC console** or with the **AWS CLI** in the
+  terminal — both act on the same sandbox:
+
+  - a VPC named **{{ vpc_name }}** with the CIDR block **{{ vpc_cidr }}**
+  - a subnet named **{{ subnet_name }}** with the CIDR block **{{ subnet_cidr }}**, marked **public**
+  - an internet gateway named **{{ igw_name }}**, attached to your VPC
+  - a route table named **{{ route_table_name }}** that routes **0.0.0.0/0** to the internet gateway
+  - the route table **associated with your subnet** — that association is what makes the subnet public
+  - a security group named **{{ sg_name }}** that allows **HTTP (80)** from anywhere
+
+  The **VPC** page has a tab for each of these; the **Architecture** tab updates as you build.
+services: [vpc]
+runtime: {emulator: default}   # platform default engine; labs must not depend on one engine
+duration_minutes: 45
+idle_minutes: 20
+max_attempts: 3
+variables:
+  vpc_name: "cafe-vpc-{{ student_short_id }}"
+  subnet_name: "cafe-public-{{ student_short_id }}"
+  igw_name: "cafe-igw-{{ student_short_id }}"
+  route_table_name: "cafe-public-rtb-{{ student_short_id }}"
+  sg_name: "cafe-web-sg-{{ student_short_id }}"
+  vpc_cidr: "10.0.0.0/16"
+  subnet_cidr: "10.0.1.0/24"
+requires:
+  - vpc:CreateVpc
+  - vpc:CreateSubnet
+  - vpc:ModifySubnetAttribute
+  - vpc:CreateInternetGateway
+  - vpc:AttachInternetGateway
+  - vpc:CreateRouteTable
+  - vpc:CreateRoute
+  - vpc:AssociateRouteTable
+  - vpc:CreateSecurityGroup
+  - vpc:AuthorizeSecurityGroupIngress
+tasks:
+  - id: create-vpc
+    title: "Create the VPC {{ vpc_name }}"
+    description: A VPC is your own private network in the cloud. Give it the CIDR block {{ vpc_cidr }} and the name shown above.
+    hints:
+      - "In the console, open **VPC** and find the button that creates a VPC."
+      - "A /16 block like 10.0.0.0/16 gives you 65,536 addresses for the whole network."
+      - "CLI: `aws ec2 create-vpc help` — then tag it so it has a name (`aws ec2 create-tags`)."
+    marks: 15
+    checks:
+      - {type: vpc.exists, name: "{{ vpc_name }}", cidr: "{{ vpc_cidr }}"}
+  - id: create-subnet
+    title: "Create the public subnet {{ subnet_name }}"
+    description: "Put a subnet with CIDR {{ subnet_cidr }} inside your VPC and mark it public (auto-assign public IPv4 addresses)."
+    hints:
+      - "Open your VPC and look at its **Subnets** tab, then create a subnet in it."
+      - "Choose the CIDR block {{ subnet_cidr }} and tick the setting that auto-assigns public IPv4 addresses."
+      - "CLI: create the subnet, tag it, then `aws ec2 modify-subnet-attribute --map-public-ip-on-launch`."
+    marks: 20
+    checks:
+      - {type: vpc.subnet, name: "{{ subnet_name }}", cidr: "{{ subnet_cidr }}", vpc: "{{ vpc_name }}", public: true}
+  - id: attach-igw
+    title: "Attach the internet gateway {{ igw_name }}"
+    description: An internet gateway is the door between your VPC and the internet. Create it and attach it to your VPC.
+    hints:
+      - "Internet gateways live under **VPC → Internet gateways**. Create one, then attach it."
+      - "An unattached gateway does nothing — the attachment is the point."
+      - "CLI: `aws ec2 create-internet-gateway`, then `aws ec2 attach-internet-gateway`."
+    marks: 15
+    checks:
+      - {type: vpc.internet_gateway_attached, internet_gateway: "{{ igw_name }}", vpc: "{{ vpc_name }}"}
+  - id: route-to-internet
+    title: "Route 0.0.0.0/0 to the internet gateway in {{ route_table_name }}"
+    description: "Create a route table and add a route: all traffic that leaves the subnet goes to {{ igw_name }}."
+    hints:
+      - "Open **VPC → Route tables**, select your route table, then edit its **Routes**."
+      - "The destination is 0.0.0.0/0 (the whole internet) and the target is your internet gateway."
+      - "CLI: `aws ec2 create-route-table` then `aws ec2 create-route --destination-cidr-block 0.0.0.0/0`."
+    marks: 20
+    checks:
+      - {type: vpc.route, route_table: "{{ route_table_name }}", destination: "0.0.0.0/0", target: "igw:{{ igw_name }}"}
+  - id: associate-route-table
+    title: "Associate the route table with {{ subnet_name }}"
+    description: A route table only affects the subnets it is associated with. Associate yours with the public subnet.
+    hints:
+      - "In the route table's **Subnet associations** tab, edit the associations."
+      - "The default route table is already associated with every subnet; yours has to be associated explicitly."
+      - "CLI: `aws ec2 associate-route-table --route-table-id ... --subnet-id ...`."
+    marks: 15
+    checks:
+      - {type: vpc.subnet_route_table, subnet: "{{ subnet_name }}", route_table: "{{ route_table_name }}"}
+  - id: http-security-group
+    title: "Allow HTTP to {{ sg_name }}"
+    description: Create a security group in your VPC and allow inbound HTTP (TCP port 80) from anywhere.
+    hints:
+      - "Security groups live under **VPC → Security groups**; create yours in your VPC, not the default one."
+      - "Edit the **Inbound rules**: type HTTP, source Anywhere-IPv4 (0.0.0.0/0)."
+      - "CLI: `aws ec2 authorize-security-group-ingress --protocol tcp --port 80 --cidr 0.0.0.0/0`."
+    marks: 15
+    checks:
+      - {type: vpc.security_group_rule, group: "{{ sg_name }}", direction: ingress, protocol: tcp, port: 80, cidr: 0.0.0.0/0}

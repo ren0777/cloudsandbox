@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -179,6 +180,136 @@ def collect_ec2(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, 
             "key_pairs": keys}
 
 
+def collect_vpc(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, Any]:
+    """VPCs, subnets, route tables (routes + associations), internet gateways (attachments) and security
+    groups (ingress + egress), keyed by Name tags. Resource ids, ARNs and AZs are deliberately left out,
+    so the evidence is engine-independent and lab checks address resources the way the console shows them."""
+    c = adapter.client("vpc", endpoint)
+
+    def tag_name(res: dict[str, Any]) -> str:
+        return {t["Key"]: t["Value"] for t in res.get("Tags", [])}.get("Name", "")
+
+    def key(res: dict[str, Any], fallback: str) -> str:
+        return tag_name(res) or fallback
+
+    vpcs_raw = c.describe_vpcs().get("Vpcs", [])
+    subnets_raw = c.describe_subnets().get("Subnets", [])
+    rtbs_raw = c.describe_route_tables().get("RouteTables", [])
+    igws_raw = c.describe_internet_gateways().get("InternetGateways", [])
+    sgs_raw = c.describe_security_groups().get("SecurityGroups", [])
+    vpc_name = {v["VpcId"]: key(v, v["VpcId"]) for v in vpcs_raw}
+    subnet_name = {s["SubnetId"]: key(s, s["SubnetId"]) for s in subnets_raw}
+    igw_name = {g["InternetGatewayId"]: key(g, g["InternetGatewayId"]) for g in igws_raw}
+
+    vpcs: dict[str, Any] = {}
+    for v in vpcs_raw:
+        vpcs[key(v, v["VpcId"])] = {"name": tag_name(v), "cidr": v.get("CidrBlock"),
+                                    "is_default": bool(v.get("IsDefault"))}
+    subnets: dict[str, Any] = {}
+    for s in subnets_raw:
+        subnets[key(s, s["SubnetId"])] = {"name": tag_name(s), "cidr": s.get("CidrBlock"),
+                                          "vpc": vpc_name.get(s.get("VpcId", ""), ""),
+                                          "public": bool(s.get("MapPublicIpOnLaunch"))}
+    route_tables: dict[str, Any] = {}
+    for r in rtbs_raw:
+        routes = []
+        for x in r.get("Routes", []):
+            gateway = x.get("GatewayId")
+            local = x.get("Origin") == "CreateRouteTable" or not (gateway or x.get("NatGatewayId"))
+            target = "local" if local else f"igw:{igw_name.get(gateway, gateway)}"
+            routes.append({"destination": x.get("DestinationCidrBlock") or x.get("DestinationIpv6CidrBlock", ""),
+                           "target": target, "state": x.get("State", "active")})
+        associations = [{"subnet": subnet_name.get(a.get("SubnetId", ""), a.get("SubnetId", "")),
+                         "main": bool(a.get("Main"))} for a in r.get("Associations", [])]
+        route_tables[key(r, r["RouteTableId"])] = {
+            "name": tag_name(r), "vpc": vpc_name.get(r.get("VpcId", ""), ""),
+            "routes": sorted(routes, key=lambda x: (x["destination"] or "", x["target"])),
+            "associations": sorted(associations, key=lambda a: (not a["main"], a["subnet"]))}
+    internet_gateways: dict[str, Any] = {}
+    for g in igws_raw:
+        attachments = g.get("Attachments") or []
+        internet_gateways[key(g, g["InternetGatewayId"])] = {
+            "name": tag_name(g), "vpc": vpc_name.get(attachments[0].get("VpcId", ""), "") if attachments else ""}
+    security_groups: dict[str, Any] = {}
+    for g in sgs_raw:
+        security_groups[g.get("GroupName") or g["GroupId"]] = {
+            "name": g.get("GroupName", ""), "description": g.get("Description", ""),
+            "vpc": vpc_name.get(g.get("VpcId", ""), ""),
+            "ingress": _rules(g.get("IpPermissions", [])), "egress": _rules(g.get("IpPermissionsEgress", []))}
+    return {"vpcs": dict(sorted(vpcs.items())), "subnets": dict(sorted(subnets.items())),
+            "route_tables": dict(sorted(route_tables.items())),
+            "internet_gateways": dict(sorted(internet_gateways.items())),
+            "security_groups": dict(sorted(security_groups.items()))}
+
+
+def collect_sqs(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Queues with their stable attributes and tags, plus the result of each `sqs_peek` probe.
+
+    A peek receives up to 10 messages with `VisibilityTimeout=0`, so the student's messages stay visible
+    and nothing is consumed: the bodies become stored evidence and grading reads only that."""
+    c = adapter.client("sqs", endpoint)
+    peeks: dict[str, Any] = {}
+    for p in probes or []:
+        if p.get("kind") != "sqs_peek":
+            continue
+        name, limit = str(p["queue"]), min(int(p.get("max", 10)), 10)
+        key = f"{name}|{limit}"
+        try:
+            url = c.get_queue_url(QueueName=name)["QueueUrl"]
+            # SNS deliveries can land a moment after a publish, so give the peek a short window.
+            deadline = time.monotonic() + 5.0
+            bodies: list[str] = []
+            while True:
+                out = c.receive_message(QueueUrl=url, MaxNumberOfMessages=limit, WaitTimeSeconds=1,
+                                        VisibilityTimeout=0)
+                bodies = sorted(m["Body"] for m in out.get("Messages", []))
+                if bodies or time.monotonic() >= deadline:
+                    break
+            peeks[key] = {"queue": name, "received": len(bodies), "bodies": bodies}
+        except ClientError as e:
+            peeks[key] = {"queue": name, "received": 0, "bodies": [],
+                          "error": e.response.get("Error", {}).get("Code", "error")}
+    queues: dict[str, Any] = {}
+    for url in sorted(c.list_queues().get("QueueUrls", [])):
+        name = url.rsplit("/", 1)[-1]
+        attrs = c.get_queue_attributes(QueueUrl=url, AttributeNames=["All"]).get("Attributes", {})
+        tags = c.list_queue_tags(QueueUrl=url).get("Tags", {})
+        queues[name] = {"name": name, "fifo": attrs.get("FifoQueue") == "true",
+                        "visibility_timeout": attrs.get("VisibilityTimeout", "30"),
+                        "retention_period": attrs.get("MessageRetentionPeriod", "345600"),
+                        "delay_seconds": attrs.get("DelaySeconds", "0"),
+                        "messages": int(attrs.get("ApproximateNumberOfMessages", "0") or 0),
+                        "in_flight": int(attrs.get("ApproximateNumberOfMessagesNotVisible", "0") or 0),
+                        "tags": dict(sorted(tags.items()))}
+    return {"queues": dict(sorted(queues.items())), "peeks": dict(sorted(peeks.items()))}
+
+
+def collect_sns(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, Any]:
+    """Topics (by name) with their display name and subscriptions. A subscription is
+    {"protocol", "queue", "raw_delivery"}; ARNs, timestamps and policies are deliberately left out."""
+    c = adapter.client("sns", endpoint)
+    topics: dict[str, Any] = {}
+    for t in c.list_topics().get("Topics", []):
+        arn = t["TopicArn"]
+        name = arn.rsplit(":", 1)[-1]
+        attrs = c.get_topic_attributes(TopicArn=arn).get("Attributes", {})
+        subs = []
+        for s in c.list_subscriptions_by_topic(TopicArn=arn).get("Subscriptions", []):
+            protocol = s.get("Protocol", "")
+            endpoint_arn = s.get("Endpoint", "")
+            sub_arn = s.get("SubscriptionArn", "")
+            raw = False
+            if sub_arn and sub_arn != "PendingConfirmation":
+                raw = c.get_subscription_attributes(SubscriptionArn=sub_arn).get(
+                    "Attributes", {}).get("RawMessageDelivery") == "true"
+            subs.append({"protocol": protocol,
+                         "queue": endpoint_arn.rsplit(":", 1)[-1] if protocol == "sqs" else endpoint_arn,
+                         "raw_delivery": raw})
+        topics[name] = {"name": name, "display_name": attrs.get("DisplayName", ""),
+                        "subscriptions": sorted(subs, key=lambda s: (s["protocol"], s["queue"]))}
+    return {"topics": dict(sorted(topics.items()))}
+
+
 def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Runs the lab's invocation probes FIRST (their output and side effects become evidence), then records
     function configuration. No timestamps, versions or code locations."""
@@ -218,7 +349,8 @@ def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: li
 
 
 COLLECTORS: dict[str, Callable[[emulators.EmulatorAdapter, str], dict[str, Any]]] = {
-    "s3": collect_s3, "dynamodb": collect_dynamodb, "iam": collect_iam, "ec2": collect_ec2, "lambda": collect_lambda}
+    "s3": collect_s3, "dynamodb": collect_dynamodb, "iam": collect_iam, "ec2": collect_ec2,
+    "vpc": collect_vpc, "sqs": collect_sqs, "sns": collect_sns, "lambda": collect_lambda}
 
 
 def canonical(obj: Any) -> bytes:
@@ -244,9 +376,13 @@ async def capture(endpoint: str, collectors: list[str], engine: str,
     def run() -> dict[str, Any]:
         out: dict[str, Any] = {}
         names = sorted(set(collectors))
+        # Probe collectors run first so their (non-destructive) reads see the final state.
         if "lambda" in names:  # probes run first so their side effects are visible to the other collectors
             names.remove("lambda")
             out["lambda"] = collect_lambda(adapter, endpoint, probes)
+        if "sqs" in names:
+            names.remove("sqs")
+            out["sqs"] = collect_sqs(adapter, endpoint, probes)
         for name in names:
             if name not in COLLECTORS:
                 raise RuntimeError(f"no collector {name!r}")

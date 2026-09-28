@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 SLUG = r"^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$"
 TASK_ID = r"^[a-z0-9][a-z0-9_-]{0,39}$"
 SEMVER = r"^\d+\.\d+\.\d+$"
-Service = Literal["s3", "iam", "ec2", "lambda", "dynamodb"]
+Service = Literal["s3", "iam", "ec2", "lambda", "dynamodb", "vpc", "sqs", "sns"]
 
 
 class Strict(BaseModel):

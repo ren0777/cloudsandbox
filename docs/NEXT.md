@@ -67,13 +67,32 @@ codename.
   **no YAML, shell, database or developer tooling**. Passed with no blockers.
 - `docs/INSTRUCTOR-QUICKSTART.md` + an in-app first-run card and quickstart links.
 
+### 44p Services preparation: VPC / SQS / SNS ☑ (done — see STATUS 44p and docs/M44-SERVICES-EVALUATION.md)
+- Evaluated on Moto 5.2.3, Floci 2.1.0 and MiniStack 1.5.16 under production sandbox hardening: VPC
+  32/32, SQS 20/20, SNS 16/16 probe checks on every engine (`tools/emulator-bakeoff/m44_bakeoff.sh`).
+- Contract tests `tests/test_vpc.py`, `test_sqs.py`, `test_sns.py` run per engine through the runner;
+  capability declarations added behind the adapter (`SERVICE_CLIENT`); `CONSOLE_OPS` stayed untouched at
+  preparation time (each console page adds its service entry when it lands).
+- Proposals (grader checks, FastAPI routes, console IA) and the per-service default recommendation
+  (**Floci**; no switch made) are in `docs/M44-SERVICES-EVALUATION.md`. Nothing reaches students yet.
+
 ### 44 New teaching templates (richer labs)
 - **Lambda + DynamoDB** combined pack ☑ (Mission 7, done — see STATUS 44a and D45): table + function that
   saves and totals an order; MiniStack declares the 12 DynamoDB contract ops; labtest 0/55/100 on MiniStack;
   template `lambda-dynamodb`.
-- **VPC** next: console, checks, capabilities on the primary engines, a lab pack and labtest. VPC unlocks
-  richer real-world labs (public/private subnets, routing, security groups) than another isolated service.
-- **SQS/SNS** after that, in the same shape.
+- **VPC** ☑ (Missions 8/9, done — see STATUS 44v): console page, six checks, `vpc-basics` guided lab and
+  `vpc-breakfix` built from typed `vpc.*` break actions; labtest 0/50/100 and baseline 25/65/100 + Reset
+  on moto and floci; E2E builds and repairs a network in the VPC console.
+- **SQS** ☑ (Missions 10/11, done — see STATUS 44q): console page, four checks including a non-destructive
+  message probe, `sqs-basics` guided lab and `sqs-breakfix` (queue attributes incident); labtest
+  0/35/100 and baseline 20/70/100 + Reset on moto and floci; E2E creates a queue and unsticks one.
+- **SNS** ☑ (Missions 12/13, done — see STATUS 44n): console page, two checks, `sns-basics` fan-out lab
+  (topic + queue + subscription + publish) and `sns-breakfix` (restore a deleted subscription), with
+  delivery graded through the non-destructive SQS message probe; labtest 0/45/100 and baseline
+  20/70/100 + Reset on moto and floci; E2E builds and repairs the fan-out.
+- **VPC, SQS and SNS are now available** to students and to the Lab Builder. Next: a
+  **Lambda + SQS + DynamoDB** template (MiniStack) and a **VPC + EC2** template (Floci), then deploy on a
+  real server and collect feedback (`docs/DEPLOYMENT.md`).
 - Each new lab must pass `app.labtest` (empty 0 / partial / solution 100) on every engine it may run on
   before it appears in the gallery.
 

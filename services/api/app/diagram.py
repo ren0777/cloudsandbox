@@ -116,6 +116,72 @@ def build_graph(collectors: dict[str, Any]) -> dict[str, Any]:
     for k in ec2.get("key_pairs", []):
         nodes.append(_node(f"ec2:key:{k}", "ec2", "key_pair", k, "network", "key pair"))
 
+    # ---- VPC (configuration-level network map; security groups come from the ec2 collector when both run)
+    vpc = collectors.get("vpc") or {}
+    if vpc:
+        subnets = vpc.get("subnets", {})
+        per_vpc: dict[str, list[str]] = {}
+        for sname, s in subnets.items():
+            per_vpc.setdefault(s.get("vpc", ""), []).append(sname)
+        vpc_ids = {f"vpc:vpc:{name}" for name in vpc.get("vpcs", {})}
+        for name, v in sorted(vpc.get("vpcs", {}).items()):
+            nid = f"vpc:vpc:{name}"
+            label = v.get("name") or ("default VPC" if v.get("is_default") else name)
+            detail = f"{v.get('cidr')} · {_plural(len(per_vpc.get(name, [])), 'subnet')}"
+            nodes.append(_node(nid, "vpc", "vpc", label, "network", detail))
+        for name, s in sorted(subnets.items()):
+            nid = f"vpc:subnet:{name}"
+            nodes.append(_node(nid, "vpc", "subnet", s.get("name") or name, "network",
+                               f"{s.get('cidr')} · {'public' if s.get('public') else 'private'}"))
+            if f"vpc:vpc:{s.get('vpc', '')}" in vpc_ids:
+                edges.append({"source": nid, "target": f"vpc:vpc:{s.get('vpc', '')}", "kind": "in"})
+        for name, g in sorted(vpc.get("internet_gateways", {}).items()):
+            nid = f"vpc:igw:{name}"
+            nodes.append(_node(nid, "vpc", "internet_gateway", g.get("name") or name, "network",
+                               "internet gateway" + (f" · attached to {g['vpc']}" if g.get("vpc") else " · unattached")))
+            if g.get("vpc"):
+                edges.append({"source": nid, "target": f"vpc:vpc:{g['vpc']}", "kind": "attached"})
+        for name, r in sorted(vpc.get("route_tables", {}).items()):
+            nid = f"vpc:rtb:{name}"
+            routes = [x for x in r.get("routes", []) if x.get("target") != "local"][:3]
+            summary = ", ".join(f"{x.get('destination')} → {x.get('target')}" for x in routes) or "no routes"
+            nodes.append(_node(nid, "vpc", "route_table", r.get("name") or name, "network", summary))
+            for a in r.get("associations", []):
+                if a.get("subnet"):
+                    edges.append({"source": f"vpc:subnet:{a['subnet']}", "target": nid, "kind": "associated"})
+        if not ec2:
+            for name, g in sorted(vpc.get("security_groups", {}).items()):
+                flags = []
+                for rule in g.get("ingress", []):
+                    if rule.get("cidr") != "0.0.0.0/0":
+                        continue
+                    for port, label in REMOTE_PORTS.items():
+                        lo, hi = rule.get("from_port"), rule.get("to_port")
+                        if rule.get("protocol") == "-1" or (lo is not None and hi is not None and lo <= port <= hi):
+                            flags.append(f"{label} open to the internet")
+                flags = sorted(set(flags))
+                nodes.append(_node(f"vpc:sg:{name}", "vpc", "security_group", name, "network",
+                                   _plural(len(g.get("ingress", [])), "inbound rule"), "warn" if flags else "ok", flags))
+
+    # ---- SQS
+    for name, q in sorted((collectors.get("sqs") or {}).get("queues", {}).items()):
+        n = q.get("messages", 0)
+        nodes.append(_node(f"sqs:{name}", "sqs", "queue", name, "data",
+                           f"{'FIFO' if q.get('fifo') else 'standard'} · {_plural(n, 'message')} · "
+                           f"visibility {q.get('visibility_timeout')} s"))
+
+    # ---- SNS
+    for name, t in sorted((collectors.get("sns") or {}).get("topics", {}).items()):
+        nid = f"sns:{name}"
+        subs = t.get("subscriptions", [])
+        detail = _plural(len(subs), "subscription") if subs else "no subscriptions"
+        if t.get("display_name"):
+            detail += f" · {t['display_name']}"
+        nodes.append(_node(nid, "sns", "topic", name, "data", detail))
+        for s in subs:
+            if s.get("protocol") == "sqs" and s.get("queue"):
+                edges.append({"source": nid, "target": f"sqs:{s['queue']}", "kind": "delivers to"})
+
     # ---- Lambda
     for name, f in sorted((collectors.get("lambda") or {}).get("functions", {}).items()):
         nid = f"lambda:{name}"

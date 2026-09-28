@@ -1,0 +1,4 @@
+# labtest expectations (PRIVATE)
+empty: "0.00"
+partial: "35.00"
+solution: "100.00"

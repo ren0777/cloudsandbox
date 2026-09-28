@@ -9,10 +9,14 @@ import { Ec2Console } from "./ec2-console";
 import { IamConsole } from "./iam-console";
 import { LambdaConsole } from "./lambda-console";
 import { S3Console } from "./s3-console";
+import { SnsConsole } from "./sns-console";
+import { SqsConsole } from "./sqs-console";
+import { VpcConsole } from "./vpc-console";
 
 type Services = { services: Record<string, string>; features: Record<string, Record<string, Feature>> };
-const SERVICE_LABEL: Record<string, string> = { s3: "S3", ec2: "EC2", iam: "IAM", lambda: "Lambda", dynamodb: "DynamoDB" };
-const SERVICE_ORDER = ["s3", "dynamodb", "iam", "ec2", "lambda"];
+const SERVICE_LABEL: Record<string, string> = { s3: "S3", ec2: "EC2", vpc: "VPC", sqs: "SQS", sns: "SNS", iam: "IAM", lambda: "Lambda",
+  dynamodb: "DynamoDB" };
+const SERVICE_ORDER = ["s3", "dynamodb", "iam", "ec2", "vpc", "sqs", "sns", "lambda"];
 
 export function CloudConsole({ sessionId, readOnly, initial = "s3" }: { sessionId: string; readOnly: boolean; initial?: string }) {
   const [services, setServices] = useState<Services | null>(null);
@@ -40,6 +44,12 @@ export function CloudConsole({ sessionId, readOnly, initial = "s3" }: { sessionI
           ? <IamConsole sessionId={sessionId} readOnly={readOnly} features={services?.features.iam ?? {}} />
         : service === "ec2"
           ? <Ec2Console sessionId={sessionId} readOnly={readOnly} features={services?.features.ec2 ?? {}} />
+        : service === "vpc"
+          ? <VpcConsole sessionId={sessionId} readOnly={readOnly} features={services?.features.vpc ?? {}} />
+        : service === "sqs"
+          ? <SqsConsole sessionId={sessionId} readOnly={readOnly} features={services?.features.sqs ?? {}} />
+        : service === "sns"
+          ? <SnsConsole sessionId={sessionId} readOnly={readOnly} features={services?.features.sns ?? {}} />
         : service === "lambda"
           ? <LambdaConsole sessionId={sessionId} readOnly={readOnly} features={services?.features.lambda ?? {}} />
           : <S3Console sessionId={sessionId} readOnly={readOnly} features={services?.features.s3 ?? {}} />}

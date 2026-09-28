@@ -24,6 +24,9 @@ from .console.ec2 import router as ec2_console_router
 from .console.iam import router as iam_console_router
 from .console.lambda_ import router as lambda_console_router
 from .console.s3 import router as s3_console_router
+from .console.sns import router as sns_console_router
+from .console.sqs import router as sqs_console_router
+from .console.vpc import router as vpc_console_router
 from .fun import router as fun_router
 from .instructor.builder import router as builder_router
 from .instructor.preview import router as preview_router
@@ -95,7 +98,7 @@ def create_app() -> FastAPI:
         return response
 
     for r in (auth_router, student_router, terminal_router, s3_console_router, dynamodb_console_router,
-              iam_console_router, ec2_console_router, lambda_console_router, instructor_router,
+              iam_console_router, ec2_console_router, vpc_console_router, sqs_console_router, sns_console_router, lambda_console_router, instructor_router,
               courses_router, gradebook_router, live_router, admin_router,
               admin_manage_router, course_audit_router, fun_router, admin_runners_router, builder_router,
               preview_router):

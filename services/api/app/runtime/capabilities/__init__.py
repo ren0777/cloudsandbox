@@ -25,6 +25,24 @@ CONSOLE_OPS: dict[str, tuple[str, ...]] = {
     "ec2": ("DescribeImages", "DescribeVpcs", "DescribeSubnets", "RunInstances", "DescribeInstances",
             "StopInstances", "StartInstances", "TerminateInstances", "CreateSecurityGroup",
             "DescribeSecurityGroups", "AuthorizeSecurityGroupIngress", "CreateKeyPair", "DescribeKeyPairs"),
+    # VPC rides the EC2 API; the adapter maps the service name to the ec2 client. Listed when the VPC
+    # console page exists - every operation the page calls, so the page is never half-working.
+    "vpc": ("DescribeVpcs", "CreateVpc", "DeleteVpc", "DescribeSubnets", "CreateSubnet", "DeleteSubnet",
+            "ModifySubnetAttribute", "DescribeRouteTables", "CreateRouteTable", "DeleteRouteTable",
+            "CreateRoute", "DeleteRoute", "AssociateRouteTable", "DisassociateRouteTable",
+            "DescribeInternetGateways", "CreateInternetGateway", "AttachInternetGateway",
+            "DetachInternetGateway", "DeleteInternetGateway", "DescribeSecurityGroups",
+            "CreateSecurityGroup", "DeleteSecurityGroup", "AuthorizeSecurityGroupIngress",
+            "RevokeSecurityGroupIngress", "AuthorizeSecurityGroupEgress", "RevokeSecurityGroupEgress"),
+    # SQS rides its own boto3 client. Listed when the SQS console page exists - every operation the
+    # page calls, so the page is never half-working.
+    "sqs": ("ListQueues", "CreateQueue", "GetQueueUrl", "GetQueueAttributes", "SetQueueAttributes",
+            "DeleteQueue", "SendMessage", "ReceiveMessage", "DeleteMessage", "PurgeQueue",
+            "TagQueue", "UntagQueue", "ListQueueTags"),
+    # SNS rides its own boto3 client; delivery targets are in-sandbox SQS queues only (no egress).
+    "sns": ("ListTopics", "CreateTopic", "GetTopicAttributes", "SetTopicAttributes", "DeleteTopic",
+            "Subscribe", "SetSubscriptionAttributes", "ListSubscriptionsByTopic",
+            "GetSubscriptionAttributes", "Unsubscribe", "Publish"),
     "lambda": ("ListFunctions", "CreateFunction", "GetFunction", "GetFunctionConfiguration",
                "UpdateFunctionCode", "UpdateFunctionConfiguration", "DeleteFunction"),
 }
@@ -54,12 +72,15 @@ class Capabilities(BaseModel):
         return sorted({op for op in ops if not self.is_usable(op)})
 
     def service_status(self) -> dict[str, str]:
-        """Console nav: 'available' only when every operation its console page needs is usable."""
+        """Console nav: 'available' only when every operation its console page needs is usable.
+        Services with no console page (no CONSOLE_OPS entry) are not part of the catalogue: a service
+        only reaches students once its page exists and declares the operations it calls."""
         out = {}
         for svc in self.services:
-            needed = CONSOLE_OPS.get(svc, ())
-            ok = bool(needed) and all(self.is_usable(f"{svc}:{op}") for op in needed)
-            out[svc] = "available" if ok else "unavailable"
+            needed = CONSOLE_OPS.get(svc)
+            if not needed:
+                continue
+            out[svc] = "available" if all(self.is_usable(f"{svc}:{op}") for op in needed) else "unavailable"
         return out
 
     def features(self, service: str) -> dict[str, dict]:

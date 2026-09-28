@@ -38,7 +38,7 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
     await expect(page.getByRole("heading", { name: "My labs" })).toBeVisible();
     await expect(page.getByTestId("lab-card").first()).toBeVisible();
     await shot(page, "01-my-labs");
-    await page.getByTestId("lab-card").filter({ hasText: "Mission 1" }).click();
+    await page.getByTestId("lab-card").filter({ hasText: "Mission 1: CloudCafé goes online" }).click();
     await expect(page.getByRole("heading", { name: /CloudCafé goes online/ })).toBeVisible();
     await shot(page, "02-lab-brief");
     await page.getByTestId("start-lab").click();
@@ -116,7 +116,7 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
   test("instructor sees the stored result and per-check evidence", async ({ page }) => {
     await signIn(page, "demo-instructor@cloudlabs.demo");
     await expect(page.getByRole("heading", { name: "Courses" })).toBeVisible();
-    await page.getByTestId("assignment-link").filter({ hasText: "Mission 1" }).click();
+    await page.getByTestId("assignment-link").filter({ hasText: "Mission 1: CloudCafé goes online" }).click();
     const row = page.getByTestId("result-row").filter({ hasText: "Sam Student" });
     await expect(row).toContainText("100.00");
     await row.getByRole("link", { name: /#1: 100.00/ }).click();

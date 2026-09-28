@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     runner_id: str = "runner-local-1"
     runner_url: str = "http://runner:7070"
     runner_secret: str = "dev-runner-secret"
-    runner_timeout_s: float = 150.0
+    # Must exceed the runner's job cap (job_timeout_cap_s, 180 s): sandbox creation runs the lab's setup
+    # synchronously, and a CLI-heavy compiled setup (a VPC network) can legitimately use the whole cap.
+    runner_timeout_s: float = 240.0
     heartbeat_interval_s: float = 15.0
     runner_unhealthy_after_s: int = 90
     runner_lost_after_s: int = 300  # unreachable this long → its sessions fail (runner_lost), never migrate

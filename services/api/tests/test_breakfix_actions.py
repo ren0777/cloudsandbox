@@ -137,7 +137,7 @@ def test_setup_job_compiles_actions_into_the_public_bundle():
     pkg = pack_from_files(_files())
     variables = compute_variables(pkg.definition, SAMPLE_SHORT)
     job = setup_job(pkg.public_bundle, pkg.definition, variables)
-    assert job is not None and job["timeout_s"] == 60
+    assert job is not None and job["timeout_s"] == 180  # CLI-heavy setups (e.g. a VPC network) need headroom
     raw = base64.b64decode(job["bundle_b64"])
     assert hashlib.sha256(raw).hexdigest() == job["sha256"]
     members = tar_members(raw)
@@ -159,3 +159,92 @@ def test_baseline_drives_the_expected_empty_score():
     # expected.yaml that still says 0 does not match the declared baseline
     _, errors = dr.expectations(_files(lab), pkg.definition)
     assert any("broken baseline must score 40" in e for e in errors), errors
+
+
+def test_compiler_covers_the_vpc_actions():
+    """The VPC catalogue compiles to deterministic AWS CLI; both the create and the break side are covered."""
+    specs = [
+        {"type": "vpc.create_vpc", "name": "cafe-vpc-abc123", "cidr": "10.0.0.0/16"},
+        {"type": "vpc.create_subnet", "vpc": "cafe-vpc-abc123", "name": "public-abc123",
+         "cidr": "10.0.1.0/24", "public": True},
+        {"type": "vpc.create_internet_gateway", "vpc": "cafe-vpc-abc123", "name": "igw-abc123"},
+        {"type": "vpc.create_route_table", "vpc": "cafe-vpc-abc123", "name": "rtb-abc123"},
+        {"type": "vpc.create_route", "route_table": "rtb-abc123", "destination": "0.0.0.0/0",
+         "internet_gateway": "igw-abc123"},
+        {"type": "vpc.associate_route_table", "route_table": "rtb-abc123", "subnet": "public-abc123"},
+        {"type": "vpc.create_security_group", "vpc": "cafe-vpc-abc123", "group": "web-abc123"},
+        {"type": "vpc.authorize_ingress", "group": "web-abc123", "protocol": "tcp", "port": 80,
+         "cidr": "0.0.0.0/0"},
+        {"type": "vpc.delete_route", "route_table": "rtb-abc123", "destination": "0.0.0.0/0"},
+        {"type": "vpc.revoke_ingress", "group": "web-abc123", "protocol": "tcp", "port": 80,
+         "cidr": "0.0.0.0/0"},
+    ]
+    script = breakfix.compile_actions(specs)
+    assert script == breakfix.compile_actions(specs)
+    for expected in (
+        'aws ec2 create-vpc --cidr-block 10.0.0.0/16 --query "Vpc.VpcId" --output text',
+        "Key=Name,Value=cafe-vpc-abc123",
+        "aws ec2 create-subnet --vpc-id $(aws ec2 describe-vpcs --filters Name=tag:Name,Values=cafe-vpc-abc123",
+        "--map-public-ip-on-launch",
+        'aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID"',
+        "aws ec2 create-route --route-table-id $(aws ec2 describe-route-tables",
+        "--gateway-id $(aws ec2 describe-internet-gateways",
+        "aws ec2 associate-route-table",
+        "aws ec2 authorize-security-group-ingress --group-id $(aws ec2 describe-security-groups",
+        "--protocol tcp --port 80 --cidr 0.0.0.0/0",
+        "aws ec2 delete-route",
+        "aws ec2 revoke-security-group-ingress",
+    ):
+        assert expected in script, expected
+
+
+def test_compiler_covers_the_sqs_actions():
+    specs = [
+        {"type": "sqs.create_queue", "name": "cafe-orders-abc123", "visibility_timeout": 30,
+         "retention_period": 3600, "delay_seconds": 0},
+        {"type": "sqs.set_queue_attribute", "queue": "cafe-orders-abc123",
+         "attribute": "VisibilityTimeout", "value": 30},
+        {"type": "sqs.send_message", "queue": "cafe-orders-abc123", "body": '{"drink": "latte"}'},
+        {"type": "sqs.delete_queue", "queue": "cafe-orders-abc123"},
+    ]
+    script = breakfix.compile_actions(specs)
+    assert script == breakfix.compile_actions(specs)
+    for expected in (
+        "aws sqs create-queue --queue-name cafe-orders-abc123",
+        "--attributes VisibilityTimeout=30,MessageRetentionPeriod=3600,DelaySeconds=0",
+        'aws sqs set-queue-attributes --queue-url $(aws sqs get-queue-url --queue-name cafe-orders-abc123',
+        "--attributes VisibilityTimeout=30",
+        "aws sqs send-message --queue-url $(aws sqs get-queue-url",
+        "aws sqs delete-queue --queue-url $(aws sqs get-queue-url",
+    ):
+        assert expected in script, expected
+    # FIFO needs the .fifo suffix and the attribute
+    with pytest.raises(ValueError):
+        breakfix.compile_actions([{"type": "sqs.create_queue", "name": "orders", "fifo": True}])
+    fifo = breakfix.compile_actions([{"type": "sqs.create_queue", "name": "orders.fifo", "fifo": True}])
+    assert "FifoQueue=true" in fifo
+
+
+def test_compiler_covers_the_sns_actions():
+    specs = [
+        {"type": "sns.create_topic", "name": "cafe-alerts-abc123"},
+        {"type": "sns.subscribe_sqs", "topic": "cafe-alerts-abc123", "queue": "cafe-orders-abc123",
+         "raw_delivery": True},
+        {"type": "sns.publish", "topic": "cafe-alerts-abc123", "message": '{"alert": "latte"}'},
+        {"type": "sns.unsubscribe_sqs", "topic": "cafe-alerts-abc123", "queue": "cafe-orders-abc123"},
+        {"type": "sns.delete_topic", "name": "cafe-alerts-abc123"},
+    ]
+    script = breakfix.compile_actions(specs)
+    assert script == breakfix.compile_actions(specs)
+    for expected in (
+        "aws sns create-topic --name cafe-alerts-abc123",
+        "aws sns subscribe --topic-arn $(aws sns create-topic --name cafe-alerts-abc123",
+        "--protocol sqs",
+        "--notification-endpoint",
+        "--attributes RawMessageDelivery=true",
+        "aws sns publish --topic-arn $(aws sns create-topic",
+        "aws sns list-subscriptions-by-topic",
+        "aws sns unsubscribe",
+        "aws sns delete-topic",
+    ):
+        assert expected in script, expected

@@ -38,7 +38,7 @@ test("instructor clones, tests and publishes a lab; a student starts it", async 
   await signIn(page, "demo-instructor@cloudlabs.demo");
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Labs", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Labs", exact: true })).toBeVisible();
-  const mission = page.getByTestId("builtin-labs").getByTestId("lab-row").filter({ hasText: "Mission 1" });
+  const mission = page.getByTestId("builtin-labs").getByTestId("lab-row").filter({ hasText: "Mission 1: CloudCafé goes online" });
   await mission.getByTestId("clone-lab").click();
   await page.waitForURL(/\/instructor\/labs\/drafts\//);
   await expect(page.getByTestId("draft-title")).toHaveText(/Mission 1.*\(copy\)/);
