@@ -43,6 +43,16 @@ export type ErrorRow = { message: string; loc: string | null; task: string | nul
   field: string | null; break_action?: number | null };
 export type Validation = { ok: boolean; errors: ErrorRow[]; content_sha256: string | null; validated_at?: string };
 
+/** One grading check run against the preview sandbox (M47). Either it ran and the grader's own numbers come
+ * back, or it is blocked and the reason says exactly why (capability, unsupported type, emulator error). */
+export type CheckRun =
+  | { status: "ran"; engine: string; task: { id: string; title: string };
+      check: { type: string; index: number; hidden: boolean; scoring: "all" | "proportional";
+        marks_possible: string };
+      params: Record<string, unknown>; expected: unknown; actual: unknown; passed: boolean; message: string }
+  | { status: "blocked"; check: string;
+      reason: { code: string; message: string; operation?: string; reads?: string[] } };
+
 export type CheckResult = {
   task: string; check: string; params: Record<string, unknown>; expected: unknown; actual: unknown;
   passed: boolean; hidden: boolean; message: string; marks_awarded: string; marks_possible: string;
@@ -74,6 +84,11 @@ export type Draft = {
   id: string; slug: string; title: string; status: DraftStatus; owner: { id: string; name: string | null };
   base_lab_version_id: string | null; published_version_id: string | null; validation: Validation | null;
   tested_sha256: string | null; created_at: string; updated_at: string;
+  /** Content revision (sha256 of the draft content) — echo it back on save so a stale autosave can never
+   * overwrite newer content (M46). */
+  rev: string;
+  /** Preview sandbox state: "running" lets the Tasks tab offer "run this check" (M47). */
+  preview_status: "running" | "stopped" | string;
   content: Content; last_test: LastTest | null; editable_files: string[]; read_only_files: string[];
 };
 export type DraftSummary = Omit<Draft, "content" | "last_test" | "editable_files" | "read_only_files">;

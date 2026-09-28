@@ -20,6 +20,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..analytics import course_analytics as compute_analytics
 from ..auth.policy import Action, Authz, load_assignment_for_staff, load_course_for_staff
 from ..db import get_db
 from ..labs.importer import definition_of
@@ -227,3 +228,16 @@ async def assignment_csv(assignment_id: uuid.UUID, user: User = Depends(Authz(Ac
     assignments, students, cells = await _course_data(db, c, a)
     text = _csv(c, assignments, students, cells, await _labs(db, assignments))
     return _download(text, f"{_slug(c.code)}-{_slug(a.title)}-grades-{st.now():%Y%m%d}.csv")
+
+
+@router.get("/courses/{course_id}/analytics")
+async def course_analytics(course_id: uuid.UUID, user: User = Depends(Authz(Action.results_view)),
+                           db: AsyncSession = Depends(get_db)):
+    """The teaching view: per-assignment averages, submission rate, attempts used, completion time, late
+    submissions, most-failed tasks and most-missed checks — plus infrastructure interruptions counted
+    **separately**, so a platform failure never reads as a student failing.
+
+    Staff of that course only (404 otherwise; admins see everything). Every figure comes from stored rows,
+    so this never reaches a sandbox."""
+    c = await load_course_for_staff(db, user, course_id)
+    return await compute_analytics(db, c)

@@ -129,6 +129,8 @@ def create_app() -> FastAPI:
 app = create_app()
 
 # Routes that intentionally have no Authz dependency (checked by tests/test_authz_coverage.py).
+# NOTE: FastAPI registers the Swagger OAuth2 redirect at its own default path, not under `docs_url`
+# — the coverage test fails if this list and the real route table drift apart.
 PUBLIC_ROUTES = {("GET", "/healthz"), ("GET", "/metrics"), ("GET", "/api/docs"),
-                 ("GET", "/api/openapi.json"), ("GET", "/api/docs/oauth2-redirect"),
+                 ("GET", "/api/openapi.json"), ("GET", "/docs/oauth2-redirect"),
                  ("WS", "/ws/terminal")}

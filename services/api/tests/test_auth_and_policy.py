@@ -1,17 +1,15 @@
-"""Auth (cookies, refresh rotation, CSRF, rate limit), the authorization matrix and its route coverage,
-and the architecture invariant that the API never talks to Docker."""
+"""Auth: cookies, refresh rotation, CSRF, rate limit, and the authorization matrix (PLAN §9), plus the
+architecture invariant that the API never talks to Docker.
+
+Route coverage for that matrix — every route either carries `Authz(action)` or is on the reviewed public
+allowlist — lives in `tests/test_authz_coverage.py`."""
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from fastapi.routing import APIRoute, APIWebSocketRoute
-
-from app.auth.policy import Authz
-from app.auth.routes import PUBLIC_ROUTES as AUTH_PUBLIC
 from app.auth.security import REFRESH_COOKIE
-from app.main import PUBLIC_ROUTES, app
 from app.runtime.signing import compute
 from tests.conftest import PASSWORD, client, login
 
@@ -34,26 +32,6 @@ def test_api_never_imports_docker():
 def test_signing_known_answer_matches_runner():
     assert compute("test-secret", "POST", "/v1/sandboxes", b'{"a":1}', "1700000000") == \
         "fa636268028634194c8034692c7170927406acdd5caf029f11dd608934c1571a"
-
-
-def _has_authz(dependant) -> bool:
-    for d in dependant.dependencies:
-        if isinstance(d.call, Authz) or _has_authz(d):
-            return True
-    return False
-
-
-def test_every_route_is_authorized_or_explicitly_public():
-    public = PUBLIC_ROUTES | AUTH_PUBLIC
-    missing = []
-    for r in app.routes:
-        if isinstance(r, APIRoute):
-            for m in r.methods:
-                if (m, r.path) not in public and not _has_authz(r.dependant):
-                    missing.append(f"{m} {r.path}")
-        elif isinstance(r, APIWebSocketRoute) and ("WS", r.path) not in public:
-            missing.append(f"WS {r.path}")
-    assert not missing, f"routes without Authz(action): {missing}"
 
 
 # ---------------------------------------------------------------------------------------- auth

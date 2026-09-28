@@ -100,6 +100,16 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | 43 | Instructor first-run journey + quickstart | ☑ | `e2e/instructor-first-run.spec.ts` walks the whole product with **no YAML, shell, database or developer tooling**: create course → import roster (new + existing student) → New lab from the S3 template → rename a task and **add a check** with the generated form → configure the starting state with a typed break action → **launch the preview sandbox** (console visible, Reset, Stop) → readiness → **test run in real sandboxes** (0 / 50 / 100 + reset on moto and floci) → publish → assign → the new student changes their temporary password and completes the lab **in the console only** (bucket, versioning, upload, tags) → submits → instructor sees the result and drills into the evidence. **Passed (3.4 min) with no blockers found**; screenshots 25–29. `docs/INSTRUCTOR-QUICKSTART.md` (step-by-step with screenshots, troubleshooting, "what you never need"); in-app first-run card on the instructor home and a quickstart link on the Labs page; README doc table. `tsc --noEmit` clean (2026-09-27) |
 | 44a | Lambda + DynamoDB combined lab (Mission 7) + template | ☑ | New pack `labs/lambda-dynamodb` (pins `runtime.emulator: ministack`, the only engine that runs Lambda code): create an orders table, a Lambda function with `TABLE_NAME`, and a task where the function **saves the order and returns the total** — the invoke probe runs before the other collectors, so a hidden `dynamodb.item` check proves the row the function wrote. MiniStack now declares all **12 DynamoDB contract ops as supported** (verified by `test_dynamodb.py` on all three engines), which also makes the DynamoDB console available in MiniStack labs. Template `lambda-dynamodb` in the gallery; `demo-reset` imports and assigns Mission 7 (`RESULT: READY`). labtest on the real runner: **0 / 55 / 100 PASS on MiniStack**; docker tests: dynamodb contract ×3 engines, lambda contract ×3, `test_lambda_dynamodb_labtest_on_ministack` (2026-09-27) |
 
+**Phase 10: Quality + teaching value** (branch `feat/m45-quality`, plan in `docs/NEXT.md`)
+
+| # | Milestone | State | Verification evidence |
+|---|---|---|---|
+| 45 | Authorization coverage guard | ☑ | `tests/test_authz_coverage.py` — the file `app/main.py:131` and `app/auth/policy.py:2` already named but which did not exist (the check had been living inside `test_auth_and_policy.py`). Moved and strengthened: route coverage; a **public allowlist held in the test** so opening a route to anonymous callers is a reviewable diff; no resource-scoped path public; `Authz` action ↔ `MATRIX` consistency; a **non-vacuity self-test**; an anonymous sweep asserting **401 on all 141 protected routes**; and the 404-not-403 contract. Found and fixed a stale `PUBLIC_ROUTES` entry: FastAPI registers the Swagger OAuth2 redirect at `/docs/oauth2-redirect`, not `/api/docs/oauth2-redirect`. Fast suite green (2026-09-27) |
+| 46 | Lab Builder autosave + undo/redo | ☑ | **Server:** `drafts.rev` (sha256 of the content — not `updated_at`, which validation and status changes also bump), sent back as `base_rev` on `PUT .../drafts/{id}` and `PUT .../yaml`; a stale save gets **409 `stale_revision`** with the current `rev` instead of overwriting. Tests: `tests/test_lab_builder_autosave.py` **8 passed** (rev round-trip across an autosave run, stale refused and newer content kept, no `base_rev` still allowed, a validation run never invalidates a save, unchanged content keeps the rev, invalid partial content saves *and* stays protected, YAML guarded too), builder suites **37 passed**. **Client:** debounced autosave (800 ms) with `Saving… / Saved / Save failed`, save-on-tab-switch and unmount flush, no retry loop on failure, a stale banner with Reload; undo/redo over a 100-step history with keystroke coalescing (900 ms), Ctrl/Cmd+Z ⇄ Shift/Ctrl+Y outside text fields, form remount on step so no tab keeps discarded state. `tsc --noEmit` clean; **`e2e/lab-builder-autosave.spec.ts` 4/4** (autosave survives tab switch + reload, undo/redo, one failed PUT → "Save failed" with **exactly one** request then a manual retry, stale → banner, no overwrite, reload recovers) |
+| 47 | Single-check live runner | ☑ | `POST .../drafts/{id}/preview-sandbox/check {task, check}` runs **one** check against the running preview sandbox: same `registry.get(...).fn` and the same `ev.capture` the real grader uses, one collector, probes first. Returns type, index, hidden, scoring, **marks possible** (the same `Fraction` share `grade()` computes), rendered params, expected, actual, pass/fail and the **normal grader message** (author feedback when set); or `status: "blocked"` with a reason code for `not_in_simulator` / `check_unsupported` / `emulator_error`. Owner/admin only (404), preview must be running (409), serialised by a lock and spaced by `CL_PREVIEW_CHECK_MIN_INTERVAL_S` (429 + `Retry-After`). **Never** an attempt, grade, evidence row or badge — asserted directly. Tests: `tests/test_preview_check.py` **8 passed** including exact parity with `grade()` on `passed/expected/actual/message/marks_possible`, and `e2e/lab-builder-check-run.spec.ts` (browser) |
+| 48 | Attempt diff ("since your last attempt") | ☑ | New `app/diff.py`: `compare()` walks two **stored** `grades.result` rows and classifies every check as `fixed / regressed / unchanged / added / removed`; `diff_for()` pairs an attempt with the previous attempt that **counted** (a `counts=False` auto-submit is stepped over). Reads the **newest** grade per attempt — the same row the results page uses — so a regrade is reflected without touching `task_results`. Student route `GET /api/attempts/{id}/diff` is redacted (`public=True`: no `expected`, `actual` or params, hidden checks keep their generic message, per PLAN §7b); `GET /api/instructor/attempts/{id}/diff` adds them. First attempt → `first_attempt: true` and an empty `tasks` list, not a wall of "added". UI: `components/attempt-diff.tsx` on the student results page and the instructor attempt view. Tests: `tests/test_attempt_diff.py` **10 passed** (all five classifications, redaction, first attempt, `counts=False` skip, ownership 403/404, regrade-follows-newest, determinism after sandboxes are gone) |
+| 49 | Instructor course analytics | ☑ | `GET /api/instructor/courses/{id}/analytics` (`app/analytics.py`, `Authz(results_view)` + `load_course_for_staff`): per assignment — submission rate, average score under the assignment's grade policy, average attempts used, average completion time (`ready_at`→submit), late submissions — plus course totals, **most-failed tasks** and **most-missed checks** (top 10, counted attempts only) and **interruptions** broken down by `failure_reason` and always reported apart from student results. Fixed query count (enrolments, lab definitions, attempts, sessions, task results) aggregated in memory — no sandbox, no regrade, no query per student. Empty states for a course with no labs and for a course with no submissions. UI `/instructor/courses/[id]/analytics` (five stat cards + three tables), linked from the course page. Tests: `tests/test_course_analytics.py` **5 passed** including a **query-count assertion** (`q2 == q1` after doubling the data); browser `e2e/instructor-analytics.spec.ts`. CSV export left for later (nothing in the implementation made it free) |
+
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
   therefore connects all containers labelled `cloudlabs.role=control-plane` (with the matching
@@ -345,3 +355,85 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   MiniStack labs. The combined task is proven by the probe order: the invocation runs before the other
   collectors, so a hidden `dynamodb.item` check sees the row the function wrote. Partial = 55 (table +
   function, no save), solution = 100. New template `lambda-dynamodb`.
+- **D46 — `create_user` retries only real `short_id` collisions (M45).** The old guard was
+  `if "short_id" not in str(e): raise`, but `str(IntegrityError)` also contains the whole `INSERT`
+  statement — which lists every column of `users`. **Any** integrity failure on that table (a duplicate
+  email above all) therefore looked like a short-id collision, was retried ten times with a fresh argon2
+  hash each, and surfaced as the misleading `RuntimeError: could not allocate short_id`. `_violated_column()`
+  now reads the **constraint name** from the server message (text before `[SQL:`), falling back to the
+  driver's `constraint_name`, so a duplicate email raises immediately and a genuine collision still
+  retries. This was found while debugging a test failure that the old message pointed away from.
+- **D47 — Tests must not hardcode the runner id.** Two tests pinned `runner-local-1`
+  (`test_state_recovery._mk_session` writing `lab_sessions.runner_id`, and `test_fleet`'s `A`), which is
+  only correct when `CL_RUNNER_ID` happens to have its default; under any other runner id they fail on a
+  foreign key (`lab_sessions_runner_id_fkey`) or on capacity/scheduler assertions. Both now read
+  `get_settings().runner_id`. Combined with `infra/docker-compose.m45.yml`, this lets a second and third
+  checkout run their own project (own project name, ports, runner ids, sandbox env and app image tags)
+  so containers, networks, volumes, runners and test databases are never shared — the interference this
+  milestone first ran into was a concurrent suite truncating the same test database.
+- **D48 — The draft's save revision is a content hash, not `updated_at`.** Autosave has to know whether
+  the content it edited is still the content on the server. `updated_at` looked tempting but moves on
+  every row write — a validate run, a test run, a status change — which would tell a teacher their own
+  in-flight save was "changed somewhere else". `drafts.rev` is instead a sha256 over canonical JSON of the
+  draft content (`dr.fingerprint`), deliberately independent of the lab being *valid*, because a draft is
+  allowed to hold half-finished work. It is exposed on both the full and list responses, echoed back as
+  `base_rev`, and a mismatch is 409 `stale_revision` carrying the server's `rev` so the client can tell the
+  user precisely what happened. Omitting `base_rev` keeps working for callers that just re-read the draft.
+- **D49 — The single-check runner lives on the preview router and stores nothing.**
+  `POST .../preview-sandbox/check` was placed with the preview lifecycle so it inherits exactly the same
+  access rule (owner/admin, else 404) and the same "is a sandbox running?" gate, rather than growing a
+  second ownership path. It calls `registry.get(type).fn` on `ev.capture(...)` output — the identical code
+  `grade()` uses — with only that check's collector, and never writes a row: no attempt, grade, evidence,
+  badge or leaderboard event (asserted by `test_single_check_runs_...` and `nothing_graded()`). It is
+  serialised by a module lock and spaced per draft by `CL_PREVIEW_CHECK_MIN_INTERVAL_S` (429 +
+  `Retry-After`) so a double-click can't flood the emulator with captures. Capability and unsupported-type
+  problems are checked before any capture; in practice the pack validator rejects those first (the run then
+  answers 422 with the same row-level errors the validation panel shows), so the pre-check is defence in
+  depth and is unit-tested directly.
+- **D50 — Stale test sandboxes starve the E2E runner (found during M46 regression).** `scripts/test-api.sh`
+  runs with `CL_BACKGROUND_LOOPS=false`, so the reconciler and janitor never run inside a test process;
+  sandboxes left behind by a docker-marked run are only reaped by the *next* run's reconciler. Six orphans
+  from `env=test` had accumulated against `RUNNER_MAX_SANDBOXES=4`, and the Lab Builder E2E failed with
+  `preview_unavailable: runner is at capacity` — a capacity failure wearing a product-looking face. Two
+  take-aways recorded here: check `docker ps -a --filter label=cloudlabs.runner=<id>` before blaming a
+  regression for a capacity error, and cleaning a checkout's own sandboxes between suites is legitimate
+  housekeeping. Two other leftovers belonged to the other checkouts' projects (`runner-authoring`,
+  `runner-m44`) and were correctly left alone.
+- **D51 — The attempt diff compares stored grades, not task results.** `task_results` is written once per
+  attempt, but a regrade only appends a `grades` row — so diffing `task_results` would show a student a
+  per-check story that contradicts the score their results page is showing. The diff therefore reads the
+  **newest** `grades.result` for each attempt (exactly what `_attempt_result` already renders), which makes
+  a regrade follow automatically and keeps the comparison reproducible from immutable rows. "Your previous
+  attempt" is the previous attempt with `counts=True`: an auto-submit that changed nothing was never the
+  student's work, and comparing against it would report a wall of regressions they never caused. Students
+  get `public=True` (no `expected`/`actual`/params, hidden checks keep their generic message — PLAN §7b);
+  instructors get the same rows plus those fields, so one code path serves both.
+- **D52 — Analytics is five queries and keeps interruptions out of the averages.** The report reads
+  enrolments, the pinned lab definitions (for titles and a truthful `max_score` even when nobody started),
+  attempts, sessions and task results, then aggregates in memory — no query inside a loop, asserted by
+  `test_analytics_issues_a_fixed_number_of_queries`, which doubles the data and requires the statement count
+  to stay identical. A `FAILED` session is counted under **interruptions** with its `failure_reason` and is
+  never folded into a submission, an attempt or an average: a lost sandbox is the platform's failure, not
+  the student's. Failure rates use counted attempts only. CSV export was **left for later** — nothing about
+  the in-memory aggregation made it fall out for free, and a second format is a second thing to keep correct.
+- **D53 — Two ways an isolated checkout silently loses its sandbox network (found while getting the M47
+  browser test green).** (a) `DockerDriver._count_active()` counts this runner's `component=network`
+  labels, so a **network whose containers are gone still holds a seat**. Force-removing containers by hand
+  (the fix for D50) left six networks behind, and because control-plane containers stay connected to them
+  (PLAN/D1) they could not be deleted — the runner then answered `runner is at capacity` for over an hour
+  while `docker ps` showed nothing. Recovery is `docker network disconnect -f <network> <container>` (note
+  the order: **network first**) then `docker network rm`. Normally the reconciler reaps rowless sandboxes
+  through `list_sandboxes(env)`, which is why this only bites outside a running API process.
+  (b) The `api` service's `cloudlabs.env` **label** is built from `${CL_ENV:-demo}` — the *shell* variable —
+  while the container's own `CL_ENV` comes from `environment:`. Overriding only the environment (as an
+  isolation file does) leaves the API labelled `demo` while its sandboxes are `m45`, so the runner never
+  attaches the control plane and every console/terminal/grading call dies with `ConnectTimeoutError`. The
+  override now sets the label explicitly; anyone adding an isolation file must do the same. Related: all
+  three checkouts run `api-test` as `cloudlabs.env=test`, so their control planes attach to each other's
+  test sandboxes — harmless for assertions, but another reason D47's per-project ids matter.
+  Test side: `e2e/journey.spec.ts` no longer hardcodes `runner-local-1` (reads `CLOUDLABS_RUNNER_ID`),
+  the same rule `fleet.spec.ts` already followed for runner2. (c) An isolation file must also **keep**
+  `http://localhost:3000` in `CL_ALLOWED_ORIGINS`: `test_integration_docker.py` sends that as the
+  WebSocket Origin for the terminal ticket rules, so trimming the list to the checkout's own port failed
+  five Docker-marked tests with `terminal.ticket.rejected / origin_not_allowed`. All five pass with the
+  list restored.

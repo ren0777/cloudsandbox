@@ -37,6 +37,10 @@ ALL = list(S)
 
 # ------------------------------------------------------------------------------ state machine
 async def _mk_session(world, state: S) -> LabSession:
+    # The runner id must be the seeded one: an isolated Compose project (docker-compose.m45.yml /
+    # .authoring.yml) runs under its own CL_RUNNER_ID, and lab_sessions.runner_id is a foreign key.
+    from app.config import get_settings
+
     async with sessionmaker()() as db:
         s = LabSession(user_id=world.alice.id, assignment_id=world.assignment.id,
                        lab_version_id=world.lab_version.id, runner_id=get_settings().runner_id, env="test",

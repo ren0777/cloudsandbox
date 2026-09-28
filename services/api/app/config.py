@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     # Interactive preview sandboxes (M42): idle lifetime and how many one author may keep running.
     preview_ttl_s: int = 1800
     preview_max_per_user: int = 2
+    # Single-check runs against a preview sandbox (M47): minimum spacing between two runs for one draft.
+    preview_check_min_interval_s: float = 1.0
     default_emulator: str = "floci"  # engine for labs with runtime.emulator = default (promoted, EMULATOR-EVALUATION.md)
     grader_version: str = "1.0.0"
 

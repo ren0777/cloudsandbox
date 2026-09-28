@@ -16,6 +16,21 @@ async function signIn(page: import("@playwright/test").Page, email: string, pass
   await page.getByRole("button", { name: "Sign in" }).click();
 }
 
+/** Edits autosave (M46), so by the time a test clicks Save the button may already be idle. Save if there is
+ * anything to save, and always assert the draft really settled. */
+async function saveDraft(page: import("@playwright/test").Page) {
+  const btn = page.getByTestId("save-draft");
+  const state = page.getByTestId("save-state");
+  // Edits autosave ~800 ms after typing (M46), so the button may already be idle by the time we click —
+  // and it can go idle *during* the click. Give the manual save a short leash and assert the outcome,
+  // which is what the test actually cares about: the draft settled and nothing is left unsaved.
+  if (await btn.isEnabled().catch(() => false)) {
+    await btn.click({ timeout: 2_000 }).catch(() => undefined);
+  }
+  await expect(state).toHaveText("Saved", { timeout: 20_000 });
+  await expect(btn).toBeDisabled();
+}
+
 test("instructor first run: course → roster → lab → publish → assign → student result", async ({ page, browser }) => {
   test.setTimeout(1_500_000);  // preview + a full test run in real sandboxes + a student lab
   const stamp = Date.now().toString(36).slice(-5).toUpperCase();
@@ -68,7 +83,7 @@ test("instructor first run: course → roster → lab → publish → assign →
   await added.getByTestId("check-type").selectOption("s3.versioning");
   await added.getByTestId("param-bucket").fill("{{ bucket }}");
   await added.getByTestId("param-status").selectOption("Enabled");
-  await page.getByTestId("save-draft").click();
+  await saveDraft(page);
   await expect(page.getByTestId("validation-ok")).toBeVisible();
   await shot(page, "26-firstrun-builder");
 
@@ -79,8 +94,7 @@ test("instructor first run: course → roster → lab → publish → assign →
   await page.getByTestId("break-action-type").selectOption("s3.create_bucket");
   await page.getByTestId("param-bucket").fill("{{ bucket }}");
   await expect(page.getByTestId("broken-state")).toContainText("Bucket cafe-");
-  await page.getByTestId("save-draft").click();
-  await expect(page.getByTestId("save-draft")).toBeDisabled();
+  await saveDraft(page);
   await shot(page, "27-firstrun-starting-state");
 
   // 6) Preview the broken sandbox, inspect it, reset it, stop it

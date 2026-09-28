@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArchitectureDiagram, type Insights } from "@/components/architecture-diagram";
+import { AttemptDiffPanel } from "@/components/attempt-diff";
 import { Shell } from "@/components/shell";
 import { ErrorBanner } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -75,6 +76,8 @@ export default function AttemptEvidence() {
             </tbody>
           </table>
         </section>
+
+        <AttemptDiffPanel attemptId={d.attempt.id} staff />
 
         <div className="two">
           <section className="card stack">

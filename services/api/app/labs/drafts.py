@@ -8,6 +8,7 @@ cloned or imported pack) is carried unchanged and shown read-only (v1 does not a
 from __future__ import annotations
 
 import gzip
+import hashlib
 import io
 import json
 import re
@@ -115,6 +116,17 @@ def blank_content(slug: str, title: str) -> dict[str, Any]:
         "private/notes.md": "",
     }
     return {"lab": lab, "files": files}
+
+
+def fingerprint(content: dict[str, Any]) -> str:
+    """Optimistic-concurrency revision of draft content (M46): a sha256 over canonical JSON.
+
+    Unlike `LabPackage.content_sha256` it never depends on the lab being *valid*, which matters because a
+    draft is deliberately allowed to hold work in progress. Comparing this before writing is what stops a
+    stale autosave (another tab, a test run) from overwriting newer content. `updated_at` cannot be used:
+    validation and status changes bump it too."""
+    blob = json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def apply_edit(content: dict[str, Any], lab: dict[str, Any] | None, files: dict[str, str] | None) -> dict[str, Any]:

@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { ListEditor, SchemaForm } from "@/components/schema-form";
 import { type Catalogue, type Check, type CheckType, COMMON_KEYS, defaultParams, errorsFor, type Lab, type Task,
   type Validation } from "@/lib/builder";
+import { RunCheck } from "./run-check";
 import { ErrorList } from "./validation";
 
 function move<T>(xs: T[], i: number, d: number): T[] {
@@ -34,8 +35,9 @@ function newTaskId(tasks: Task[]): string {
   return `task-${n}`;
 }
 
-export function TasksTab({ lab, catalogue, validation, focusTask, onChange }: {
-  lab: Lab; catalogue: Catalogue | null; validation: Validation | null; focusTask: string | null; onChange: (lab: Lab) => void;
+export function TasksTab({ lab, catalogue, validation, focusTask, previewRunning, draftId, onChange }: {
+  lab: Lab; catalogue: Catalogue | null; validation: Validation | null; focusTask: string | null;
+  previewRunning: boolean; draftId: string; onChange: (lab: Lab) => void;
 }) {
   const tasks = lab.tasks ?? [];
   const setTasks = (next: Task[]) => onChange({ ...lab, tasks: next });
@@ -55,6 +57,7 @@ export function TasksTab({ lab, catalogue, validation, focusTask, onChange }: {
         A task scores its marks when all of its checks pass (or in proportion to the passing checks&apos; weights).</p>
       {tasks.map((t, i) => (
         <TaskCard key={tk.keys[i]} task={t} index={i} count={tasks.length} lab={lab} catalogue={catalogue} validation={validation}
+          draftId={draftId} previewRunning={previewRunning}
           focused={focusTask === t.id}
           onChange={(nt) => setTask(i, nt)} onMove={(d) => { tk.move(i, d); setTasks(move(tasks, i, d)); }}
           onRemove={() => { tk.remove(i); setTasks(tasks.filter((_, j) => j !== i)); }} />
@@ -64,8 +67,10 @@ export function TasksTab({ lab, catalogue, validation, focusTask, onChange }: {
   );
 }
 
-function TaskCard({ task, index, count, lab, catalogue, validation, focused, onChange, onMove, onRemove }: {
+function TaskCard({ task, index, count, lab, catalogue, validation, focused, draftId, previewRunning,
+  onChange, onMove, onRemove }: {
   task: Task; index: number; count: number; lab: Lab; catalogue: Catalogue | null; validation: Validation | null; focused: boolean;
+  draftId: string; previewRunning: boolean;
   onChange: (t: Task) => void; onMove: (d: number) => void; onRemove: () => void;
 }) {
   const set = <K extends keyof Task>(k: K, v: Task[K]) => onChange({ ...task, [k]: v });
@@ -106,6 +111,7 @@ function TaskCard({ task, index, count, lab, catalogue, validation, focused, onC
       <div className="stack">
         {checks.map((c, i) => (
           <CheckEditor key={ck.keys[i]} check={c} index={i} task={task} labEngine={lab.runtime?.emulator ?? "default"} catalogue={catalogue} validation={validation}
+            draftId={draftId} previewRunning={previewRunning}
             onChange={(nc) => setCheck(i, nc)} onRemove={() => { ck.remove(i); set("checks", checks.filter((_, j) => j !== i)); }}
             onMove={(d) => { ck.move(i, d); set("checks", move(checks, i, d)); }} count={checks.length} />
         ))}
@@ -125,8 +131,10 @@ function splitCheck(c: Check): { common: Partial<Check>; params: Record<string, 
   return { common, params };
 }
 
-function CheckEditor({ check, index, count, task, labEngine, catalogue, validation, onChange, onRemove, onMove }: {
+function CheckEditor({ check, index, count, task, labEngine, catalogue, validation, draftId, previewRunning,
+  onChange, onRemove, onMove }: {
   check: Check; index: number; count: number; task: Task; labEngine: string; catalogue: Catalogue | null; validation: Validation | null;
+  draftId: string; previewRunning: boolean;
   onChange: (c: Check) => void; onRemove: () => void; onMove: (d: number) => void;
 }) {
   const ct: CheckType | undefined = catalogue?.check_types.find((c) => c.type === check.type);
@@ -183,6 +191,7 @@ function CheckEditor({ check, index, count, task, labEngine, catalogue, validati
           onChange={(e) => setCommon("feedback", e.target.value)} /></label>
       </div>
       <ErrorList rows={errorsFor(validation, task.id, index + 1)} />
+      <RunCheck draftId={draftId} taskId={task.id} index={index + 1} previewRunning={previewRunning} />
     </div>
   );
 }

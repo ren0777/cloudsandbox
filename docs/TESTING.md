@@ -19,7 +19,30 @@ MSYS_NO_PATHCONV=1 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock 
 
 # E2E (the stack must be up: scripts/up.sh). It resets demo data itself.
 cd apps/web && npx playwright install chromium && npx playwright test
+
+# A second (or third) checkout running beside the first one — its own project, ports, runner ids,
+# sandbox env, images and test database, so two suites can never truncate each other's tables:
+CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/docker-compose.m45.yml ./scripts/test-api.sh
+
+# …and the browser E2E for that checkout, which needs its runner id and URL (see STATUS D47/D53):
+CLOUDLABS_URL=http://localhost:4444 CLOUDLABS_RUNNER_ID=runner-m45 \
+  CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/docker-compose.m45.yml \
+  npx playwright test
 ```
+
+(The gateway port lives in `infra/docker-compose.m45.yml`. It is **4444** because Windows had excluded
+3200 and 3900 from the dynamic range after a restart, and Docker could not bind them — "forbidden by its
+access permissions". If a port refuses to bind, pick another and update this file and `CL_ALLOWED_ORIGINS`
+in the override together.)
+
+Keep `http://localhost:3000` in the override's `CL_ALLOWED_ORIGINS` even though this checkout serves on
+another port: `tests/test_integration_docker.py` uses `http://localhost:3000` as the WebSocket **Origin**
+for the terminal ticket rules, so dropping it fails the whole Docker-marked journey with
+`terminal.ticket.rejected / origin_not_allowed` (STATUS **D53**).
+
+If the E2E fails with `preview_unavailable: runner is at capacity` while `docker ps` shows no sandboxes,
+check for orphan networks before believing it is a product bug: `docker network ls | grep cl-sbx`, then
+`docker network disconnect -f <network> <container>` and `docker network rm` (STATUS **D53**).
 
 ## Engines
 Real-runtime tests are parametrized over every emulator engine (`floci`, the default, and `moto`, the
@@ -33,7 +56,23 @@ journey with the session freeze, and terminal ticket rules. Run the browser E2E 
 - **Grading:** every S3 check, 0 / partial / 100, weights, proportional scoring, determinism, and the
   student view hiding expected/actual and hidden checks.
 - **Auth/authz:** cookies, refresh rotation + reuse detection, CSRF, rate limit, demo accounts refused
-  outside demo mode, the role matrix, 404-not-403, and **route coverage** (every route has `Authz`).
+  outside demo mode, the role matrix, 404-not-403, and **route coverage** in
+  `tests/test_authz_coverage.py` (every route carries `Authz` or is on the reviewed public allowlist; every
+  action is in the matrix; a non-vacuity self-test; every protected route answers 401 to an anonymous
+  caller; cross-resource access stays 404). Run it alone with `./scripts/test-api.sh tests/test_authz_coverage.py`.
+- **Lab Builder authoring (M46/M47):** `tests/test_lab_builder_autosave.py` covers the content revision a
+  save is based on (stale refused, validation never invalidates it, unchanged content keeps it, invalid
+  partial content saves and stays protected, YAML guarded); `tests/test_preview_check.py` runs one check
+  against a real preview sandbox and asserts **parity with `grade()`** plus the absence of any attempt,
+  grade, evidence or badge row. Browser: `e2e/lab-builder-autosave.spec.ts` (autosave, undo/redo, one failed
+  PUT then a manual retry, stale reload) and `e2e/lab-builder-check-run.spec.ts` (run → fail → make it
+  true in the console → run → pass).
+- **Attempt diff and analytics (M48/M49):** `tests/test_attempt_diff.py` classifies every change (fixed,
+  regressed, unchanged, added, removed), proves the student copy never carries `expected`/`actual`, steps
+  over non-counting attempts and follows a regrade; `tests/test_course_analytics.py` covers the empty state,
+  the metrics, interruptions kept apart from student results, ownership (404/403/200) and a **fixed query
+  count** that must not grow with the data. Browser: `e2e/instructor-analytics.spec.ts` (metrics, assignment
+  table, honest empty states, and a course with no labs).
 - **Architecture:** the API never imports Docker; the HMAC known-answer vector matches the runner.
 - **Sessions:** 20 parallel Starts → 1 session; configurable active limit; capacity full → 503 and nothing
   created; runtime unavailable; provisioning failure frees the slot; console; progress rate limit;

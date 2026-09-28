@@ -33,8 +33,7 @@ export interface LabSession {
 
 export interface CheckView {
   hidden: boolean; passed: boolean; message: string; marks_awarded: string; marks_possible: string;
-}
-export interface TaskResultView {
+}export interface TaskResultView {
   task_id: string; title: string; passed: boolean; marks_awarded: string; marks_possible: string;
   checks: CheckView[];
 }
@@ -45,4 +44,32 @@ export interface AttemptResult {
   result: ResultView;
   insights: import("@/components/architecture-diagram").Insights | null;
   badges: import("@/components/progress-card").BadgeView[];
+}
+
+// --- attempt diff (phase 10, M48) -----------------------------------------------------------
+export type ChangeKind = "fixed" | "regressed" | "unchanged" | "added" | "removed";
+/** One side of a comparison. `expected`/`actual` are instructor-only (PLAN §7b) and absent for students. */
+export interface DiffSide {
+  passed: boolean; message: string; marks_awarded: string; marks_possible: string;
+  expected?: unknown; actual?: unknown;
+}
+export interface DiffCheck {
+  check: string; label: string; hidden: boolean; change: ChangeKind;
+  before: DiffSide | null; after: DiffSide | null;
+}
+export interface DiffTask {
+  task_id: string; title: string;
+  passed: { before: boolean | null; after: boolean | null };
+  marks_awarded: { before: string | null; after: string | null };
+  checks: DiffCheck[];
+}
+export interface AttemptHead {
+  attempt_id: string; attempt_no: number; trigger: string; counts: boolean; late: boolean;
+  created_at: string; score: string; max_score: string; regraded: boolean;
+}
+export interface AttemptDiff {
+  first_attempt: boolean; previous: AttemptHead | null; current: AttemptHead;
+  summary: { fixed: number; regressed: number; unchanged: number; added: number; removed: number;
+    score_before: string | null; score_after: string | null; delta: string | null };
+  tasks: DiffTask[];
 }
