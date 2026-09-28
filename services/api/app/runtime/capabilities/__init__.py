@@ -39,6 +39,10 @@ CONSOLE_OPS: dict[str, tuple[str, ...]] = {
     "sqs": ("ListQueues", "CreateQueue", "GetQueueUrl", "GetQueueAttributes", "SetQueueAttributes",
             "DeleteQueue", "SendMessage", "ReceiveMessage", "DeleteMessage", "PurgeQueue",
             "TagQueue", "UntagQueue", "ListQueueTags"),
+    # SNS rides its own boto3 client; delivery targets are in-sandbox SQS queues only (no egress).
+    "sns": ("ListTopics", "CreateTopic", "GetTopicAttributes", "SetTopicAttributes", "DeleteTopic",
+            "Subscribe", "SetSubscriptionAttributes", "ListSubscriptionsByTopic",
+            "GetSubscriptionAttributes", "Unsubscribe", "Publish"),
     "lambda": ("ListFunctions", "CreateFunction", "GetFunction", "GetFunctionConfiguration",
                "UpdateFunctionCode", "UpdateFunctionConfiguration", "DeleteFunction"),
 }

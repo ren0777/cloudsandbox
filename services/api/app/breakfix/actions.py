@@ -368,3 +368,80 @@ register(BreakActionDef("sqs.send_message", SendMessage, "sqs", ("sqs:SendMessag
 register(BreakActionDef("sqs.delete_queue", DeleteQueue, "sqs", ("sqs:DeleteQueue", "sqs:GetQueueUrl"),
                         lambda p: [f'aws sqs delete-queue --queue-url {_queue_url(p.queue)}'],
                         lambda p: f"Queue {p.queue} does not exist"))
+
+
+# -------------------------------------------------------------------------------------------- SNS
+SNS_TOPIC = r"^[A-Za-z0-9_-]{1,256}$"
+
+
+def _topic_arn(name: str) -> str:
+    """create-topic is idempotent and returns the existing ARN, so it doubles as a name lookup."""
+    return (f'$(aws sns create-topic --name {_q(name)} --query "TopicArn" --output text)')
+
+
+def _sqs_arn(name: str) -> str:
+    return (f'$(aws sqs get-queue-attributes --queue-url {_queue_url(name)} '
+            f'--attribute-names QueueArn --query "Attributes.QueueArn" --output text)')
+
+
+class CreateTopic(ActionParams):
+    name: str = Field(pattern=SNS_TOPIC)
+
+
+class SubscribeSqs(ActionParams):
+    topic: str = Field(pattern=SNS_TOPIC)
+    queue: str = Field(pattern=SQS_QUEUE)
+    raw_delivery: bool = False
+
+
+class UnsubscribeSqs(ActionParams):
+    topic: str = Field(pattern=SNS_TOPIC)
+    queue: str = Field(pattern=SQS_QUEUE)
+
+
+class Publish(ActionParams):
+    topic: str = Field(pattern=SNS_TOPIC)
+    message: str = Field(min_length=1, max_length=1000)
+
+
+class DeleteTopic(ActionParams):
+    name: str = Field(pattern=SNS_TOPIC)
+
+
+def _compile_subscribe_sqs(p: SubscribeSqs) -> list[str]:
+    # The SNS Subscribe parameter is `--notification-endpoint` in AWS CLI v2 (`--endpoint` would be
+    # parsed as the global `--endpoint-url` and fail with "Invalid endpoint: arn:aws:sqs:...").
+    return [f'aws sns subscribe --topic-arn {_topic_arn(p.topic)} --protocol sqs '
+            f'--notification-endpoint {_sqs_arn(p.queue)} '
+            f'--attributes RawMessageDelivery={str(p.raw_delivery).lower()} '
+            f'--return-subscription-arn']
+
+
+def _compile_unsubscribe_sqs(p: UnsubscribeSqs) -> list[str]:
+    return [f'QUEUE_ARN={_sqs_arn(p.queue)}',
+            f'SUB=$(aws sns list-subscriptions-by-topic --topic-arn {_topic_arn(p.topic)} '
+            f'--query "Subscriptions[?Endpoint==\'$QUEUE_ARN\'].SubscriptionArn | [0]" --output text)',
+            'aws sns unsubscribe --subscription-arn "$SUB"']
+
+
+register(BreakActionDef("sns.create_topic", CreateTopic, "sns", ("sns:CreateTopic",),
+                        lambda p: [f'aws sns create-topic --name {_q(p.name)} --query "TopicArn" --output text'],
+                        lambda p: f"Topic {p.name} exists"))
+register(BreakActionDef("sns.subscribe_sqs", SubscribeSqs, "sns",
+                        ("sns:Subscribe", "sns:SetSubscriptionAttributes", "sqs:GetQueueUrl",
+                         "sqs:GetQueueAttributes"),
+                        _compile_subscribe_sqs,
+                        lambda p: f"{p.queue} receives messages from {p.topic}"
+                                  + (" (raw delivery)" if p.raw_delivery else "")))
+register(BreakActionDef("sns.unsubscribe_sqs", UnsubscribeSqs, "sns",
+                        ("sns:ListSubscriptionsByTopic", "sns:Unsubscribe", "sqs:GetQueueUrl",
+                         "sqs:GetQueueAttributes"),
+                        _compile_unsubscribe_sqs,
+                        lambda p: f"{p.queue} no longer receives messages from {p.topic}"))
+register(BreakActionDef("sns.publish", Publish, "sns", ("sns:Publish",),
+                        lambda p: [f'aws sns publish --topic-arn {_topic_arn(p.topic)} '
+                                   f'--message {_q(p.message)}'],
+                        lambda p: f"A message is published to {p.topic}"))
+register(BreakActionDef("sns.delete_topic", DeleteTopic, "sns", ("sns:DeleteTopic",),
+                        lambda p: [f'aws sns delete-topic --topic-arn {_topic_arn(p.name)}'],
+                        lambda p: f"Topic {p.name} does not exist"))

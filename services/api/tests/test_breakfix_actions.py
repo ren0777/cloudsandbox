@@ -223,3 +223,28 @@ def test_compiler_covers_the_sqs_actions():
         breakfix.compile_actions([{"type": "sqs.create_queue", "name": "orders", "fifo": True}])
     fifo = breakfix.compile_actions([{"type": "sqs.create_queue", "name": "orders.fifo", "fifo": True}])
     assert "FifoQueue=true" in fifo
+
+
+def test_compiler_covers_the_sns_actions():
+    specs = [
+        {"type": "sns.create_topic", "name": "cafe-alerts-abc123"},
+        {"type": "sns.subscribe_sqs", "topic": "cafe-alerts-abc123", "queue": "cafe-orders-abc123",
+         "raw_delivery": True},
+        {"type": "sns.publish", "topic": "cafe-alerts-abc123", "message": '{"alert": "latte"}'},
+        {"type": "sns.unsubscribe_sqs", "topic": "cafe-alerts-abc123", "queue": "cafe-orders-abc123"},
+        {"type": "sns.delete_topic", "name": "cafe-alerts-abc123"},
+    ]
+    script = breakfix.compile_actions(specs)
+    assert script == breakfix.compile_actions(specs)
+    for expected in (
+        "aws sns create-topic --name cafe-alerts-abc123",
+        "aws sns subscribe --topic-arn $(aws sns create-topic --name cafe-alerts-abc123",
+        "--protocol sqs",
+        "--notification-endpoint",
+        "--attributes RawMessageDelivery=true",
+        "aws sns publish --topic-arn $(aws sns create-topic",
+        "aws sns list-subscriptions-by-topic",
+        "aws sns unsubscribe",
+        "aws sns delete-topic",
+    ):
+        assert expected in script, expected

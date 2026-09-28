@@ -4,12 +4,10 @@
 (regression backend) and MiniStack (specialised engine) under the same locked-down sandbox, and which
 engine should be the default **per service**?
 
-This is *preparation only* for SNS: no student UI, no lab packs, no template, no API endpoints and **no
-change to the production defaults** were made. The deliverable is evidence, capability declarations,
-contract tests and the proposals below. **VPC and SQS have since been implemented** from these proposals
-— see the implementation status below; SNS remains a proposal.
+This evaluation has been fully implemented: **VPC, SQS and SNS** are student-facing services now (see
+the implementation status below). The proposals were followed, with the deviations noted there.
 
-## VPC and SQS implementation status (landed 2026-09-28)
+## VPC, SQS and SNS implementation status (landed 2026-09-28)
 
 The VPC proposal is implemented end to end, using exactly this evaluation's operation set:
 
@@ -42,6 +40,21 @@ SQS (same shape):
   are seeded by the demo reset and appear as templates.
 - Console page + capability nav; E2E `e2e/sqs.spec.ts` **2/2** (create the order queue and send an order;
   restore the stuck queue's visibility timeout and delay).
+
+SNS (same shape):
+
+- `app/console/sns.py`: topics with display names, subscriptions (in-sandbox SQS queues only — there is no
+  egress), unsubscribe and publish. The console lists the sandbox's queues, so subscribing is one click.
+- `sns` evidence collector (topics with their subscriptions) and two checks: `sns.topic_exists`,
+  `sns.subscription`. **Delivery is graded through `sqs.message_present`**, so the same non-destructive
+  probe proves real fan-out without a live publish during grading.
+- `sns-basics` (guided; 0/45/100) and `sns-breakfix` (a deleted subscription restored; baseline
+  20/70/100 and Reset reproduces it) pass labtest on **moto and floci**, are seeded by the demo reset and
+  appear as templates.
+- Console page + capability nav; E2E `e2e/sns.spec.ts` **2/2** (build fan-out and prove delivery; restore
+  the missing subscription and prove it again).
+- CLI quirk recorded in LAB-AUTHORING: AWS CLI v2 spells the SNS Subscribe endpoint flag
+  `--notification-endpoint` (`--endpoint` is parsed as the global `--endpoint-url`).
 
 ## Scope and method
 
@@ -294,17 +307,18 @@ POST   /console/sns/topics/{name}/publish          # {subject, message}         
 - SQS implementation: `tests/test_sqs_console.py` (pure grading including the peek probe, console journey,
   the attributes incident) plus labtest in `tests/test_sqs.py` (`sqs-basics` 0/35/100 and `sqs-breakfix`
   20/70/100 + Reset on **moto and floci**); E2E `apps/web/e2e/sqs.spec.ts` **2/2**.
+- SNS implementation: `tests/test_sns_console.py` (pure grading, console fan-out journey, the deleted
+  subscription restored) plus labtest in `tests/test_sns.py` (`sns-basics` 0/45/100 and `sns-breakfix`
+  20/70/100 + Reset on **moto and floci**); E2E `apps/web/e2e/sns.spec.ts` **2/2**.
 - `tools/emulator-bakeoff/m44-results/{moto,floci,ministack}.txt` + `versions.txt` hold the raw probe
   evidence (68 result rows per engine, container health, memory, emulator errors).
 - Re-run `m44_bakeoff.sh` and the three contract files on every emulator version bump, as with the
   original bake-off.
 
-## Deliberately not done (and open items)
+## Follow-ups (not part of this work)
 
-- SNS is still a proposal: no console page, no `CONSOLE_OPS` entry, no lab packs/templates, no grader
-  checks or evidence collector yet (VPC and SQS are implemented — see the top of this file).
-- No production default change and no `lab.yaml` schema change beyond adding `vpc` and `sqs` to the
-  service list.
-- Open: implement `sns` collectors + checks and the console page in the same shape; a
-  **Lambda + SQS + DynamoDB** template (MiniStack, in-process) and a **VPC + EC2** template (Floci);
-  decide whether any lab needs Moto pinned for `DependencyViolation`.
+- Cross-service templates: **Lambda + SQS + DynamoDB** (MiniStack, in-process) and **VPC + EC2** (Floci).
+- Optional: cost-meter entries for SQS/SNS requests (VPC, SQS and SNS are currently free, as on AWS's
+  free tiers/simple pricing).
+- Decide whether any lab needs Moto pinned for `DependencyViolation`.
+- Deploy on a real server (`docs/DEPLOYMENT.md`) and run it with students, per the phase plan.

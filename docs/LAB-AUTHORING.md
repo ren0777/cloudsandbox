@@ -18,7 +18,7 @@ title: "Mission 1: CloudCafé goes online"
 summary: One line for the lab card.
 story: |                          # markdown-lite: paragraphs, **bold**, `code`; may use variables
   Your bucket is **{{ bucket }}**.
-services: [s3]                    # s3 | dynamodb | iam | ec2 | lambda | vpc | sqs available
+services: [s3]                    # s3 | dynamodb | iam | ec2 | lambda | vpc | sqs | sns available
 runtime: {emulator: default}      # platform default engine; name an engine only if a lab truly needs it
 duration_minutes: 45              # hard TTL (capped at 120)
 idle_minutes: 20                  # optional (clamped to 10–30)
@@ -84,6 +84,9 @@ tasks:
 | `sqs.queue_tag` | `queue`, `key`, `value` | the queue has that tag |
 | `sqs.message_present` | `queue`, `body_contains`? | a message is on the queue (probe: peeks up to 10 messages with visibility 0 — nothing is consumed, so grading never steals the student's message) |
 
+| `sns.topic_exists` | `name`, `display_name`? | the topic exists, optionally with that display name |
+| `sns.subscription` | `topic`, `queue`, `expect` (present/absent) | the queue is (or no longer is) subscribed to the topic over SQS. Combine with `sqs.message_present` to grade real delivery: SNS has no egress, so in-sandbox queue delivery is the only safe target |
+
 | `lambda.function` | `name`, `runtime`?, `handler`?, `role_name`?, `env` {K: V}?, `memory_min`?, `timeout_min`? | the function exists with those settings |
 | `lambda.invoke_returns` | `name`, `payload` (event), `expect` | invoking the function with `payload` returns a response containing `expect` (dicts match as a subset, numbers with float tolerance) |
 
@@ -126,10 +129,15 @@ the Lab Builder's **Starting state** tab generates its forms from it and shows t
 catalogue covers IAM (create group/user, membership, attach/detach a managed policy), S3 (create bucket,
 versioning, bucket policy, public access, tags), EC2 (security group, ingress rules), VPC (create a VPC,
 subnet, internet gateway, route table, route, association, security group; authorize/revoke ingress and
-delete a route), SQS (create a queue with attributes, set an attribute, send a message, delete a queue)
-and Lambda (remove an environment variable); new typed actions are added in
-`services/api/app/breakfix/`. Import-time validation rejects an unknown action, bad parameters, a service
-not listed in `services`, and any action an engine cannot perform.
+delete a route), SQS (create a queue with attributes, set an attribute, send a message, delete a queue),
+SNS (create/delete a topic, subscribe an SQS queue, unsubscribe it, publish) and Lambda (remove an
+environment variable); new typed actions are added in `services/api/app/breakfix/`. Import-time
+validation rejects an unknown action, bad parameters, a service not listed in `services`, and any action
+an engine cannot perform.
+
+**SNS CLI note:** the AWS CLI v2 exposes the SNS `Endpoint` parameter as
+`--notification-endpoint` (`--endpoint` is parsed as the global `--endpoint-url`). The compiled actions
+use the correct flag; an authored script must too.
 
 Rules of thumb:
 - The untouched broken state must score `baseline.expected_score` (0 unless the lab starts partly correct);

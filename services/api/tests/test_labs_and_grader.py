@@ -83,7 +83,7 @@ def test_capability_levels():
     assert caps.level("s3:Nope") is None
     assert caps.service_status() == {"s3": "available", "iam": "available", "ec2": "available",
                                      "lambda": "available", "dynamodb": "available", "vpc": "available",
-                                     "sqs": "available"}
+                                     "sqs": "available", "sns": "available"}
 
 
 def test_variables_render_per_student():

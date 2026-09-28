@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -255,8 +256,15 @@ def collect_sqs(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[
         key = f"{name}|{limit}"
         try:
             url = c.get_queue_url(QueueName=name)["QueueUrl"]
-            out = c.receive_message(QueueUrl=url, MaxNumberOfMessages=limit, WaitTimeSeconds=1, VisibilityTimeout=0)
-            bodies = sorted(m["Body"] for m in out.get("Messages", []))
+            # SNS deliveries can land a moment after a publish, so give the peek a short window.
+            deadline = time.monotonic() + 5.0
+            bodies: list[str] = []
+            while True:
+                out = c.receive_message(QueueUrl=url, MaxNumberOfMessages=limit, WaitTimeSeconds=1,
+                                        VisibilityTimeout=0)
+                bodies = sorted(m["Body"] for m in out.get("Messages", []))
+                if bodies or time.monotonic() >= deadline:
+                    break
             peeks[key] = {"queue": name, "received": len(bodies), "bodies": bodies}
         except ClientError as e:
             peeks[key] = {"queue": name, "received": 0, "bodies": [],
@@ -274,6 +282,32 @@ def collect_sqs(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[
                         "in_flight": int(attrs.get("ApproximateNumberOfMessagesNotVisible", "0") or 0),
                         "tags": dict(sorted(tags.items()))}
     return {"queues": dict(sorted(queues.items())), "peeks": dict(sorted(peeks.items()))}
+
+
+def collect_sns(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, Any]:
+    """Topics (by name) with their display name and subscriptions. A subscription is
+    {"protocol", "queue", "raw_delivery"}; ARNs, timestamps and policies are deliberately left out."""
+    c = adapter.client("sns", endpoint)
+    topics: dict[str, Any] = {}
+    for t in c.list_topics().get("Topics", []):
+        arn = t["TopicArn"]
+        name = arn.rsplit(":", 1)[-1]
+        attrs = c.get_topic_attributes(TopicArn=arn).get("Attributes", {})
+        subs = []
+        for s in c.list_subscriptions_by_topic(TopicArn=arn).get("Subscriptions", []):
+            protocol = s.get("Protocol", "")
+            endpoint_arn = s.get("Endpoint", "")
+            sub_arn = s.get("SubscriptionArn", "")
+            raw = False
+            if sub_arn and sub_arn != "PendingConfirmation":
+                raw = c.get_subscription_attributes(SubscriptionArn=sub_arn).get(
+                    "Attributes", {}).get("RawMessageDelivery") == "true"
+            subs.append({"protocol": protocol,
+                         "queue": endpoint_arn.rsplit(":", 1)[-1] if protocol == "sqs" else endpoint_arn,
+                         "raw_delivery": raw})
+        topics[name] = {"name": name, "display_name": attrs.get("DisplayName", ""),
+                        "subscriptions": sorted(subs, key=lambda s: (s["protocol"], s["queue"]))}
+    return {"topics": dict(sorted(topics.items()))}
 
 
 def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -316,7 +350,7 @@ def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: li
 
 COLLECTORS: dict[str, Callable[[emulators.EmulatorAdapter, str], dict[str, Any]]] = {
     "s3": collect_s3, "dynamodb": collect_dynamodb, "iam": collect_iam, "ec2": collect_ec2,
-    "vpc": collect_vpc, "sqs": collect_sqs, "lambda": collect_lambda}
+    "vpc": collect_vpc, "sqs": collect_sqs, "sns": collect_sns, "lambda": collect_lambda}
 
 
 def canonical(obj: Any) -> bytes:

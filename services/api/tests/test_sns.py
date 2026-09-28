@@ -1,15 +1,16 @@
-"""SNS preparation (M44): capability parity and the real-runtime contract on every engine (marker docker).
+"""SNS: capability parity, the real-runtime contract on every engine (marker docker) and the lab packs
+(`sns-basics`, `sns-breakfix`) through `app.labtest`.
 
 Publish is tested by delivering into an SQS subscription inside the sandbox (the only safe, hermetic
-delivery target - no egress) and reading the message from the queue. No lab pack and no console page
-yet - see docs/M44-SERVICES-EVALUATION.md for the evaluation, the proposed grader checks and the
-proposed FastAPI/console shape.
+delivery target - no egress) and reading the message from the queue; see docs/M44-SERVICES-EVALUATION.md
+for the evaluation and docs/LAB-AUTHORING.md for the checks and break actions.
 """
 
 from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 
 import pytest
 from botocore.exceptions import ClientError
@@ -132,3 +133,20 @@ async def test_sns_contract_for_every_declared_supported_operation(real_runner, 
             await asyncio.to_thread(fn, c, st)
     finally:
         await real_runner.destroy_sandbox(sid)
+
+
+# ------------------------------------------------------------------------------- lab packs
+LABS_DIR = Path(get_settings().labs_dir)
+
+
+@pytest.mark.docker
+@pytest.mark.parametrize("pack,expected", [
+    ("sns-basics", [("empty", "0.00"), ("partial", "45.00"), ("solution", "100.00")]),
+    ("sns-breakfix", [("empty", "20.00"), ("partial", "70.00"), ("solution", "100.00"), ("reset", "20.00")]),
+])
+@pytest.mark.parametrize("lab_engine", emulators.ENGINES)
+async def test_sns_labtest_on_every_engine(real_runner, lab_engine, pack, expected):
+    from app.labtest import check_pack
+    results = await check_pack(LABS_DIR / pack, real_runner, engine=lab_engine)
+    assert [(r.name, str(r.actual)) for r in results] == [(f"{lab_engine}/{name}", score) for name, score in expected], \
+        [(r.name, r.actual, r.detail) for r in results]

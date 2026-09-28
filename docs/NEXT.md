@@ -70,7 +70,8 @@ codename.
 - Evaluated on Moto 5.2.3, Floci 2.1.0 and MiniStack 1.5.16 under production sandbox hardening: VPC
   32/32, SQS 20/20, SNS 16/16 probe checks on every engine (`tools/emulator-bakeoff/m44_bakeoff.sh`).
 - Contract tests `tests/test_vpc.py`, `test_sqs.py`, `test_sns.py` run per engine through the runner;
-  capability declarations added behind the adapter (`SERVICE_CLIENT`), `CONSOLE_OPS` untouched.
+  capability declarations added behind the adapter (`SERVICE_CLIENT`); `CONSOLE_OPS` stayed untouched at
+  preparation time (each console page adds its service entry when it lands).
 - Proposals (grader checks, FastAPI routes, console IA) and the per-service default recommendation
   (**Floci**; no switch made) are in `docs/M44-SERVICES-EVALUATION.md`. Nothing reaches students yet.
 
@@ -84,8 +85,13 @@ codename.
 - **SQS** ☑ (Missions 10/11, done — see STATUS 44q): console page, four checks including a non-destructive
   message probe, `sqs-basics` guided lab and `sqs-breakfix` (queue attributes incident); labtest
   0/35/100 and baseline 20/70/100 + Reset on moto and floci; E2E creates a queue and unsticks one.
-- **SNS** next, in the same shape (capability declarations and contract tests already exist). SNS adds
-  fan-out: publish to a topic and subscribe an in-sandbox SQS queue.
+- **SNS** ☑ (Missions 12/13, done — see STATUS 44n): console page, two checks, `sns-basics` fan-out lab
+  (topic + queue + subscription + publish) and `sns-breakfix` (restore a deleted subscription), with
+  delivery graded through the non-destructive SQS message probe; labtest 0/45/100 and baseline
+  20/70/100 + Reset on moto and floci; E2E builds and repairs the fan-out.
+- **VPC, SQS and SNS are now available** to students and to the Lab Builder. Next: a
+  **Lambda + SQS + DynamoDB** template (MiniStack) and a **VPC + EC2** template (Floci), then deploy on a
+  real server and collect feedback (`docs/DEPLOYMENT.md`).
 - Each new lab must pass `app.labtest` (empty 0 / partial / solution 100) on every engine it may run on
   before it appears in the gallery.
 

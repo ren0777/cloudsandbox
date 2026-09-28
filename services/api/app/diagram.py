@@ -170,6 +170,18 @@ def build_graph(collectors: dict[str, Any]) -> dict[str, Any]:
                            f"{'FIFO' if q.get('fifo') else 'standard'} · {_plural(n, 'message')} · "
                            f"visibility {q.get('visibility_timeout')} s"))
 
+    # ---- SNS
+    for name, t in sorted((collectors.get("sns") or {}).get("topics", {}).items()):
+        nid = f"sns:{name}"
+        subs = t.get("subscriptions", [])
+        detail = _plural(len(subs), "subscription") if subs else "no subscriptions"
+        if t.get("display_name"):
+            detail += f" · {t['display_name']}"
+        nodes.append(_node(nid, "sns", "topic", name, "data", detail))
+        for s in subs:
+            if s.get("protocol") == "sqs" and s.get("queue"):
+                edges.append({"source": nid, "target": f"sqs:{s['queue']}", "kind": "delivers to"})
+
     # ---- Lambda
     for name, f in sorted((collectors.get("lambda") or {}).get("functions", {}).items()):
         nid = f"lambda:{name}"
