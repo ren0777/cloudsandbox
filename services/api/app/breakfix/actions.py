@@ -10,7 +10,7 @@ from __future__ import annotations
 import shlex
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .registry import ActionParams, BreakActionDef, register
 
@@ -301,3 +301,70 @@ register(BreakActionDef("vpc.revoke_ingress", VpcIngressRule, "vpc", ("vpc:Revok
                         lambda p: [f'aws ec2 revoke-security-group-ingress --group-id {_group_id(p.group)} '
                                    f'--protocol {p.protocol} --port {p.port} --cidr {_q(p.cidr)}'],
                         lambda p: f"{p.group} no longer allows {p.protocol}/{p.port} from {p.cidr}"))
+
+
+# -------------------------------------------------------------------------------------------- SQS
+SQS_QUEUE = r"^[A-Za-z0-9_-]{1,80}(\.fifo)?$"
+SQS_ATTRIBUTE = Literal["VisibilityTimeout", "MessageRetentionPeriod", "DelaySeconds"]
+
+
+def _queue_url(name: str) -> str:
+    return (f'$(aws sqs get-queue-url --queue-name {_q(name)} --query "QueueUrl" --output text)')
+
+
+class CreateQueue(ActionParams):
+    name: str = Field(pattern=SQS_QUEUE)
+    visibility_timeout: int = Field(30, ge=0, le=43200)
+    retention_period: int = Field(345600, ge=60, le=1209600)
+    delay_seconds: int = Field(0, ge=0, le=900)
+    fifo: bool = False
+
+    @model_validator(mode="after")
+    def _fifo_name(self) -> "CreateQueue":
+        if self.fifo and not self.name.endswith(".fifo"):
+            raise ValueError("a FIFO queue name must end in .fifo")
+        return self
+
+
+class SetQueueAttribute(ActionParams):
+    queue: str = Field(pattern=SQS_QUEUE)
+    attribute: SQS_ATTRIBUTE
+    value: int = Field(ge=0, le=1209600)
+
+
+class SendMessage(ActionParams):
+    queue: str = Field(pattern=SQS_QUEUE)
+    body: str = Field(min_length=1, max_length=1000)
+
+
+class DeleteQueue(ActionParams):
+    queue: str = Field(pattern=SQS_QUEUE)
+
+
+def _compile_create_queue(p: CreateQueue) -> list[str]:
+    attrs = (f"VisibilityTimeout={p.visibility_timeout},MessageRetentionPeriod={p.retention_period},"
+             f"DelaySeconds={p.delay_seconds}" + (",FifoQueue=true" if p.fifo else ""))
+    return [f'aws sqs create-queue --queue-name {_q(p.name)} --attributes {_q(attrs)} '
+            f'--query "QueueUrl" --output text']
+
+
+def _compile_set_queue_attribute(p: SetQueueAttribute) -> list[str]:
+    return [f'aws sqs set-queue-attributes --queue-url {_queue_url(p.queue)} '
+            f'--attributes {p.attribute}={p.value}']
+
+
+register(BreakActionDef("sqs.create_queue", CreateQueue, "sqs", ("sqs:CreateQueue",),
+                        _compile_create_queue,
+                        lambda p: f"Queue {p.name} exists (visibility {p.visibility_timeout} s, "
+                                  f"delay {p.delay_seconds} s)"))
+register(BreakActionDef("sqs.set_queue_attribute", SetQueueAttribute, "sqs",
+                        ("sqs:SetQueueAttributes", "sqs:GetQueueUrl"),
+                        _compile_set_queue_attribute,
+                        lambda p: f"{p.queue}: {p.attribute} = {p.value}"))
+register(BreakActionDef("sqs.send_message", SendMessage, "sqs", ("sqs:SendMessage", "sqs:GetQueueUrl"),
+                        lambda p: [f'aws sqs send-message --queue-url {_queue_url(p.queue)} '
+                                   f'--message-body {_q(p.body)}'],
+                        lambda p: f"A message is waiting in {p.queue}"))
+register(BreakActionDef("sqs.delete_queue", DeleteQueue, "sqs", ("sqs:DeleteQueue", "sqs:GetQueueUrl"),
+                        lambda p: [f'aws sqs delete-queue --queue-url {_queue_url(p.queue)}'],
+                        lambda p: f"Queue {p.queue} does not exist"))

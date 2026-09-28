@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -112,3 +113,20 @@ async def test_sqs_contract_for_every_declared_supported_operation(real_runner, 
             await asyncio.to_thread(fn, c, st)
     finally:
         await real_runner.destroy_sandbox(sid)
+
+
+# ------------------------------------------------------------------------------- lab packs
+LABS_DIR = Path(get_settings().labs_dir)
+
+
+@pytest.mark.docker
+@pytest.mark.parametrize("pack,expected", [
+    ("sqs-basics", [("empty", "0.00"), ("partial", "35.00"), ("solution", "100.00")]),
+    ("sqs-breakfix", [("empty", "20.00"), ("partial", "70.00"), ("solution", "100.00"), ("reset", "20.00")]),
+])
+@pytest.mark.parametrize("lab_engine", emulators.ENGINES)
+async def test_sqs_labtest_on_every_engine(real_runner, lab_engine, pack, expected):
+    from app.labtest import check_pack
+    results = await check_pack(LABS_DIR / pack, real_runner, engine=lab_engine)
+    assert [(r.name, str(r.actual)) for r in results] == [(f"{lab_engine}/{name}", score) for name, score in expected], \
+        [(r.name, r.actual, r.detail) for r in results]

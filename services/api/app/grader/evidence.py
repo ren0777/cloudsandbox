@@ -241,6 +241,41 @@ def collect_vpc(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, 
             "security_groups": dict(sorted(security_groups.items()))}
 
 
+def collect_sqs(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Queues with their stable attributes and tags, plus the result of each `sqs_peek` probe.
+
+    A peek receives up to 10 messages with `VisibilityTimeout=0`, so the student's messages stay visible
+    and nothing is consumed: the bodies become stored evidence and grading reads only that."""
+    c = adapter.client("sqs", endpoint)
+    peeks: dict[str, Any] = {}
+    for p in probes or []:
+        if p.get("kind") != "sqs_peek":
+            continue
+        name, limit = str(p["queue"]), min(int(p.get("max", 10)), 10)
+        key = f"{name}|{limit}"
+        try:
+            url = c.get_queue_url(QueueName=name)["QueueUrl"]
+            out = c.receive_message(QueueUrl=url, MaxNumberOfMessages=limit, WaitTimeSeconds=1, VisibilityTimeout=0)
+            bodies = sorted(m["Body"] for m in out.get("Messages", []))
+            peeks[key] = {"queue": name, "received": len(bodies), "bodies": bodies}
+        except ClientError as e:
+            peeks[key] = {"queue": name, "received": 0, "bodies": [],
+                          "error": e.response.get("Error", {}).get("Code", "error")}
+    queues: dict[str, Any] = {}
+    for url in sorted(c.list_queues().get("QueueUrls", [])):
+        name = url.rsplit("/", 1)[-1]
+        attrs = c.get_queue_attributes(QueueUrl=url, AttributeNames=["All"]).get("Attributes", {})
+        tags = c.list_queue_tags(QueueUrl=url).get("Tags", {})
+        queues[name] = {"name": name, "fifo": attrs.get("FifoQueue") == "true",
+                        "visibility_timeout": attrs.get("VisibilityTimeout", "30"),
+                        "retention_period": attrs.get("MessageRetentionPeriod", "345600"),
+                        "delay_seconds": attrs.get("DelaySeconds", "0"),
+                        "messages": int(attrs.get("ApproximateNumberOfMessages", "0") or 0),
+                        "in_flight": int(attrs.get("ApproximateNumberOfMessagesNotVisible", "0") or 0),
+                        "tags": dict(sorted(tags.items()))}
+    return {"queues": dict(sorted(queues.items())), "peeks": dict(sorted(peeks.items()))}
+
+
 def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Runs the lab's invocation probes FIRST (their output and side effects become evidence), then records
     function configuration. No timestamps, versions or code locations."""
@@ -281,7 +316,7 @@ def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: li
 
 COLLECTORS: dict[str, Callable[[emulators.EmulatorAdapter, str], dict[str, Any]]] = {
     "s3": collect_s3, "dynamodb": collect_dynamodb, "iam": collect_iam, "ec2": collect_ec2,
-    "vpc": collect_vpc, "lambda": collect_lambda}
+    "vpc": collect_vpc, "sqs": collect_sqs, "lambda": collect_lambda}
 
 
 def canonical(obj: Any) -> bytes:
@@ -307,9 +342,13 @@ async def capture(endpoint: str, collectors: list[str], engine: str,
     def run() -> dict[str, Any]:
         out: dict[str, Any] = {}
         names = sorted(set(collectors))
+        # Probe collectors run first so their (non-destructive) reads see the final state.
         if "lambda" in names:  # probes run first so their side effects are visible to the other collectors
             names.remove("lambda")
             out["lambda"] = collect_lambda(adapter, endpoint, probes)
+        if "sqs" in names:
+            names.remove("sqs")
+            out["sqs"] = collect_sqs(adapter, endpoint, probes)
         for name in names:
             if name not in COLLECTORS:
                 raise RuntimeError(f"no collector {name!r}")

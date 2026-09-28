@@ -18,7 +18,7 @@ title: "Mission 1: CloudCafé goes online"
 summary: One line for the lab card.
 story: |                          # markdown-lite: paragraphs, **bold**, `code`; may use variables
   Your bucket is **{{ bucket }}**.
-services: [s3]                    # s3 | dynamodb | iam | ec2 | lambda | vpc available
+services: [s3]                    # s3 | dynamodb | iam | ec2 | lambda | vpc | sqs available
 runtime: {emulator: default}      # platform default engine; name an engine only if a lab truly needs it
 duration_minutes: 45              # hard TTL (capped at 120)
 idle_minutes: 20                  # optional (clamped to 10–30)
@@ -79,6 +79,11 @@ tasks:
 | `vpc.internet_gateway_attached` | `internet_gateway`, `vpc`, `expect` (present/absent) | the gateway is (or is no longer) attached to the VPC |
 | `vpc.security_group_rule` | `group`, `direction` (ingress/egress), `protocol`, `port`, `cidr`, `expect` (present/absent) | the rule is present/absent (an "All traffic" rule covers every port) |
 
+| `sqs.queue_exists` | `name`, `fifo`? | a queue with that name exists (optionally Standard or FIFO) |
+| `sqs.queue_attribute` | `queue`, `attribute` (`visibility_timeout` / `retention_period` / `delay_seconds`), `value` | the queue attribute has that integer value |
+| `sqs.queue_tag` | `queue`, `key`, `value` | the queue has that tag |
+| `sqs.message_present` | `queue`, `body_contains`? | a message is on the queue (probe: peeks up to 10 messages with visibility 0 — nothing is consumed, so grading never steals the student's message) |
+
 | `lambda.function` | `name`, `runtime`?, `handler`?, `role_name`?, `env` {K: V}?, `memory_min`?, `timeout_min`? | the function exists with those settings |
 | `lambda.invoke_returns` | `name`, `payload` (event), `expect` | invoking the function with `payload` returns a response containing `expect` (dicts match as a subset, numbers with float tolerance) |
 
@@ -121,7 +126,8 @@ the Lab Builder's **Starting state** tab generates its forms from it and shows t
 catalogue covers IAM (create group/user, membership, attach/detach a managed policy), S3 (create bucket,
 versioning, bucket policy, public access, tags), EC2 (security group, ingress rules), VPC (create a VPC,
 subnet, internet gateway, route table, route, association, security group; authorize/revoke ingress and
-delete a route) and Lambda (remove an environment variable); new typed actions are added in
+delete a route), SQS (create a queue with attributes, set an attribute, send a message, delete a queue)
+and Lambda (remove an environment variable); new typed actions are added in
 `services/api/app/breakfix/`. Import-time validation rejects an unknown action, bad parameters, a service
 not listed in `services`, and any action an engine cannot perform.
 

@@ -1,0 +1,4 @@
+# labtest expectations (PRIVATE). "empty" = the broken setup, untouched (the queue is still there).
+empty: "20.00"
+partial: "70.00"
+solution: "100.00"

@@ -196,3 +196,30 @@ def test_compiler_covers_the_vpc_actions():
         "aws ec2 revoke-security-group-ingress",
     ):
         assert expected in script, expected
+
+
+def test_compiler_covers_the_sqs_actions():
+    specs = [
+        {"type": "sqs.create_queue", "name": "cafe-orders-abc123", "visibility_timeout": 30,
+         "retention_period": 3600, "delay_seconds": 0},
+        {"type": "sqs.set_queue_attribute", "queue": "cafe-orders-abc123",
+         "attribute": "VisibilityTimeout", "value": 30},
+        {"type": "sqs.send_message", "queue": "cafe-orders-abc123", "body": '{"drink": "latte"}'},
+        {"type": "sqs.delete_queue", "queue": "cafe-orders-abc123"},
+    ]
+    script = breakfix.compile_actions(specs)
+    assert script == breakfix.compile_actions(specs)
+    for expected in (
+        "aws sqs create-queue --queue-name cafe-orders-abc123",
+        "--attributes VisibilityTimeout=30,MessageRetentionPeriod=3600,DelaySeconds=0",
+        'aws sqs set-queue-attributes --queue-url $(aws sqs get-queue-url --queue-name cafe-orders-abc123',
+        "--attributes VisibilityTimeout=30",
+        "aws sqs send-message --queue-url $(aws sqs get-queue-url",
+        "aws sqs delete-queue --queue-url $(aws sqs get-queue-url",
+    ):
+        assert expected in script, expected
+    # FIFO needs the .fifo suffix and the attribute
+    with pytest.raises(ValueError):
+        breakfix.compile_actions([{"type": "sqs.create_queue", "name": "orders", "fifo": True}])
+    fifo = breakfix.compile_actions([{"type": "sqs.create_queue", "name": "orders.fifo", "fifo": True}])
+    assert "FifoQueue=true" in fifo

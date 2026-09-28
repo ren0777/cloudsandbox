@@ -4,12 +4,12 @@
 (regression backend) and MiniStack (specialised engine) under the same locked-down sandbox, and which
 engine should be the default **per service**?
 
-This is *preparation only* for SQS and SNS: no student UI, no lab packs, no template, no API endpoints and
-**no change to the production defaults** were made. The deliverable is evidence, capability declarations,
-contract tests and the proposals below. **VPC has since been implemented** from these proposals — see
-"VPC implementation status" at the end.
+This is *preparation only* for SNS: no student UI, no lab packs, no template, no API endpoints and **no
+change to the production defaults** were made. The deliverable is evidence, capability declarations,
+contract tests and the proposals below. **VPC and SQS have since been implemented** from these proposals
+— see the implementation status below; SNS remains a proposal.
 
-## VPC implementation status (landed 2026-09-28)
+## VPC and SQS implementation status (landed 2026-09-28)
 
 The VPC proposal is implemented end to end, using exactly this evaluation's operation set:
 
@@ -29,6 +29,19 @@ The VPC proposal is implemented end to end, using exactly this evaluation's oper
   unnamed engine defaults, so create dialogs default to the student's own VPC/gateway.
 - Engine quirks stayed where they belong: no check depends on ids, ARNs or `DependencyViolation`, and
   nothing outside the capability/adapter layer knows which engine runs.
+
+SQS (same shape):
+
+- `app/console/sqs.py`: queue list/detail, attributes, tags, send, poll, delete message, purge and delete
+  queue; FIFO-aware creation. The console **poll** receives with `VisibilityTimeout=0`, so inspecting
+  messages never steals them from another consumer or from grading.
+- `sqs` evidence collector with an `sqs_peek` probe (`ReceiveMessage` visibility 0, up to 10 bodies) and
+  four checks: `sqs.queue_exists`, `sqs.queue_attribute`, `sqs.queue_tag`, `sqs.message_present`.
+- `sqs-basics` (guided; 0/35/100) and `sqs-breakfix` (a queue-attributes incident built from typed
+  `sqs.*` break actions; baseline 20/70/100 and Reset reproduces it) pass labtest on **moto and floci**,
+  are seeded by the demo reset and appear as templates.
+- Console page + capability nav; E2E `e2e/sqs.spec.ts` **2/2** (create the order queue and send an order;
+  restore the stuck queue's visibility timeout and delay).
 
 ## Scope and method
 
@@ -278,6 +291,9 @@ POST   /console/sns/topics/{name}/publish          # {subject, message}         
   break-fix state, break-action compiler) plus labtest in `tests/test_vpc.py`
   (`vpc-basics` 0/50/100 and `vpc-breakfix` 25/65/100 + Reset on **moto and floci**); E2E
   `apps/web/e2e/vpc.spec.ts` **2/2** on the compose stack.
+- SQS implementation: `tests/test_sqs_console.py` (pure grading including the peek probe, console journey,
+  the attributes incident) plus labtest in `tests/test_sqs.py` (`sqs-basics` 0/35/100 and `sqs-breakfix`
+  20/70/100 + Reset on **moto and floci**); E2E `apps/web/e2e/sqs.spec.ts` **2/2**.
 - `tools/emulator-bakeoff/m44-results/{moto,floci,ministack}.txt` + `versions.txt` hold the raw probe
   evidence (68 result rows per engine, container health, memory, emulator errors).
 - Re-run `m44_bakeoff.sh` and the three contract files on every emulator version bump, as with the
@@ -285,9 +301,10 @@ POST   /console/sns/topics/{name}/publish          # {subject, message}         
 
 ## Deliberately not done (and open items)
 
-- SQS and SNS are still proposals: no console pages, no `CONSOLE_OPS` entries, no lab packs/templates,
-  no grader checks or evidence collectors for them yet (VPC is implemented — see the top of this file).
-- No production default change and no `lab.yaml` schema change beyond adding `vpc` to the service list.
-- Open: implement `sqs`/`sns` collectors + checks and console pages in the VPC shape; a
+- SNS is still a proposal: no console page, no `CONSOLE_OPS` entry, no lab packs/templates, no grader
+  checks or evidence collector yet (VPC and SQS are implemented — see the top of this file).
+- No production default change and no `lab.yaml` schema change beyond adding `vpc` and `sqs` to the
+  service list.
+- Open: implement `sns` collectors + checks and the console page in the same shape; a
   **Lambda + SQS + DynamoDB** template (MiniStack, in-process) and a **VPC + EC2** template (Floci);
   decide whether any lab needs Moto pinned for `DependencyViolation`.

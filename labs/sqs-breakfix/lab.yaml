@@ -1,0 +1,60 @@
+schema_version: 1
+id: sqs-breakfix
+version: 1.0.0
+kind: break_fix
+title: "Mission 11: The orders queue is stuck (break-fix)"
+summary: The queue hides every order for 12 hours and delays delivery by 15 minutes. Fix the settings.
+story: |
+  **Incident report.** Orders sent during the lunch rush vanish. The kitchen sees nothing, then a message
+  reappears much later — and new orders take forever to show up. Nobody deleted the queue; its settings
+  were changed "to make things safer":
+
+  - **{{ queue_name }}** hides every received message for **12 hours** (43,200 seconds)
+  - new messages are delayed by **15 minutes** (900 seconds)
+
+  Your environment already contains this queue. **Find the settings that were changed and put them back:**
+  visibility timeout **30 seconds**, delivery delay **0 seconds**. Leave the queue, its name and its
+  one-hour retention (3600 s) untouched.
+services: [sqs]
+runtime: {emulator: default}
+duration_minutes: 35
+idle_minutes: 20
+max_attempts: 3
+variables:
+  queue_name: "cafe-orders-{{ student_short_id }}"
+break_actions:
+  - {type: sqs.create_queue, name: "{{ queue_name }}", visibility_timeout: 43200, retention_period: 3600, delay_seconds: 900}
+baseline: {expected_score: "20.00"}
+requires:
+  - sqs:SetQueueAttributes
+tasks:
+  - id: unstick-consumers
+    title: "Stop hiding messages for 12 hours"
+    description: "Set the queue's visibility timeout back to 30 seconds."
+    hints:
+      - "Open the queue and look at its **Attributes**."
+      - "The visibility timeout is how long a received message stays invisible to other consumers."
+      - "CLI: `aws sqs set-queue-attributes --attributes VisibilityTimeout=30`."
+    marks: 50
+    checks:
+      - {type: sqs.queue_attribute, queue: "{{ queue_name }}", attribute: visibility_timeout, value: 30}
+  - id: no-delay
+    title: "Deliver new orders immediately"
+    description: "Set the delivery delay back to 0 seconds."
+    hints:
+      - "The delay is another queue attribute: it postpones every new message."
+      - "Change **Delivery delay** to 0."
+      - "CLI: `aws sqs set-queue-attributes --attributes DelaySeconds=0`."
+    marks: 30
+    checks:
+      - {type: sqs.queue_attribute, queue: "{{ queue_name }}", attribute: delay_seconds, value: 0}
+  - id: leave-queue-in-place
+    title: "Leave the queue and its retention alone"
+    description: "The queue keeps its name and one-hour retention (3600 s); don't delete and recreate it."
+    hints:
+      - "Fix what is wrong; don't rebuild the queue."
+      - "Retention is one hour — deleting the queue and creating a new one loses that setting."
+    marks: 20
+    checks:
+      - {type: sqs.queue_exists, name: "{{ queue_name }}"}
+      - {type: sqs.queue_attribute, queue: "{{ queue_name }}", attribute: retention_period, value: 3600, hidden: true}

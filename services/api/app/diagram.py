@@ -163,6 +163,13 @@ def build_graph(collectors: dict[str, Any]) -> dict[str, Any]:
                 nodes.append(_node(f"vpc:sg:{name}", "vpc", "security_group", name, "network",
                                    _plural(len(g.get("ingress", [])), "inbound rule"), "warn" if flags else "ok", flags))
 
+    # ---- SQS
+    for name, q in sorted((collectors.get("sqs") or {}).get("queues", {}).items()):
+        n = q.get("messages", 0)
+        nodes.append(_node(f"sqs:{name}", "sqs", "queue", name, "data",
+                           f"{'FIFO' if q.get('fifo') else 'standard'} · {_plural(n, 'message')} · "
+                           f"visibility {q.get('visibility_timeout')} s"))
+
     # ---- Lambda
     for name, f in sorted((collectors.get("lambda") or {}).get("functions", {}).items()):
         nid = f"lambda:{name}"

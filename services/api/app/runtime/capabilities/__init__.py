@@ -34,6 +34,11 @@ CONSOLE_OPS: dict[str, tuple[str, ...]] = {
             "DetachInternetGateway", "DeleteInternetGateway", "DescribeSecurityGroups",
             "CreateSecurityGroup", "DeleteSecurityGroup", "AuthorizeSecurityGroupIngress",
             "RevokeSecurityGroupIngress", "AuthorizeSecurityGroupEgress", "RevokeSecurityGroupEgress"),
+    # SQS rides its own boto3 client. Listed when the SQS console page exists - every operation the
+    # page calls, so the page is never half-working.
+    "sqs": ("ListQueues", "CreateQueue", "GetQueueUrl", "GetQueueAttributes", "SetQueueAttributes",
+            "DeleteQueue", "SendMessage", "ReceiveMessage", "DeleteMessage", "PurgeQueue",
+            "TagQueue", "UntagQueue", "ListQueueTags"),
     "lambda": ("ListFunctions", "CreateFunction", "GetFunction", "GetFunctionConfiguration",
                "UpdateFunctionCode", "UpdateFunctionConfiguration", "DeleteFunction"),
 }
