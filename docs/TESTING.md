@@ -127,6 +127,13 @@ journey with the session freeze, and terminal ticket rules. Run the browser E2E 
   end to end (0 / 55 / 100) on a real MiniStack sandbox, where the probe invocation writes the DynamoDB row
   the hidden item check then reads. `test_dynamodb.py`'s contract test now runs on **all three engines**, so
   every DynamoDB operation declared for MiniStack is exercised for real.
+- **Phase 9 (M44, VPC / SQS / SNS):** `test_vpc.py`, `test_sqs.py` and `test_sns.py` hold the per-engine
+  contract tests (real sandboxes through the runner) and — docker-marked — the labtest of each pair of packs on
+  moto and floci (`vpc-basics` 0/50/100 and `vpc-breakfix` 25/65/100; `sqs-basics` 0/35/100 and
+  `sqs-breakfix` 20/70/100; `sns-basics` 0/45/100 and `sns-breakfix` 20/70/100; each break-fix pack also
+  proves Reset reproduces its baseline). `test_vpc_console.py`, `test_sqs_console.py` and
+  `test_sns_console.py` cover grading, the console journeys and the break-fix states. Browser:
+  `e2e/vpc.spec.ts`, `e2e/sqs.spec.ts` and `e2e/sns.spec.ts` (Missions 8–13 built or repaired in the console).
 - **E2E:** the DEMO.md flow in Chromium, including `docker ps` cleanup checks. It writes screenshots to
   `docs/screenshots/`.
 

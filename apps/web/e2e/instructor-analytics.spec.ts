@@ -30,7 +30,7 @@ test("instructor opens course analytics: metrics, assignment table and ranked vi
   await link.click();
   await page.waitForURL(/\/analytics$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("CLOUD-DEMO");
-  await page.screenshot({ path: "../../docs/screenshots/30-course-analytics.png", fullPage: true });
+  await page.screenshot({ path: "../../docs/screenshots/36-course-analytics.png", fullPage: true });
 
   // headline metrics, each labelled
   expect(await page.getByTestId("stat").count()).toBeGreaterThanOrEqual(5);

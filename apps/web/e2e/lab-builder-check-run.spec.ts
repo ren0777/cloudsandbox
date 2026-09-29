@@ -18,7 +18,7 @@ test("an author runs a single check against the preview sandbox and sees the gra
 
   await signIn(page, "demo-instructor@cloudlabs.demo");
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Labs", exact: true }).click();
-  const mission = page.getByTestId("builtin-labs").getByTestId("lab-row").filter({ hasText: "Mission 1" });
+  const mission = page.getByTestId("builtin-labs").getByTestId("lab-row").filter({ hasText: "Mission 1: CloudCafé goes online" });
   await mission.getByTestId("clone-lab").click();
   await page.waitForURL(/\/instructor\/labs\/drafts\//);
   const draftUrl = page.url();

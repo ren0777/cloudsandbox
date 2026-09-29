@@ -161,7 +161,8 @@ async def course_analytics(db: AsyncSession, course: Course, *, top: int = TOP_N
 
     return {
         "course": head,
-        "totals": {**totals, "submission_rate": _rate(totals["submissions"], len(enrolled)),
+        # `submissions` counts (student, assignment) pairs, so the rate is over every pair that could submit
+        "totals": {**totals, "submission_rate": _rate(totals["submissions"], len(enrolled) * len(assignments)),
                    "avg_score": _avg_money(totals_scores)},
         "assignments": rows_out,
         "most_failed_tasks": rank(task_stats, "task"),

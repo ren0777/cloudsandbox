@@ -3,7 +3,8 @@
 Hand-off for the next working session. Read `CLAUDE.md` and `docs/PLAN.md` first.
 State: **v0.2.0 is released** (`main` = merge `61770d8`, tag `v0.2.0`). Phase 8 (Instructor Lab Builder,
 milestones 36–39) is complete and fully regressed; decisions D29–D38 are in `docs/STATUS.md`.
-Phase 9 milestones 40–44a are done; **phase 10 (milestones 45–49) is the batch described below.**
+Phase 9 milestones 40–44 (including VPC, SQS and SNS) and phase 10 (milestones 45–49) are done and
+integrated on `feat/authoring-excellence` (see STATUS R7).
 
 ## Owner's direction (2026-09-27)
 The roadmap is deliberately **not** "more services". Order of value:
@@ -96,11 +97,12 @@ codename.
 - Each new lab must pass `app.labtest` (empty 0 / partial / solution 100) on every engine it may run on
   before it appears in the gallery.
 
-## Phase 10: quality + teaching value (the current batch)
+## Phase 10: quality + teaching value (done)
 
 **Scope rule (owner, 2026-09-27):** no new AWS service coverage in this phase — no VPC, SQS, SNS, Redis,
 dark mode, command palette, i18n, audit proxy, LTI, SSO or notifications. The **audit proxy / `audit.*`
-checks are the next major architecture milestone after this batch.** Preserve the architecture, grading
+checks are the next major architecture milestone after this batch.** (VPC, SQS and SNS were built on the
+parallel milestone-44 branch, not in phase 10; both are merged on the integration branch.) Preserve the architecture, grading
 semantics, sandbox isolation, emulator abstraction, immutable evidence, audit guarantees and multi-runner
 behaviour throughout.
 
@@ -112,7 +114,8 @@ Build in this order; each sub-milestone must be green before starting the next.
 - Guards: every route carries `Authz(action)` or is on a **reviewed allowlist held in the test**; no
   resource-scoped path may be public; every `Authz` action has a `MATRIX` row (else 500 instead of 403);
   no route is both public and protected; a **non-vacuity self-test** proves the checker flags a new
-  unprotected route; every protected route answers **401** to an anonymous caller (141 routes); cross-resource
+  unprotected route; every protected route answers **401** to an anonymous caller (141 routes at M45; 181 after the M44
+  merge); cross-resource
   access stays **404, wrong role 403**.
 
 ### 46 Lab Builder autosave + undo/redo ☑ (done — see STATUS 46 and D48)
@@ -143,7 +146,8 @@ Build in this order; each sub-milestone must be green before starting the next.
 
 ## After phase 10
 Deploy on a real server (docs/DEPLOYMENT.md) → run it with actual students → collect feedback → the audit
-proxy (`audit.*`) → expand AWS coverage in the order the feedback justifies (VPC first, then SQS/SNS).
+proxy (`audit.*`) → expand AWS coverage beyond S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS in the order
+the feedback justifies.
 
 ## Verification
 - API: `tests/test_lab_builder.py` (templates catalogue/create/errors, drafts, publish gate) — fast suite

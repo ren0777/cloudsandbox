@@ -17,7 +17,7 @@ async function signIn(page: Page, email: string) {
 async function openDraft(page: Page) {
   await signIn(page, "demo-instructor@cloudlabs.demo");
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Labs", exact: true }).click();
-  const mission = page.getByTestId("builtin-labs").getByTestId("lab-row").filter({ hasText: "Mission 1" });
+  const mission = page.getByTestId("builtin-labs").getByTestId("lab-row").filter({ hasText: "Mission 1: CloudCafé goes online" });
   await mission.getByTestId("clone-lab").click();
   await page.waitForURL(/\/instructor\/labs\/drafts\//);
   await expect(page.getByTestId("draft-title")).toBeVisible();

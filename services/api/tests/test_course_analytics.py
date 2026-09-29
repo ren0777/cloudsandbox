@@ -7,6 +7,7 @@ number of queries, so it does not become an N+1 as a class gets bigger.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 
@@ -15,7 +16,7 @@ from sqlalchemy import event
 from app.analytics import course_analytics
 from app.config import get_settings
 from app.db import engine, sessionmaker
-from app.models import Course, CourseStaff, Enrolment, LabSession, SessionState as S
+from app.models import Assignment, Course, CourseStaff, Enrolment, LabSession, SessionState as S
 from app.sessions import state as st
 from tests.conftest import login, idem, wait_state
 from tests.test_sessions import BUCKET, do_full_solution, ready_session
@@ -106,6 +107,30 @@ async def test_analytics_reports_scores_attempts_time_and_missed_work(world, fak
     assert checks["s3.object_exists"]["assignment_title"] == world.assignment.title
     # nothing failed on both attempts, so passing work never appears in these lists
     assert "s3.bucket_exists" not in checks
+
+
+async def test_course_submission_rate_counts_every_student_assignment_pair(world, fake_runner):
+    """Two assignments, two students: the course rate is over 4 possible submissions, not over 2 students
+    (which reported 100% — or more than 100% — once a student submitted more than one lab)."""
+    now = st.now()
+    async with sessionmaker()() as db:
+        second = Assignment(course_id=world.course.id, lab_version_id=world.lab_version.id,
+                            title="Second one", open_at=now - timedelta(hours=1),
+                            due_at=now + timedelta(days=1), close_at=now + timedelta(days=2),
+                            max_attempts=3)
+        db.add(second)
+        await db.commit()
+    await submit(world, "full")                              # alice, first assignment
+    await submit(replace(world, assignment=second), "full")  # alice, second assignment
+
+    async with sessionmaker()() as db:
+        stats = await course_analytics(db, world.course)
+
+    t = stats["totals"]
+    assert t["students"] == 2 and t["assignments"] == 2
+    assert t["submissions"] == 2                   # alice twice, bob never
+    assert t["submission_rate"] == 0.5             # 2 of 2 × 2
+    assert [r["submission_rate"] for r in stats["assignments"]] == [0.5, 0.5]
 
 
 async def test_analytics_separates_infrastructure_interruptions_from_student_failure(world, fake_runner):

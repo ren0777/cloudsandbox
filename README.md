@@ -10,12 +10,13 @@ work in an **AWS-style console** or with the **real AWS CLI** in a browser termi
 > database identifiers and API contracts keep the `cloudlabs` codename for compatibility. Older docs and
 > release notes may say CloudLabs; they mean Stackora.
 
-**Version 0.1.0.** S3, DynamoDB, IAM, EC2 and Lambda; guided and break-fix labs; instructor and admin tools;
+**Version 0.2.0** (VPC, SQS and SNS added since). S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS; guided
+and break-fix labs; instructor and admin tools;
 multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES.md). Verified status:
 [docs/STATUS.md](docs/STATUS.md).
 
-## v0.2.0 (unreleased)
-- **Instructor Lab Builder** (`/instructor/labs`, in progress): create, **clone** or **import** a lab, edit
+## v0.2.0
+- **Instructor Lab Builder** (`/instructor/labs`): create, **clone** or **import** a lab, edit
   it in the browser (a form builder with a synchronised **YAML** view and a redacted **student preview**),
   **validate** it, **test** it in real sandboxes (untouched `0`, optional partial, reference solution full
   marks) and **publish** it as an immutable version. Authored labs are private to their author (and admins)
@@ -35,7 +36,7 @@ multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES
 Windows (PowerShell):
 ```powershell
 scripts\up.ps1           # builds the sandbox images and the stack, starts it  → http://localhost:3000
-scripts\demo-reset.ps1   # seeds demo accounts, a course and seven labs
+scripts\demo-reset.ps1   # seeds demo accounts, a course and thirteen labs
 ```
 Linux / macOS:
 ```bash

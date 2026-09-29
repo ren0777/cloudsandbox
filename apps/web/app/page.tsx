@@ -11,6 +11,9 @@ const SERVICES = [
   { name: "IAM", line: "Users, groups, roles, policy simulator" },
   { name: "EC2", line: "Instances, security groups, key pairs" },
   { name: "Lambda", line: "Functions, configuration, invocations" },
+  { name: "VPC", line: "Subnets, route tables, internet gateways" },
+  { name: "SQS", line: "Queues, attributes, messages" },
+  { name: "SNS", line: "Topics, subscriptions, fan-out" },
 ];
 
 const FEATURES = [
@@ -168,7 +171,7 @@ upload: ./index.html to s3://cafe-demo01-site/index.html`}</pre>
             <p className="lp-lede">Both act on the same isolated sandbox, so students can click their way through
               the console and then prove it in the terminal — exactly like the real thing.</p>
             <ul className="lp-list">
-              <li><strong>Console:</strong> S3, DynamoDB, IAM, EC2 and Lambda pages with AWS terminology and workflows.</li>
+              <li><strong>Console:</strong> S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS pages with AWS terminology and workflows.</li>
               <li><strong>CLI:</strong> AWS CLI v2 in a browser terminal, authenticated to the sandbox only.</li>
               <li><strong>Same state:</strong> what the console creates, the CLI sees — and grading reads it all.</li>
             </ul>
@@ -215,7 +218,7 @@ $ aws iam detach-group-policy ...   ✓ fixed`}</pre>
           </div>
           <ul className="lp-list">
             <li>One command to build the sandbox images and the stack.</li>
-            <li>Seven ready-made labs and an instructor Lab Builder.</li>
+            <li>Thirteen ready-made labs and an instructor Lab Builder.</li>
             <li>Postgres backup/restore, TLS and multi-runner deployment guides.</li>
           </ul>
         </div>
@@ -287,7 +290,7 @@ $ aws iam detach-group-policy ...   ✓ fixed`}</pre>
 
         .lp-strip { background: #fff; border-bottom: 1px solid var(--line); padding: 26px 0; }
         .lp-strip-title { font-family: var(--font-mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
-        .lp-services { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+        .lp-services { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
         .lp-service { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: linear-gradient(180deg, #fff, #f7f9fd); }
         .lp-svc-name { display: block; font-family: var(--font-display); font-weight: 700; font-size: 18px; color: var(--ink); margin-bottom: 4px; }
 

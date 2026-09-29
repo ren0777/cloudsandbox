@@ -81,6 +81,9 @@ test.describe.serial("VPC labs in the console", () => {
     await sg.getByTestId("sg-ingress-rule-add").click();  // defaults to TCP 80 from 0.0.0.0/0
     await sg.getByTestId("sg-save-rules").click();
     await expect(page.getByText("Successfully saved the security group rules.")).toBeVisible();
+    // the banner shows before the list reloads: capture only once the row reports the saved rule
+    const sgRow = page.getByTestId("sg-row").filter({ hasText: "cafe-web-sg-demo01" });
+    await expect(sgRow.locator("td").nth(3)).toHaveText("1");  // inbound rules column
     await shot(page, "30-vpc-console");
 
     await page.getByTestId("check-progress").click();

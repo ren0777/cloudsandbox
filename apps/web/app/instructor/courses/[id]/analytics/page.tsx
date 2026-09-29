@@ -24,7 +24,6 @@ type Stats = {
 };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-const pctOf = (part: number, whole: number) => (whole ? pct(part / whole) : "—");
 const m = (v: number | null) => (v === null ? "—" : `${v} min`);
 
 function Stat({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: "warn" | "fail" }) {
@@ -71,7 +70,7 @@ export default function Analytics() {
               <div className="stats">
                 <Stat label="Students" value={String(t.students)} />
                 <Stat label="Submitted" value={String(t.submissions)}
-                  hint={`${pctOf(t.submissions, t.students)} of the class`} />
+                  hint={`${pct(t.submission_rate)} of expected submissions`} />
                 <Stat label="Average score" value={t.avg_score ?? "—"}
                   hint={t.avg_score ? "across submitted students" : "nobody has submitted yet"} />
                 <Stat label="Late" value={String(t.late_submissions)}
