@@ -31,8 +31,7 @@ clarity; templates (S3 basics, IAM least privilege, EC2 web server, Lambda + Dyn
 - UI: **New lab** is a gallery (Start from scratch + template cards with services/difficulty); dialogs
   scroll on small viewports.
 - Tests: 2 API tests (`tests/test_lab_builder.py`), 1 E2E (`e2e/lab-builder.spec.ts`).
-- Still open: a combined **"Lambda + DynamoDB"** template (needs a new lab pack and a labtest pass on
-  MiniStack) — milestone 44.
+- The combined **"Lambda + DynamoDB"** template followed in milestone 44a (STATUS 44a, D45).
 
 ### 41 Break-fix starting-state builders ☑ (option A, done — see STATUS 41 and D40)
 The owner chose **A only** (2026-09-27): typed break actions, a deterministic compiler, baseline validation
@@ -44,9 +43,7 @@ and Reset reproducibility; **no raw setup script editor** in the instructor UI.
 - labtest runs a `reset` scenario for break-fix packs: setup → baseline → Reset → baseline must match.
 - Verification: a real compiled pack scored baseline 0 and 40 → solution 100 → Reset reproduced the
   baseline, on moto and floci.
-- **Remaining (M41b):** an interactive **preview sandbox** — launch the broken environment and inspect it in
-  the console/terminal before running the publish gate. It needs a session-like sandbox access path and is
-  deliberately separate from the test/publish flow.
+- The interactive **preview sandbox** (planned as M41b) shipped in milestone 42 (STATUS 42, D43).
 
 ### 42a Stackora brand + public landing page ☑ (done, see STATUS 42a and D42)
 Public product name is **Stackora**; a premium marketing page at `/` (hero, services, features, screenshots,
