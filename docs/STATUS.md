@@ -120,6 +120,12 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | 49 | Instructor course analytics | ☑ | `GET /api/instructor/courses/{id}/analytics` (`app/analytics.py`, `Authz(results_view)` + `load_course_for_staff`): per assignment — submission rate, average score under the assignment's grade policy, average attempts used, average completion time (`ready_at`→submit), late submissions — plus course totals, **most-failed tasks** and **most-missed checks** (top 10, counted attempts only) and **interruptions** broken down by `failure_reason` and always reported apart from student results. Fixed query count (enrolments, lab definitions, attempts, sessions, task results) aggregated in memory — no sandbox, no regrade, no query per student. Empty states for a course with no labs and for a course with no submissions. UI `/instructor/courses/[id]/analytics` (five stat cards + three tables), linked from the course page. Tests: `tests/test_course_analytics.py` **5 passed** including a **query-count assertion** (`q2 == q1` after doubling the data); browser `e2e/instructor-analytics.spec.ts`. CSV export left for later (nothing in the implementation made it free) |
 | R7 | **Integration regression: M43 + M44a + M44 (VPC/SQS/SNS) + M45–M49 on `feat/authoring-excellence`** | ☑ | Release-gate audit of the merged branch (`1966557`) on an isolated project, then fixes and a full re-run on the default project (2026-09-29). **Found:** (a) M45's `lab-builder-autosave.spec.ts` / `lab-builder-check-run.spec.ts` still filtered `hasText: "Mission 1"`, which after M44's Missions 10–13 matched five rows (strict-mode violation, 5 E2E failures) — now the full title, as M44 already did in the other specs; (b) M49 course totals divided submitted (student, assignment) pairs by the student count only (the demo course showed **133%**) — `submission_rate` is now over students × assignments, the card reads "of expected submissions", and `test_course_submission_rate_counts_every_student_assignment_pair` (two assignments; fails on the old formula with 1.0 ≠ 0.5) guards it; (c) `vpc.spec.ts` screenshotted on the save banner, before the list reloaded — it now waits for the security group row to report 1 inbound rule. Screenshot `30-course-analytics` renumbered to **`36-course-analytics`** (M44 owns 30–35). The authz sweep now covers **181 protected routes** (192 total, 11 public). **Gate:** API **404 passed, 0 failed, 0 skipped** (incl. Docker and the two-runner gateway test); fast suite **351 passed, 53 deselected**; runner **16/16**; `app.labtest` on all **13 packs: 80/80 scenarios PASS** (Reset reproduces every break-fix baseline on moto and floci; Lambda packs on MiniStack); browser E2E **35/35, 0 skipped** (runner-local-2 registered); `tsc --noEmit` and `next build` clean; all 40 `docs/screenshots` regenerated on the default project. Docs brought in line: README, NEXT, ARCHITECTURE, TESTING, landing page service list |
 
+**Maintenance** (branch `fix/maintenance` from `feat/authoring-excellence`; owner request 2026-10-05)
+
+| # | Item | State | Verification evidence |
+|---|---|---|---|
+| M1 | API image split: Dockerfile `test` stage (requirements-dev) vs `runtime` stage (production); compose + `scripts/test-api.sh` use the test stage | ☑ | `docker compose build api api-test` clean. `cloudlabs/api:dev` runtime `pip list`: **no pytest/moto** (also enforced at build time by `! python -c "import pytest"` / `"import moto"`), `cloudlabs/api-test:dev` has pytest 8.4.2, pytest-asyncio 1.2.0, moto 5.2.3. Fast API suite on the rebuilt test stage: **351 passed, 53 deselected** (819 s, 2026-10-05) |
+
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
   therefore connects all containers labelled `cloudlabs.role=control-plane` (with the matching
@@ -447,3 +453,13 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   WebSocket Origin for the terminal ticket rules, so trimming the list to the checkout's own port failed
   five Docker-marked tests with `terminal.ticket.rejected / origin_not_allowed`. All five pass with the
   list restored.
+- **D54 — The API image has a `test` stage and a `runtime` stage (maintenance M1).** `services/api/Dockerfile`
+  is now `base` (python 3.12-slim, the `api` user, requirements files) → `test` (adds
+  `requirements-dev.txt`: pytest, moto) and `runtime` (`requirements.txt` only). The `runtime` stage is
+  declared **last**, so any plain `docker build` (e.g. someone building the context directly, or the
+  production compose overrides) produces the production image; it also fails the build if `pytest` or
+  `moto` can be imported, so a future dependency change can't silently reintroduce them.
+  `infra/docker-compose.yml` builds `api` with `target: runtime` (`cloudlabs/api:dev`) and `api-test`
+  with `target: test` (`cloudlabs/api-test:dev`), and `scripts/test-api.sh` now builds `api-test` before
+  `up`, so test runs can never reuse a stale image. Isolation override files keep their own image tags
+  but must repeat the target (M7 moves them under `infra/dev-isolation/`).
