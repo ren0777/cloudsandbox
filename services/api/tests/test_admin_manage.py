@@ -16,7 +16,7 @@ async def test_admin_user_management_audited(world):
     # create a staff account with a temporary password
     r = await admin.post("/api/admin/users", json={"email": "ta@x.edu", "name": "Tia TA", "role": "instructor"})
     assert r.status_code == 201, r.text
-    ta_id, tmp = r.json()["user"]["id"], r.json()["temporary_password"]
+    tmp = r.json()["temporary_password"]
     assert (await admin.post("/api/admin/users", json={"email": "TA@x.edu", "name": "dup", "role": "student"})).status_code == 409
     ta = await login("ta@x.edu", tmp)
     assert (await ta.get("/api/instructor/courses")).json()["error"]["code"] == "password_change_required"

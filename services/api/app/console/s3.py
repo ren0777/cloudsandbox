@@ -20,7 +20,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..errors import ApiError
 from .common import aws_call, console_session
-from ..models import LabSession, SessionState as S, User
+from ..models import LabSession, User
 
 router = APIRouter(prefix="/api/sessions/{session_id}/console/s3", tags=["console"])
 BUCKET_RE = r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"

@@ -1,4 +1,3 @@
-import json
 import time
 
 from fastapi.routing import iter_route_contexts

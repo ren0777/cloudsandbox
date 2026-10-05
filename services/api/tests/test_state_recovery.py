@@ -3,7 +3,6 @@ auto-submit + attempt accounting, instructor results/evidence/reopen."""
 
 from __future__ import annotations
 
-import io
 import itertools
 import time
 import uuid
@@ -18,12 +17,10 @@ from app.db import sessionmaker
 from app.models import (
     Attempt,
     Grade,
-    GradingEvidence,
     LabSession,
     SessionEvent,
     SessionState as S,
     StudentOverride,
-    TaskResult,
 )
 from app.sessions import state as st
 from app.sessions.reconciler import reconcile_once
@@ -39,7 +36,6 @@ ALL = list(S)
 async def _mk_session(world, state: S) -> LabSession:
     # The runner id must be the seeded one: an isolated Compose project (docker-compose.m45.yml /
     # .authoring.yml) runs under its own CL_RUNNER_ID, and lab_sessions.runner_id is a foreign key.
-    from app.config import get_settings
 
     async with sessionmaker()() as db:
         s = LabSession(user_id=world.alice.id, assignment_id=world.assignment.id,
@@ -101,7 +97,6 @@ async def test_append_only_tables_reject_update_and_delete(world, fake_runner, t
 async def test_owner_is_blocked_by_trigger_too(world, fake_runner):
     await _submitted(world, fake_runner)
     from sqlalchemy.ext.asyncio import create_async_engine
-    from app.config import get_settings
     eng = create_async_engine(get_settings().database_owner_url)
     try:
         async with eng.connect() as conn:
@@ -318,7 +313,6 @@ async def test_reconcile_gives_in_flight_labtest_sandboxes_a_grace_period(world,
 async def test_reconcile_reaps_rowless_sandboxes_with_an_implausible_age(world, fake_runner):
     """Clock skew (a `created_at` in the future) or a non-finite value must never look "young": it is
     treated like a missing time and reaped, so a rowless sandbox can never outlive the grace window."""
-    from app.config import get_settings
 
     grace = get_settings().orphan_grace_s
     now = time.time()

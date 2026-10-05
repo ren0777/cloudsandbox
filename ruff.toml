@@ -1,0 +1,10 @@
+# Ruff configuration used by CI (.github/workflows/ci.yml).
+#
+# The codebase predates linting, so the selection starts with the pycodestyle/pyflakes subset the
+# project holds itself to (E4/E7/E9/F) and can be widened as files are touched — for example a
+# one-time import-sort pass would let "I" be added.
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
