@@ -3,7 +3,7 @@
 #
 # Isolation from another checkout on the same machine (own project, ports, runners and test DB):
 #   CL_COMPOSE_PROJECT=cloudlabs-authoring \
-#   CL_COMPOSE_EXTRA_FILE=infra/docker-compose.authoring.yml scripts/test-api.sh
+#   CL_COMPOSE_EXTRA_FILE=infra/dev-isolation/docker-compose.authoring.yml scripts/test-api.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 COMPOSE=(docker compose)

@@ -1,7 +1,7 @@
 # Isolation override for running this checkout next to another one (project `cloudlabs`).
 #
 #   COMPOSE_PROJECT_NAME=cloudlabs-authoring \
-#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.authoring.yml --profile multi up -d --build
+#   docker compose -f infra/docker-compose.yml -f infra/dev-isolation/docker-compose.authoring.yml --profile multi up -d --build
 #
 # It gives this worktree its own project name, host ports, runner ids, sandbox env, app image tags and
 # terminal image tag, so containers, networks, volumes, runners and test databases can never be shared with
@@ -16,14 +16,14 @@ services:
     image: cloudlabs-authoring/runner:dev
     environment:
       RUNNER_ID: runner-authoring
-      RUNNER_SECRET: dev-runner-authoring-secret
+      RUNNER_SECRET: dev-runner-authoring-secret-0123456789abcdef
       RUNNER_TERMINAL_IMAGE: cloudlabs-authoring/terminal:dev
 
   runner2:
     image: cloudlabs-authoring/runner:dev
     environment:
       RUNNER_ID: runner-authoring-2
-      RUNNER_SECRET: dev-runner-authoring-2-secret
+      RUNNER_SECRET: dev-runner-authoring-2-secret-0123456789abcdef
       RUNNER_TERMINAL_IMAGE: cloudlabs-authoring/terminal:dev
 
   api:
@@ -32,20 +32,20 @@ services:
       cloudlabs.env: authoring  # must match CL_ENV so the runner attaches this control plane to sandboxes
     environment:
       CL_RUNNER_ID: runner-authoring
-      CL_RUNNER_SECRET: dev-runner-authoring-secret
+      CL_RUNNER_SECRET: dev-runner-authoring-secret-0123456789abcdef
       CL_ENV: authoring
       CL_ALLOWED_ORIGINS: '["http://localhost:3100"]'
 
   api-test:
-    image: cloudlabs-authoring/api:dev
+    image: cloudlabs-authoring/api-test:dev
     environment:
       CL_RUNNER_ID: runner-authoring
-      CL_RUNNER_SECRET: dev-runner-authoring-secret
+      CL_RUNNER_SECRET: dev-runner-authoring-secret-0123456789abcdef
       CL_ENV: test
       CL_ALLOWED_ORIGINS: '["http://testserver", "http://localhost:3100"]'
       CL_RUNNER2_ID: runner-authoring-2
       CL_RUNNER2_URL: http://runner2:7070
-      CL_RUNNER2_SECRET: dev-runner-authoring-2-secret
+      CL_RUNNER2_SECRET: dev-runner-authoring-2-secret-0123456789abcdef
 
   web:
     image: cloudlabs-authoring/web:dev

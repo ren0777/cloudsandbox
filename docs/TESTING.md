@@ -22,15 +22,15 @@ cd apps/web && npx playwright install chromium && npx playwright test
 
 # A second (or third) checkout running beside the first one — its own project, ports, runner ids,
 # sandbox env, images and test database, so two suites can never truncate each other's tables:
-CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/docker-compose.m45.yml ./scripts/test-api.sh
+CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/dev-isolation/docker-compose.m45.yml ./scripts/test-api.sh
 
 # …and the browser E2E for that checkout, which needs its runner id and URL (see STATUS D47/D53):
 CLOUDLABS_URL=http://localhost:4444 CLOUDLABS_RUNNER_ID=runner-m45 \
-  CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/docker-compose.m45.yml \
+  CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/dev-isolation/docker-compose.m45.yml \
   npx playwright test
 ```
 
-(The gateway port lives in `infra/docker-compose.m45.yml`. It is **4444** because Windows had excluded
+(The gateway port lives in `infra/dev-isolation/docker-compose.m45.yml`. It is **4444** because Windows had excluded
 3200 and 3900 from the dynamic range after a restart, and Docker could not bind them — "forbidden by its
 access permissions". If a port refuses to bind, pick another and update this file and `CL_ALLOWED_ORIGINS`
 in the override together.)

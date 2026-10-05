@@ -4,7 +4,7 @@ import path from "node:path";
 export default function globalSetup() {
   const root = path.resolve(__dirname, "..", "..", "..");
   // Isolation from another checkout: set CL_COMPOSE_PROJECT / CL_COMPOSE_EXTRA_FILE to target this
-  // worktree's own project and override file (see infra/docker-compose.authoring.yml).
+  // worktree's own project and override file (see infra/dev-isolation/docker-compose.authoring.yml).
   const args = ["compose"];
   if (process.env.CL_COMPOSE_PROJECT) args.push("-p", process.env.CL_COMPOSE_PROJECT);
   args.push("-f", "infra/docker-compose.yml");
