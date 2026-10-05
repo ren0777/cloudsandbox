@@ -21,7 +21,7 @@ env:
 jobs:
   ruff:
     name: Ruff
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,7 +34,7 @@ jobs:
 
   api:
     name: API tests (no Docker)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -73,7 +73,7 @@ jobs:
 
   runner:
     name: Runner unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       RUNNER_SECRET: ci-test-runner-secret-0123456789abcdef
     steps:
@@ -92,7 +92,7 @@ jobs:
 
   web:
     name: Web typecheck + build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

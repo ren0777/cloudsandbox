@@ -49,6 +49,15 @@ test("instructor opens course analytics: metrics, assignment table and ranked vi
   await expect(page.getByTestId("most-missed-checks")).toBeVisible();
   await expect(page.getByText("an interrupted lab is listed under", { exact: false })).toBeVisible();
 
+  // the table exports as CSV: one row per lab plus the "All labs" totals row
+  const download = page.waitForEvent("download");
+  await page.getByTestId("export-analytics").click();
+  const csv = (await import("node:fs")).readFileSync((await (await download).path())!, "utf-8").replace(/^﻿/, "");
+  const lines = csv.trim().split(/\r?\n/);
+  expect(lines[0]).toBe("course_code,assignment,lab,max_score,students,submitted,submission_rate_pct,counted_attempts,avg_attempts_used,avg_score,avg_completion_minutes,late_submissions,interruptions,interruption_reasons");
+  expect(lines.length).toBe(await page.getByTestId("assignment-stat").count() + 2);
+  expect(lines[lines.length - 1]).toContain("CLOUD-DEMO,All labs");
+
   // back to the course
   await page.getByRole("link", { name: /← CLOUD-DEMO/ }).click();
   await page.waitForURL(/\/instructor\/courses\/[^/]+$/);
