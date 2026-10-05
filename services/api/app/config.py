@@ -1,7 +1,24 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Secrets that are public in git (old defaults in this file, the compose stack or the isolation overrides)
+# or trivially guessable. When demo mode is off, booting with one of these, with "change-me" in it, or with
+# fewer than MIN_SECRET_LENGTH characters is refused, so a real deployment can never inherit a dev value.
+KNOWN_INSECURE_SECRETS = frozenset({
+    "change-me",
+    "dev-insecure-change-me-dev-insecure-change-me",   # config.py default
+    "dev-only-secret-change-me-0123456789abcdef",      # infra/docker-compose.yml default
+    "dev-runner-secret",                               # config.py default
+    "dev-runner-secret-change-me",                     # infra/docker-compose.yml default
+    "dev-runner2-secret-change-me",
+})
+MIN_SECRET_LENGTH = 32
+
+
+def is_insecure_secret(value: str) -> bool:
+    return len(value) < MIN_SECRET_LENGTH or "change-me" in value or value in KNOWN_INSECURE_SECRETS
 
 
 class Settings(BaseSettings):
@@ -80,6 +97,23 @@ class Settings(BaseSettings):
     preview_check_min_interval_s: float = 1.0
     default_emulator: str = "floci"  # engine for labs with runtime.emulator = default (promoted, EMULATOR-EVALUATION.md)
     grader_version: str = "1.0.0"
+
+    @model_validator(mode="after")
+    def _refuse_insecure_secrets_outside_demo_mode(self) -> "Settings":
+        # Demo mode is the documented dev/presentation escape hatch (PLAN §16): a fresh checkout boots
+        # with known credentials on purpose. Every other mode must carry real secrets.
+        if self.demo_mode:
+            return self
+        insecure = [name for name, value in (("CL_SECRET_KEY", self.secret_key),
+                                             ("CL_RUNNER_SECRET", self.runner_secret))
+                    if is_insecure_secret(value)]
+        if insecure:
+            raise ValueError(
+                f"{' and '.join(insecure)} must be replaced with unique random values of at least "
+                f"{MIN_SECRET_LENGTH} characters when CL_DEMO_MODE is false (e.g. `openssl rand -hex 32`); "
+                "known dev defaults, 'change-me' and shorter values are refused"
+            )
+        return self
 
 
 @lru_cache

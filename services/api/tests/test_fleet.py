@@ -304,7 +304,7 @@ async def test_cli_drain_is_audited_as_operator(world, two_runners, capsys):
 # ------------------------------------------------------------------------------ real runtime (2 runners)
 R2_ID = os.environ.get("CL_RUNNER2_ID", "runner-local-2")
 R2_URL = os.environ.get("CL_RUNNER2_URL", "http://runner2:7070")
-R2_SECRET = os.environ.get("CL_RUNNER2_SECRET", "dev-runner2-secret-change-me")
+R2_SECRET = os.environ.get("CL_RUNNER2_SECRET", "cloudlabs-dev-runner2-hmac-secret-0123456789abcdef")
 
 
 @pytest.fixture

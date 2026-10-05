@@ -9,9 +9,9 @@
 | End-to-end (Playwright) | `apps/web/e2e` | full compose stack in a browser | `cd apps/web && npx playwright test` |
 
 ```bash
-# runner (needs the Docker socket)
+# runner (needs the Docker socket; RUNNER_SECRET must be >= 32 chars, see config validation)
 MSYS_NO_PATHCONV=1 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-  -e RUNNER_SECRET=x cloudlabs/runner:dev python -m pytest -q
+  -e RUNNER_SECRET=runner-pytest-secret-0123456789abcdef cloudlabs/runner:dev python -m pytest -q
 
 # API (starts postgres + runner + the api-test container labelled for env "test")
 ./scripts/test-api.sh                  # everything

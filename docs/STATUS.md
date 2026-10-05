@@ -125,6 +125,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | # | Item | State | Verification evidence |
 |---|---|---|---|
 | M1 | API image split: Dockerfile `test` stage (requirements-dev) vs `runtime` stage (production); compose + `scripts/test-api.sh` use the test stage | ☑ | `docker compose build api api-test` clean. `cloudlabs/api:dev` runtime `pip list`: **no pytest/moto** (also enforced at build time by `! python -c "import pytest"` / `"import moto"`), `cloudlabs/api-test:dev` has pytest 8.4.2, pytest-asyncio 1.2.0, moto 5.2.3. Fast API suite on the rebuilt test stage: **351 passed, 53 deselected** (819 s, 2026-10-05) |
+| M2 | Refuse insecure secrets at startup: API (`secret_key`, `runner_secret`) when `CL_DEMO_MODE=false`; runner (`RUNNER_SECRET`) always; known dev defaults / `change-me` / < 32 chars | ☑ | New `tests/test_config.py` in both services; API **12 passed**, full fast suite **363 passed, 53 deselected** (779 s); runner image rebuilt → `python -m pytest -q` **31 passed** (incl. Docker, 238 s). Dev/test secrets in compose raised to valid values; `production.env.example` / `runner.env.example` now document `openssl rand -hex 32` (2026-10-05) |
 
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
@@ -463,3 +464,15 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   with `target: test` (`cloudlabs/api-test:dev`), and `scripts/test-api.sh` now builds `api-test` before
   `up`, so test runs can never reuse a stale image. Isolation override files keep their own image tags
   but must repeat the target (M7 moves them under `infra/dev-isolation/`).
+- **D55 — Insecure secrets are refused at boot (maintenance M2).** With `CL_DEMO_MODE=false`, the API
+  refuses `CL_SECRET_KEY` / `CL_RUNNER_SECRET` if the value is a known dev default (the ones previously
+  shipped in `config.py` / compose / the isolation overrides), contains `change-me`, or is shorter than
+  32 characters; the error names the variable and suggests `openssl rand -hex 32`. Demo mode stays the
+  documented dev/presentation escape (a fresh checkout boots with known credentials on purpose). The
+  runner has no demo mode and can destroy sandboxes, so it applies the same check to `RUNNER_SECRET`
+  **always**. Consequences: the dev compose runner/runner2 secrets become long values (the API's
+  `api-test` runs with `CL_DEMO_MODE=false` and the HMAC secret must match the runner service, so both
+  read the same `${CL_RUNNER_SECRET:-…}`), `api-test` gets its own test `CL_SECRET_KEY` (the dev one is
+  refused outside demo mode), and `test_fleet`'s runner2 default + `docs/TESTING.md`'s runner command
+  were aligned. `production.env.example` and `runner.env.example` now say to generate each secret with
+  `openssl rand -hex 32`.

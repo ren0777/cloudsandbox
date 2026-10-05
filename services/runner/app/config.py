@@ -1,8 +1,29 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Secrets that are public in git (old defaults in the compose stack / isolation overrides) or trivially
+# guessable. The runner accepts sandbox-destroying operations, so it refuses to boot with any of these,
+# with "change-me" in the value, or with fewer than MIN_SECRET_LENGTH characters.
+KNOWN_INSECURE_SECRETS = frozenset({
+    "change-me",
+    "dev-runner-secret",
+    "dev-runner-secret-change-me",
+    "dev-runner2-secret-change-me",
+    "dev-runner-authoring-secret",
+    "dev-runner-authoring-2-secret",
+    "dev-runner-m44-secret",
+    "dev-runner-m44-2-secret",
+    "dev-runner-m45-secret",
+    "dev-runner-m45-2-secret",
+})
+MIN_SECRET_LENGTH = 32
+
+
+def is_insecure_secret(value: str) -> bool:
+    return len(value) < MIN_SECRET_LENGTH or "change-me" in value or value in KNOWN_INSECURE_SECRETS
 
 
 class EmulatorSpec(BaseModel):
@@ -52,6 +73,15 @@ class Settings(BaseSettings):
     #             sandbox at <public_url>/gw/<sandbox>/<token>/… (runners on other servers)
     access_mode: Literal["direct", "gateway"] = "direct"
     public_url: str | None = None  # e.g. http://10.0.0.12:7070, as the API server reaches this runner
+
+    @model_validator(mode="after")
+    def _refuse_insecure_secret(self) -> "Settings":
+        if is_insecure_secret(self.secret):
+            raise ValueError(
+                f"RUNNER_SECRET must be a unique random value of at least {MIN_SECRET_LENGTH} characters "
+                "(e.g. `openssl rand -hex 32`); known dev defaults, 'change-me' and shorter values are refused"
+            )
+        return self
 
 
 @lru_cache
