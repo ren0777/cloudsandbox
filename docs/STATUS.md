@@ -22,7 +22,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | R1 | **Regression after console-fidelity changes (Moto baseline)** | ☑ | runner 9/9 · API 163/163 (incl. docker) · labtest 0/50/100 · E2E 3/3, 2026-09-25 |
 | 14 | Emulator abstraction + Floci (capabilities, contract, labtest, E2E, isolation/freeze) | ☑ | runner 12/12 · API 174/174 · docker suite 8/8 on both engines · E2E 3/3 on Floci |
 | 15 | Floci promotion gate + decision in EMULATOR-EVALUATION.md | ☑ | Floci is the default (2026-09-25); Moto is the regression backend |
-| 15a | Known flake: `test_append_only...[attempts]` failed once in a full run | ☑ | Not reproducible: 8 runs, then 20 stress rounds (all five tables + owner trigger, 120 executions) on 2026-10-06, 0 failures. The guard cannot depend on data (see "Flake 15a analysis" in the decisions log); closed |
+| 15a | Known flake: `test_append_only...[attempts]` failed once in a full run | ☑ | Not reproducible: 8 runs, then 20 stress rounds (all five tables + owner trigger, 120 executions) on 2026-10-06, 0 failures. The guard cannot depend on data (see D60); closed |
 | 15b | Load-sensitive: Moto `DescribeImages` read timeout (20 s) once in a 55-min run under heavy host load | ☑ | passes in isolation 2/2; EC2 client read timeout raised to 60 s |
 | 16 | DynamoDB service (console adapted from Floci UI, checks, lab pack) | ☑ | contract 12 ops + labtest 0/50/100 on Floci **and** Moto; console API tests; E2E `dynamodb.spec.ts`; full regression API 183/183, runner 12/12, E2E 4/4 (2026-09-25) |
 | 17 | IAM service (users, groups, roles, policies; CloudLabs policy evaluator for grading) | ☑ | contract 41 ops + labtest 0/70/100 on Floci and Moto; console + simulator tests; E2E 5/5; full regression API 192/192, runner 12/12 |
@@ -525,7 +525,8 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   publishes PGP signatures but no checksums, so the hashes were taken from the pinned zips). Bumping a
   version means updating its hash. The emulator engines (Floci, MiniStack) are upstream images and keep
   their own architecture support.
-- **Flake 15a analysis.** For the app role the append-only check cannot depend on data: UPDATE/DELETE are
+- **D60 — Flake 15a is closed as not reproducible.** For the app role the append-only check cannot depend on data: UPDATE/DELETE are
   revoked, so both statements fail with *permission denied* even on an empty table. A failure of
   `test_append_only...[attempts]` can only come from its setup (`_submitted`: the submit must answer 200)
-  or from another suite truncating the same test database (D47).
+  or from another suite truncating the same test database (D47). Not reproduced in 8 runs, 20 stress rounds
+  (120 executions) and an independent 10-round check (50 executions).

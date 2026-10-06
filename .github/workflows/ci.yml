@@ -35,6 +35,12 @@ jobs:
   api:
     name: API tests (no Docker)
     runs-on: ubuntu-24.04
+    # tests/conftest.py wipes and seeds the database before *every* test (autouse), so even the pure
+    # architecture scan needs Postgres up and these URLs set.
+    env:
+      CL_DATABASE_URL: postgresql+asyncpg://cloudlabs_app:app@127.0.0.1:55432/cloudlabs_test
+      CL_DATABASE_OWNER_URL: postgresql+asyncpg://cloudlabs_owner:owner@127.0.0.1:55432/cloudlabs_test
+      CL_LABS_DIR: ${{ github.workspace }}/labs
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -45,9 +51,6 @@ jobs:
       - name: Install dependencies
         working-directory: services/api
         run: pip install -r requirements.txt -r requirements-dev.txt
-      - name: Architecture invariants (API never imports the Docker SDK)
-        working-directory: services/api
-        run: python -m pytest -q tests/test_architecture.py
       - name: Start Postgres (repo roles, cloudlabs + cloudlabs_test)
         run: |
           docker compose -f infra/docker-compose.yml up -d postgres
@@ -59,16 +62,12 @@ jobs:
           exit 1
       - name: Migrate the test database
         working-directory: services/api
-        env:
-          CL_DATABASE_URL: postgresql+asyncpg://cloudlabs_app:app@127.0.0.1:55432/cloudlabs_test
-          CL_DATABASE_OWNER_URL: postgresql+asyncpg://cloudlabs_owner:owner@127.0.0.1:55432/cloudlabs_test
         run: python -m app.migrate
+      - name: Architecture invariants (API never imports the Docker SDK)
+        working-directory: services/api
+        run: python -m pytest -q tests/test_architecture.py
       - name: Fast API suite
         working-directory: services/api
-        env:
-          CL_DATABASE_URL: postgresql+asyncpg://cloudlabs_app:app@127.0.0.1:55432/cloudlabs_test
-          CL_DATABASE_OWNER_URL: postgresql+asyncpg://cloudlabs_owner:owner@127.0.0.1:55432/cloudlabs_test
-          CL_LABS_DIR: ${{ github.workspace }}/labs
         run: python -m pytest -q -m "not docker"
 
   runner:
