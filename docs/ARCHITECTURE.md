@@ -30,7 +30,8 @@ api ──boto3 / WebSocket over the sandbox network──▶ emulator (Floci | 
   `lab_sessions.engine` is resolved at Start (`runtime.emulator: default` → `CL_DEFAULT_EMULATOR`, currently
   `floci`). Grader checks, evidence format, console endpoints and the UI are engine-agnostic.
 - **Student cloud operations** always go Next.js → FastAPI service endpoint (`/console/s3`,
-  `/console/dynamodb`, `/console/iam`, `/console/ec2`, `/console/lambda`) → ownership + session-state (freeze)
+  `/console/dynamodb`, `/console/iam`, `/console/ec2`, `/console/lambda`, `/console/vpc`, `/console/sqs`,
+  `/console/sns`) → ownership + session-state (freeze)
   checks → **capability check** (`console/common.py::aws_call` rejects any operation the session's engine
   doesn't declare supported/simulated with `409 not_in_simulator`) → adapter → emulator.
 - **Engines:** `ENGINES` (floci, moto) must each run every `default` lab; `SPECIALISED` (ministack) is used
@@ -72,8 +73,8 @@ REQUESTED → PROVISIONING → READY ⇄ RESETTING
 ## Grading
 `grade(definition, variables, evidence)` is pure (no I/O). Collectors (`grader/evidence.py`) read
 stable fields only (no timestamps), so baseline comparisons and regrades are deterministic. Evidence is
-canonical JSON with a sha256 and a normalized sha256. Checks live in `grader/checks/` (s3, dynamodb, iam, ec2, lambda). A check may declare a *probe* (e.g. a
-Lambda invocation) that the collector runs first during capture, so its result is evidence too. IAM decisions use the CloudLabs evaluator
+canonical JSON with a sha256 and a normalized sha256. Checks live in `grader/checks/` (s3, dynamodb, iam, ec2, lambda, vpc, sqs, sns). A check may declare a *probe* (e.g. a
+Lambda invocation, or the non-destructive SQS peek that also grades SNS delivery) that the collector runs first during capture, so its result is evidence too. IAM decisions use the CloudLabs evaluator
 (`grader/iam_eval.py`, support level `simulated`), which also powers the console's Policy simulator. The `audit` namespace exists as
 a stub that is rejected at import.
 

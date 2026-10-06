@@ -24,4 +24,6 @@ EVENTS: frozenset[str] = frozenset({
     "audit.recorded",
     # Phase 6 (STATUS D21): badges earned from verified attempts.
     "badge.awarded",
+    # Phase 9 (STATUS D43): instructor preview sandboxes (M42).
+    "preview.started", "preview.reset", "preview.stopped", "preview.destroy.failed",
 })

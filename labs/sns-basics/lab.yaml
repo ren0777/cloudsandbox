@@ -1,0 +1,74 @@
+schema_version: 1
+id: sns-basics
+version: 1.0.0
+title: "Mission 12: CloudCafé's order alerts"
+summary: Fan out one order alert to an SQS queue through an SNS topic, and prove the message arrives.
+story: |
+  **CloudCafé** wants every order to ring a bell in the kitchen. Instead of sending to each kitchen
+  screen by hand, you will build a small **fan-out**: an SNS **topic** that delivers to an SQS **queue**.
+
+  Build it in the **SNS console** and the **SQS console**, or with the **AWS CLI**:
+
+  - a standard queue named **{{ queue_name }}**
+  - a topic named **{{ topic_name }}** with the display name **CloudCafé alerts**
+  - the queue **subscribed** to the topic (protocol SQS)
+  - an alert message containing the word **latte** published to the topic — prove fan-out by finding it
+    on the queue
+
+  SNS has no internet access in your sandbox: the only safe delivery target is a queue in the same
+  sandbox, and that is exactly the pattern you are building.
+services: [sqs, sns]
+runtime: {emulator: default}   # platform default engine; labs must not depend on one engine
+duration_minutes: 40
+idle_minutes: 20
+max_attempts: 3
+variables:
+  queue_name: "cafe-orders-{{ student_short_id }}"
+  topic_name: "cafe-alerts-{{ student_short_id }}"
+requires:
+  - sqs:CreateQueue
+  - sns:CreateTopic
+  - sns:SetTopicAttributes
+  - sns:Subscribe
+  - sns:Publish
+tasks:
+  - id: create-queue
+    title: "Create the queue {{ queue_name }}"
+    description: A standard queue that will hold the alerts.
+    hints:
+      - "Open **SQS** and create a queue with the exact name shown above."
+      - "Keep the type Standard; the default attributes are fine."
+      - "CLI: `aws sqs create-queue --queue-name {{ queue_name }}`."
+    marks: 20
+    checks:
+      - {type: sqs.queue_exists, name: "{{ queue_name }}", fifo: false}
+  - id: create-topic
+    title: "Create the topic {{ topic_name }}"
+    description: "Create the topic with the display name CloudCafé alerts."
+    hints:
+      - "Open **SNS** and find the button that creates a topic."
+      - "A display name is optional but the kitchen screens show it, so set it exactly."
+      - "CLI: `aws sns create-topic --name {{ topic_name }}` then `aws sns set-topic-attributes`."
+    marks: 25
+    checks:
+      - {type: sns.topic_exists, name: "{{ topic_name }}", display_name: "CloudCafé alerts"}
+  - id: subscribe
+    title: "Subscribe the queue to the topic"
+    description: "Add an SQS subscription with {{ queue_name }} as the endpoint."
+    hints:
+      - "Open the topic and find its **Subscriptions**."
+      - "Choose protocol **SQS** and pick your queue."
+      - "CLI: `aws sns subscribe --topic-arn <topic-arn> --protocol sqs --notification-endpoint <queue-arn>`."
+    marks: 25
+    checks:
+      - {type: sns.subscription, topic: "{{ topic_name }}", queue: "{{ queue_name }}"}
+  - id: prove-fanout
+    title: "Publish an alert and prove it arrives"
+    description: "Publish a message whose body contains latte to the topic, then find it on the queue."
+    hints:
+      - "Publish from the topic's page, or with the CLI."
+      - "Delivery is within the sandbox; if the message doesn't appear, check the subscription."
+      - "CLI: `aws sns publish --topic-arn <topic-arn> --message ...`, then `aws sqs receive-message`."
+    marks: 30
+    checks:
+      - {type: sqs.message_present, queue: "{{ queue_name }}", body_contains: latte}

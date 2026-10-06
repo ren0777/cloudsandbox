@@ -33,7 +33,7 @@ export function FlashBanner({ flash, onClose }: { flash: Flash; onClose: () => v
 }
 
 export function SimLabel({ note }: { note?: string }) {
-  return <span className="pill warn sim-label" title={note}>Not available in CloudLabs simulator</span>;
+  return <span className="pill warn sim-label" title={note}>Not available in Stackora simulator</span>;
 }
 
 export function fmtSize(n: number): string {

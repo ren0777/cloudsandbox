@@ -1,158 +1,163 @@
-# Next: Instructor Lab Builder (phase 8)
+# Next: authoring excellence (phase 9) → quality + teaching value (phase 10)
 
-Hand-off for the next working session (for example Claude Code on the web). Read `CLAUDE.md` and `docs/PLAN.md` first.
-State at hand-off: v0.1.0 is complete and verified on `main` (API 267, runner 16, E2E 13). On this branch
-(`feat/lab-builder`), the `package.py` refactor is verified and **milestones 36 (backend), 37 (test run and
-publish gate), 38 (UI) and 39 (docs and regression) are done** (see `docs/STATUS.md`). The full phase-8
-regression is green and the built-in checks below have been run on a real compose stack.
+Hand-off for the next working session. Read `CLAUDE.md` and `docs/PLAN.md` first.
+State: **v0.2.0 is released** (`main` = merge `61770d8`, tag `v0.2.0`). Phase 8 (Instructor Lab Builder,
+milestones 36–39) is complete and fully regressed; decisions D29–D38 are in `docs/STATUS.md`.
+Phase 9 milestones 40–44 (including VPC, SQS and SNS) and phase 10 (milestones 45–49) are done and
+integrated on `feat/authoring-excellence` (see STATUS R7).
 
-## Goal
-Instructors create, test and publish their own labs in the browser, without editing files on the server.
+## Owner's direction (2026-09-27)
+The roadmap is deliberately **not** "more services". Order of value:
 
-## Decisions already made by the owner
-- **Editor:** a form builder whose check parameter forms are generated from the grader's Pydantic models, with a
-  synchronised YAML view and an "edit as YAML" escape hatch.
-- **Publish gate:** schema/capability validation **and** a sandbox test run (untouched sandbox scores 0,
-  reference solution scores 100, partial optional). Nothing reaches students otherwise.
-- **Sharing:** a published lab is private to its author (and admins) by default. The author can mark it
-  *shared* so every instructor can assign or clone it. Built-in missions are visible to all.
-- **v1 scope:** author from scratch, **clone** an existing lab, **student preview**, **export/import** lab packs.
-  **Not in v1:** authoring break-fix setup scripts. A setup script in a cloned or imported pack is kept unchanged
-  and shown read-only.
+1. Make instructor authoring excellent (the Lab Builder is the product).
+2. Make labs richer (break-fix, multi-service) and add templates that teach real scenarios.
+3. Deploy on a real server, test with actual students, collect feedback.
+4. Only then expand AWS coverage (VPC first, then SQS/SNS) — where it unlocks richer labs.
 
-## Already done on this branch
-- **Refactor verified (2026-09-26):** `pack_from_files(files)`, `load_pack(dir)` (delegates to it), `pack_files(...)`
-  (inverse) and `check_files(files)` (shared path/size/count limits) are in `services/api/app/labs/package.py`. The
-  fast API suite is unchanged (239/239). All 6 lab packs have byte-identical bundle hashes before and after, so
-  built-ins won't re-import as new versions.
-- **Milestone 36 done** (see STATUS 36, D29–D34). Main pieces:
-  - `alembic/versions/0006_lab_builder.py`
-  - `app/labs/drafts.py`: pure helpers (YAML, validation rows, scenario rules, tar.gz)
-  - `app/instructor/builder.py`: `/api/instructor/builder/...`
-  - visibility helpers in `app/auth/policy.py`: `lab_visible`, `load_lab_version_visible`, `load_own_lab`,
-    `load_draft_for`
-  - in `app/instructor/routes.py`: the `lab-versions` list with owner/shared/builtin/mine, export, share, and
-    visibility checks on create/update assignment
-  - `import_package(owner_id=…)`
-  - `tests/test_lab_builder.py` (14 tests). Fast suite: 253 passed.
-- **Not yet re-run on this branch:** the docker-marked tests (28) and `python -m app.labtest`. In the cloud
-  session that did milestone 36, image builds couldn't reach PyPI through the sandbox's TLS proxy, so the tests
-  ran on the host (Python 3.12 venv) against the compose Postgres. Run both first on a machine with a working
-  `docker compose build`.
-
-### API added in milestone 36 (for milestone 38's UI)
-| Route | Notes |
-|---|---|
-| `GET builder/check-types` | `check_types[]` (`type`, `service`, `params_schema`, `reads`, `supported`, `engines{usable, unusable_ops}`), `common_fields`, `services`, `engines`, `editable_files` |
-| `GET/POST builder/drafts` | POST body `{source: blank\|clone, lab_version_id?, title?, slug?}` |
-| `POST builder/drafts/import` | multipart `file` |
-| `GET/PUT/DELETE builder/drafts/{id}` | PUT body `{lab?, files?}`; the response always carries `validation {ok, errors[{message, loc, task, check, field}], content_sha256}` |
-| `GET/PUT builder/drafts/{id}/yaml` | |
-| `POST builder/drafts/{id}/validate` | |
-| `GET builder/drafts/{id}/preview` | |
-| `GET lab-versions` | |
-| `GET lab-versions/{id}/export` | |
-| `POST labs/{lab_id}/share {shared}` | |
-
-All routes are under `/api/instructor/`.
+The question for phase 9 is: **is the builder usable enough for a teacher who has never touched YAML?**
+Focus: the visual authoring UX; safe starting-state builders for break-fix labs; preview/test/publish
+clarity; templates (S3 basics, IAM least privilege, EC2 web server, Lambda + DynamoDB); and a validated
+"create and assign a lab without developer help" journey.
 
 ## Milestones
-### 36 Backend ☑ (done, see above)
-- **Migration `0006`:**
-  - `labs.owner_id` (NULL = built-in) and `labs.shared` (bool)
-  - table `lab_drafts` with columns: `id`, `owner_id`, `slug`, `title`, `content`, `base_lab_version_id`, `status`
-    (draft|testing|passed|failed|published), `last_validation`, `last_test`, `tested_sha256`,
-    `published_version_id`, timestamps
-  - `content` JSON = `{lab: <schema-v1 dict>, files: {"private/solution.sh", "private/partial.sh",
-    "private/expected.yaml", "private/notes.md", "public/…" (read-only)}}`
-- **New router `app/instructor/builder.py`:** `Action.lab_manage`; drafts visible only to their owner or an admin,
-  **404** for anyone else.
-  - `GET /api/instructor/builder/check-types`: every registry check with `params_model.model_json_schema()`, its
-    service, the operations it reads, and whether each engine supports it.
-  - Drafts: list; create (blank / clone from a *visible* lab version / import an uploaded pack); get; update;
-    delete.
-  - `GET` and `PUT drafts/{id}/yaml` (YAML ⇄ JSON round-trip, validated).
-  - `POST drafts/{id}/validate` returns row-level errors from `pack_from_files` / `validate_definition`.
-  - `GET drafts/{id}/preview` returns `student_lab_view` with sample variables (never private files).
-- **Visibility:**
-  - `GET /api/instructor/lab-versions` lists built-in, own and shared labs (admins see all).
-  - `create_assignment` refuses invisible versions.
-  - `POST /api/instructor/labs/{id}/share` is audited.
-  - `GET lab-versions/{id}/export` returns a tar.gz pack (instructors/admins only).
-- **Audit actions:** add `lab.draft_created`, `lab.published` and `lab.shared` to `app/audit.py`.
-- **Reuse:**
-  - `pack_from_files` / `pack_files` (`app/labs/package.py`)
-  - `parse_definition`
-  - `import_package`, `definition_of` and `get_bundle` (`app/labs/importer.py`)
-  - `student_lab_view` and `compute_variables` (`app/labs/render.py`)
-  - `audit.record`
+### 40 Templates and a guided start ☑ (done, see STATUS 40 and D39)
+- `GET /api/instructor/builder/templates`: curated templates resolved against the latest **built-in**
+  version of their source lab (`available: false` when the pack is not installed).
+- `POST /api/instructor/builder/drafts {source: "template", template_id, title?}`: a fresh draft owned by
+  the author — id `<title-slug>-<short id>`, version `1.0.0`, the author's title, all files carried
+  (a break-fix `public/setup.sh` stays read-only). Audited with `template_id`.
+- Six templates from the built-in missions: S3 basics, DynamoDB basics, IAM least privilege, EC2 web
+  server, Lambda serverless, IAM break-fix.
+- UI: **New lab** is a gallery (Start from scratch + template cards with services/difficulty); dialogs
+  scroll on small viewports.
+- Tests: 2 API tests (`tests/test_lab_builder.py`), 1 E2E (`e2e/lab-builder.spec.ts`).
+- The combined **"Lambda + DynamoDB"** template followed in milestone 44a (STATUS 44a, D45).
 
-### 37 Test run and publish gate ☑ (done, see STATUS 37 and D35)
-- `labtest.check_pack` accepts a path or a `LabPackage` (+ `expected`, `sandbox_id_for`, `on_result`).
-- `POST builder/drafts/{id}/test` → 202, draft `testing`; poll `GET builder/drafts/{id}` until `passed`/`failed`.
-  `last_test = {id, status: running|passed|failed|error, content_sha256, started_at, finished_at, expected,
-  plan: ["moto/empty", …], scenarios: [{name, engine, scenario, expected, actual, ok, detail, tasks[grade tasks
-  with checks[]]}], sandbox_ids, error}`. `429 test_capacity_full` when 2 runs are in flight.
-- `POST builder/drafts/{id}/publish` → `{draft, lab_version: {id, lab_id, slug, version, title, shared}}`;
-  `409 test_required` unless the last test passed on the current content; `422 lab_invalid` with `errors`.
-- Tests: `tests/test_lab_builder_publish.py` (FakeRunner `job_handler` hook). The docker-marked
-  `test_cloned_mission_1_tests_and_publishes_in_real_sandboxes` still has to be run on a machine with Docker.
+### 41 Break-fix starting-state builders ☑ (option A, done — see STATUS 41 and D40)
+The owner chose **A only** (2026-09-27): typed break actions, a deterministic compiler, baseline validation
+and Reset reproducibility; **no raw setup script editor** in the instructor UI.
+- `lab.yaml` `break_actions` (typed) + `baseline.expected_score`; compiled by `app/breakfix/` into the setup
+  the runner executes; validated against engine capabilities at import.
+- Lab Builder **Starting state** tab: forms generated from each action's Pydantic schema, Broken State
+  Summary, kind toggle, baseline input. Legacy packs keep their read-only setup script.
+- labtest runs a `reset` scenario for break-fix packs: setup → baseline → Reset → baseline must match.
+- Verification: a real compiled pack scored baseline 0 and 40 → solution 100 → Reset reproduced the
+  baseline, on moto and floci.
+- The interactive **preview sandbox** (planned as M41b) shipped in milestone 42 (STATUS 42, D43).
 
-Original plan (kept for reference):
-- `drafts.expectations(files, definition)` gives the scenarios to run.
-- `drafts.package(content)` gives the `LabPackage`, and `last_validation.content_sha256` is the hash to store as
-  `tested_sha256`.
-- Publish should call `import_package(db, pkg, owner_id=draft.owner_id)`.
-- Refactor `app/labtest.py` so `check_pack` accepts a `LabPackage` as well as a path.
-- `POST drafts/{id}/test` runs the empty, partial and solution scenarios in real sandboxes (background task), and
-  stores the per-check results together with the content sha256 that was tested.
-- `POST drafts/{id}/publish` is allowed only if the last test passed on the **current** content sha256. It then:
-  - calls `import_package` (immutable; the version must be new)
-  - sets `labs.owner_id`
-  - records `lab.published`
-  - sets the draft to `published`
-  Editing a published lab means a new draft with a new version.
+### 42a Stackora brand + public landing page ☑ (done, see STATUS 42a and D42)
+Public product name is **Stackora**; a premium marketing page at `/` (hero, services, features, screenshots,
+Apache-2.0, CTAs). The authenticated app stays behind `/login`; internal identifiers keep the `cloudlabs`
+codename.
 
-### 38 UI (apps/web) ☑ (done, see STATUS 38 and D36)
-- Pages: `app/instructor/labs/page.tsx`, `app/instructor/labs/drafts/[id]/page.tsx`; tabs in
-  `components/lab-builder/*`; generated forms in `components/schema-form.tsx`; types in `lib/builder.ts`.
-- **Still to run on a machine with Docker:** `npx playwright test e2e/lab-builder.spec.ts` against the compose stack
-  (it passed here only against a FakeRunner smoke stack), the docker-marked API test from milestone 37, and
-  `python -m app.labtest`. Screenshots 20–22 are written by the spec.
+### 42 Preview, test and publish clarity ☑ (done — see STATUS 42 and D43)
+- Interactive **preview sandbox**: launch the authored starting state and inspect it in the console and
+  terminal, with Reset reconstructing it. Never creates an attempt, grade, XP, badge or leaderboard event.
+- **Publish-readiness checklist** (validation, capabilities, baseline, solution, reset, current content) as
+  the first thing on the Test tab, with row-level errors; the Publish button waits for all of it.
+- Test results: per-scenario summary that says what to fix, with the failing task/check linked to its row.
+- Preview: choose the sample variables / student identity, and show "what the student sees" next to "what
+  is graded" (without leaking hidden checks).
 
-Original plan (kept for reference):
-- `/instructor/labs`: my drafts / my labs / shared labs / built-in missions, with **New**, **Clone** and
-  **Import**.
-- `/instructor/labs/drafts/[id]` tabs:
-  - Overview: title, summary, story, services, engine, duration, attempts, variables
-  - Tasks: tasks with hints and marks; checks as generated forms (string, number, bool, enum, key-value maps,
-    lists, and JSON for free-form values)
-  - Scripts: solution and partial scripts, expected partial score, notes
-  - YAML
-  - Preview (as a student)
-  - Test & publish (run test, per-check results, publish, share)
-  A validation panel is always visible.
-- Playwright spec `e2e/lab-builder.spec.ts`: clone Mission 1 → change a task → test (0 and 100) → publish →
-  assign to the demo course → start it as a student.
+### 43 Instructor validation (no developer help) ☑ (done — see STATUS 43)
+- `e2e/instructor-first-run.spec.ts`: create course → roster → lab from a template → edit tasks/checks →
+  starting state → preview → readiness → publish → assign → student completion → instructor evidence, with
+  **no YAML, shell, database or developer tooling**. Passed with no blockers.
+- `docs/INSTRUCTOR-QUICKSTART.md` + an in-app first-run card and quickstart links.
 
-### 39 Docs and regression ☑ (done, see STATUS 39 and R6)
-- LAB-AUTHORING (builder section), SECURITY (who can see private files), STATUS (milestones 36–39, decisions D29+),
-  DEMO (optional section).
-- Full regression: API, runner and E2E must all be green, including the existing 267 / 16 / 13.
-- Then merge `feat/lab-builder` into `main`.
+### 44p Services preparation: VPC / SQS / SNS ☑ (done — see STATUS 44p and docs/M44-SERVICES-EVALUATION.md)
+- Evaluated on Moto 5.2.3, Floci 2.1.0 and MiniStack 1.5.16 under production sandbox hardening: VPC
+  32/32, SQS 20/20, SNS 16/16 probe checks on every engine (`tools/emulator-bakeoff/m44_bakeoff.sh`).
+- Contract tests `tests/test_vpc.py`, `test_sqs.py`, `test_sns.py` run per engine through the runner;
+  capability declarations added behind the adapter (`SERVICE_CLIENT`); `CONSOLE_OPS` stayed untouched at
+  preparation time (each console page adds its service entry when it lands).
+- Proposals (grader checks, FastAPI routes, console IA) and the per-service default recommendation
+  (**Floci**; no switch made) are in `docs/M44-SERVICES-EVALUATION.md`. Nothing reaches students yet.
+
+### 44 New teaching templates (richer labs)
+- **Lambda + DynamoDB** combined pack ☑ (Mission 7, done — see STATUS 44a and D45): table + function that
+  saves and totals an order; MiniStack declares the 12 DynamoDB contract ops; labtest 0/55/100 on MiniStack;
+  template `lambda-dynamodb`.
+- **VPC** ☑ (Missions 8/9, done — see STATUS 44v): console page, six checks, `vpc-basics` guided lab and
+  `vpc-breakfix` built from typed `vpc.*` break actions; labtest 0/50/100 and baseline 25/65/100 + Reset
+  on moto and floci; E2E builds and repairs a network in the VPC console.
+- **SQS** ☑ (Missions 10/11, done — see STATUS 44q): console page, four checks including a non-destructive
+  message probe, `sqs-basics` guided lab and `sqs-breakfix` (queue attributes incident); labtest
+  0/35/100 and baseline 20/70/100 + Reset on moto and floci; E2E creates a queue and unsticks one.
+- **SNS** ☑ (Missions 12/13, done — see STATUS 44n): console page, two checks, `sns-basics` fan-out lab
+  (topic + queue + subscription + publish) and `sns-breakfix` (restore a deleted subscription), with
+  delivery graded through the non-destructive SQS message probe; labtest 0/45/100 and baseline
+  20/70/100 + Reset on moto and floci; E2E builds and repairs the fan-out.
+- **VPC, SQS and SNS are now available** to students and to the Lab Builder. Next: a
+  **Lambda + SQS + DynamoDB** template (MiniStack) and a **VPC + EC2** template (Floci), then deploy on a
+  real server and collect feedback (`docs/DEPLOYMENT.md`).
+- Each new lab must pass `app.labtest` (empty 0 / partial / solution 100) on every engine it may run on
+  before it appears in the gallery.
+
+## Phase 10: quality + teaching value (done)
+
+**Scope rule (owner, 2026-09-27):** no new AWS service coverage in this phase — no VPC, SQS, SNS, Redis,
+dark mode, command palette, i18n, audit proxy, LTI, SSO or notifications. The **audit proxy / `audit.*`
+checks are the next major architecture milestone after this batch.** (VPC, SQS and SNS were built on the
+parallel milestone-44 branch, not in phase 10; both are merged on the integration branch.) Preserve the architecture, grading
+semantics, sandbox isolation, emulator abstraction, immutable evidence, audit guarantees and multi-runner
+behaviour throughout.
+
+Build in this order; each sub-milestone must be green before starting the next.
+
+### 45 Authorization coverage guard ☑ (done — see STATUS 45 and D46)
+- `services/api/tests/test_authz_coverage.py` restored as the file `app/main.py` and `app/auth/policy.py`
+  already referred to (it lived inside `test_auth_and_policy.py` before).
+- Guards: every route carries `Authz(action)` or is on a **reviewed allowlist held in the test**; no
+  resource-scoped path may be public; every `Authz` action has a `MATRIX` row (else 500 instead of 403);
+  no route is both public and protected; a **non-vacuity self-test** proves the checker flags a new
+  unprotected route; every protected route answers **401** to an anonymous caller (141 routes at M45; 181 after the M44
+  merge); cross-resource
+  access stays **404, wrong role 403**.
+
+### 46 Lab Builder autosave + undo/redo ☑ (done — see STATUS 46 and D48)
+- Debounced autosave of dirty drafts with `Saving… / Saved / Save failed` states, save-on-leave, and no
+  silent loss when switching tabs or routes.
+- Optimistic concurrency: a save carries the content revision (`drafts.rev`) it was based on and **does
+  not** overwrite newer server state (409 `stale_revision`).
+- Undo/redo for meaningful edits (coalesced keystrokes), keyboard shortcuts, YAML ⇄ form stay consistent.
+- Published immutable versions untouched. Tests: autosave, failed save, undo, redo, stale revision.
+
+### 47 Single-check live runner ☑ (done — see STATUS 47 and D49)
+- From the Lab Builder, run **one** check against the preview sandbox and see type, expected, actual,
+  pass/fail, marks possible, the normal grader message and a clear capability/unsupported reason.
+- Same deterministic check code as final grading; **never** an attempt, grade, XP, badge, leaderboard event
+  or immutable evidence; ownership, freeze and capability rules respected; nothing calls an emulator
+  directly from the browser; serialised and rate-limited. Backend + browser tests.
+
+### 48 Attempt diff ("since your last attempt") ☑ (done — see STATUS 48 and D51)
+- Student- and instructor-facing comparison of two attempts from **stored** grade results only (never a
+  live sandbox): fixed / regressed / unchanged / added / removed, first attempt handled gracefully,
+  regraded attempts correct. Students never see `expected`/`actual`. Original evidence and grades untouched.
+
+### 49 Instructor course analytics ☑ (done — see STATUS 49 and D52)
+- Per course: average score, submission rate, average attempts, average completion time, most-failed
+  tasks, most-missed checks, late count, and infrastructure interruptions counted **separately**.
+- Staff only see their own courses (admins see all); no live-sandbox queries; a fixed query count (no N+1);
+  empty states. CSV export left for later.
+
+## After phase 10
+Deploy on a real server (docs/DEPLOYMENT.md) → run it with actual students → collect feedback → the audit
+proxy (`audit.*`) → expand AWS coverage beyond S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS in the order
+the feedback justifies.
 
 ## Verification
-- API tests:
-  - drafts CRUD and ownership (404 for others)
-  - validation errors
-  - YAML round-trip
-  - clone and import/export (private files never in student responses)
-  - visibility and sharing, assignment refusal for invisible labs
-  - publish refused until a passing test on the current content
-  - publish immutability (same version refused)
-- Docker-marked test: a cloned Mission 1 test run gives 0 / partial / 100 in real sandboxes.
-- Playwright spec above, then the full suite.
+- API: `tests/test_lab_builder.py` (templates catalogue/create/errors, drafts, publish gate) — fast suite
+  must stay green; `scripts/test-api.sh` for the full suite before a release.
+- Phase 10: `tests/test_authz_coverage.py` (route coverage + the 401 sweep),
+  `tests/test_lab_builder_autosave.py`, `tests/test_preview_check.py`, `tests/test_attempt_diff.py`,
+  `tests/test_course_analytics.py` — all inside `scripts/test-api.sh -m "not docker"`.
+- E2E: `apps/web/e2e/lab-builder.spec.ts` on the compose stack (template gallery + the full clone/test/
+  publish/assign journey), plus `lab-builder-autosave.spec.ts`, `lab-builder-check-run.spec.ts` and
+  `instructor-analytics.spec.ts`. `instructor-first-run.spec.ts` is the M43 acceptance journey.
+- Docs: LAB-AUTHORING (builder section), STATUS (milestones and decisions), DEMO (optional walkthrough).
 
 ## How to run
-See `README.md` (Quick start, Tests). API tests: `scripts/test-api.sh` (fast: `-m "not docker"`).
-Commit or push only when the owner asks.
+See `README.md`. API tests: `scripts/test-api.sh` (fast: `-m "not docker"`). The stack must be up for E2E:
+`docker compose -f infra/docker-compose.yml --profile multi up -d --build`, then `cd apps/web && npx
+playwright test`. Commit or push only when the owner asks.

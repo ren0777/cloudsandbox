@@ -24,7 +24,7 @@ test("instructor monitors, extends and ends a lab; gradebook, export and audit",
   const sctx = await browser.newContext();
   const stu = await sctx.newPage();
   await signIn(stu, "demo-student3@cloudlabs.demo");
-  await stu.getByTestId("lab-card").filter({ hasText: "Mission 1" }).click();
+  await stu.getByTestId("lab-card").filter({ hasText: "Mission 1: CloudCafé goes online" }).click();
   await stu.getByTestId("start-lab").click();
   await stu.waitForURL(/\/play\?session=/);
   await expect(stu.getByTestId("session-state")).toHaveText("Running", { timeout: 120_000 });

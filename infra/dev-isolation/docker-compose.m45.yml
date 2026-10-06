@@ -1,0 +1,55 @@
+# Isolation override for this checkout so it can run beside the other two (projects `cloudlabs` and
+# `cloudlabs-authoring`).
+#
+#   COMPOSE_PROJECT_NAME=cloudlabs-m45 \
+#   docker compose -f infra/docker-compose.yml -f infra/dev-isolation/docker-compose.m45.yml --profile multi up -d --build
+#
+# Same idea as `dev-isolation/docker-compose.authoring.yml`: its own project name, host ports, runner ids, sandbox env and
+# app image tags, so containers, networks, volumes, runners and test databases are never shared. Emulator and
+# terminal images are shared (built from unchanged sources, so the tags always hold the same content).
+services:
+  postgres:
+    ports: !override ["127.0.0.1:56433:5432"]
+  gateway:
+    ports: !override ["127.0.0.1:4444:3000"]
+
+  runner:
+    image: cloudlabs-m45/runner:dev
+    environment:
+      RUNNER_ID: runner-m45
+      RUNNER_SECRET: dev-runner-m45-secret-0123456789abcdef
+
+  runner2:
+    image: cloudlabs-m45/runner:dev
+    environment:
+      RUNNER_ID: runner-m45-2
+      RUNNER_SECRET: dev-runner-m45-2-secret-0123456789abcdef
+
+  api:
+    image: cloudlabs-m45/api:dev
+    environment:
+      CL_RUNNER_ID: runner-m45
+      CL_RUNNER_SECRET: dev-runner-m45-secret-0123456789abcdef
+      CL_ENV: m45
+      CL_ALLOWED_ORIGINS: '["http://localhost:4444", "http://localhost:3000"]'
+    # The base file builds this label from the *shell* variable ${CL_ENV:-demo}, which would leave the API
+    # labelled `demo` while its sandboxes are `m45` — the runner only attaches control-plane containers
+    # whose label matches the sandbox env, so the console/terminal/grading would all time out.
+    labels:
+      cloudlabs.role: control-plane
+      cloudlabs.env: m45
+
+  api-test:
+    build: ../services/api
+    image: cloudlabs-m45/api-test:dev
+    environment:
+      CL_RUNNER_ID: runner-m45
+      CL_RUNNER_SECRET: dev-runner-m45-secret-0123456789abcdef
+      CL_ENV: test
+      CL_ALLOWED_ORIGINS: '["http://testserver", "http://localhost:4444", "http://localhost:3000"]'
+      CL_RUNNER2_ID: runner-m45-2
+      CL_RUNNER2_URL: http://runner2:7070
+      CL_RUNNER2_SECRET: dev-runner-m45-2-secret-0123456789abcdef
+
+  web:
+    image: cloudlabs-m45/web:dev

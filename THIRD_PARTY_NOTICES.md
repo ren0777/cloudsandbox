@@ -10,9 +10,11 @@ CloudLabs includes or adapts the following third-party software. Full license te
 | [MiniStack](https://github.com/ministackorg/ministack) 1.5.16 | Specialised emulator engine image for Lambda code execution (`images/emulator-ministack`), unmodified | MIT |
 | [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 | Terminal server in `images/terminal` | MIT |
 | [xterm.js](https://github.com/xtermjs/xterm.js) | Browser terminal | MIT |
-| [AWS CLI v2](https://github.com/aws/aws-cli) | Installed in `images/terminal` (downloaded at build time) | Apache-2.0 |
-| [Next.js](https://github.com/vercel/next.js) 15 | Web framework (`apps/web`, npm dependency) | MIT |
+| [AWS CLI v2](https://github.com/aws/aws-cli) 2.37.1 | Installed in `images/terminal` (pinned, sha256-verified download at build time) | Apache-2.0 |
+| [Next.js](https://github.com/vercel/next.js) 16 | Web framework (`apps/web`, npm dependency) | MIT |
 | [React](https://github.com/facebook/react) 19 | UI library (`apps/web`, npm dependency) | MIT |
+| [IBM Plex Sans](https://github.com/IBM/plex), [IBM Plex Mono](https://github.com/IBM/plex) | Bundled web fonts, latin subsets via Fontsource 5.3.0 (`apps/web/app/fonts`), unmodified | SIL OFL 1.1 (full text next to the files) |
+| [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) | Bundled web font, latin variable subset via Fontsource 5.3.0 (`apps/web/app/fonts`), unmodified | SIL OFL 1.1 (full text next to the files) |
 
 Python and npm dependencies installed by `pip` / `npm` carry their own licence files inside the built images and
 `node_modules`. The emulator images are built FROM the upstream images listed above, unmodified except for running

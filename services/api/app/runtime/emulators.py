@@ -26,6 +26,10 @@ SPECIALISED: tuple[str, ...] = ("ministack",)  # only for labs that pin them (La
 ALL_ENGINES: tuple[str, ...] = ENGINES + SPECIALISED
 DEFAULT_ALIAS = "default"
 
+# CloudLabs service names that are not boto3 service names. VPC is part of the EC2 API, so a lab
+# `requires: [vpc:CreateVpc, ...]` and the future VPC console page talk through the `ec2` client.
+SERVICE_CLIENT: dict[str, str] = {"vpc": "ec2"}
+
 
 @dataclass(frozen=True)
 class EmulatorAdapter:
@@ -38,14 +42,15 @@ class EmulatorAdapter:
         return caps_mod.load(self.name)
 
     def client(self, service: str, endpoint: str):
-        # Lambda invocations run real code inside the sandbox and can take several seconds.
-        # Lambda invokes run code; EC2 DescribeImages loads the emulator's AMI catalogue (slow under host load)
-        read_timeout = {"lambda": 90, "ec2": 60}.get(service, 20)
+        boto_service = SERVICE_CLIENT.get(service, service)
+        # Lambda invocations run real code and can take several seconds; EC2 DescribeImages loads the
+        # emulator's AMI catalogue (slow under host load).
+        read_timeout = {"lambda": 90, "ec2": 60}.get(boto_service, 20)
         return boto3.client(
-            service, endpoint_url=endpoint, region_name="us-east-1",
+            boto_service, endpoint_url=endpoint, region_name="us-east-1",
             aws_access_key_id="cloudlabs", aws_secret_access_key="cloudlabs",
             config=Config(s3={"addressing_style": self.s3_addressing_style},
-                          retries={"max_attempts": 1 if service == "lambda" else 2, "mode": "standard"},
+                          retries={"max_attempts": 1 if boto_service == "lambda" else 2, "mode": "standard"},
                           connect_timeout=5, read_timeout=read_timeout, **self.extra_config),
         )
 

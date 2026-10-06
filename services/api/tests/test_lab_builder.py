@@ -68,6 +68,88 @@ async def test_check_types_expose_generated_param_schemas(world):
     assert (await stu.get(f"{B}/check-types")).status_code == 403
 
 
+# --------------------------------------------------------------------------------- templates
+async def test_templates_catalogue_and_create_from_template(world):
+    c = await login(world.instructor)
+    r = await c.get(f"{B}/templates")
+    assert r.status_code == 200, r.text
+    ts = {t["id"]: t for t in r.json()["templates"]}
+    assert {"s3-basics", "dynamodb-basics", "iam-least-privilege", "ec2-web-server",
+            "lambda-basics", "iam-breakfix", "lambda-dynamodb"} <= set(ts)
+    s3 = ts["s3-basics"]
+    assert s3["available"] is True and s3["latest_version"] and s3["services"] == ["s3"]
+    assert s3["difficulty"] == "starter" and s3["highlights"]
+    assert ts["dynamodb-basics"]["available"] is False  # not installed in the test DB
+
+    d = await new_draft(c, source="template", template_id="s3-basics", title="My S3 Lab")
+    assert d["title"] == "My S3 Lab" and d["status"] == "draft"
+    lab = d["content"]["lab"]
+    assert lab["id"] != "s3-basics" and lab["id"].endswith(world.instructor.short_id)
+    assert lab["version"] == "1.0.0" and lab["title"] == "My S3 Lab"
+    assert d["validation"]["ok"], d["validation"]
+    assert "private/solution.sh" in d["content"]["files"] and d["read_only_files"] == []
+    # install two more packs: the title defaults to the template's own name, and a break-fix template
+    # carries its setup script read-only (v1 does not author setup scripts)
+    async with sessionmaker()() as db:
+        await import_package(db, load_pack(f"{LABS}/ec2-web-server"))
+        await import_package(db, load_pack(f"{LABS}/iam-breakfix"))
+        await db.commit()
+    d2 = await new_draft(c, source="template", template_id="ec2-web-server")
+    assert d2["title"] == "EC2 web server" and d2["slug"].endswith(world.instructor.short_id)
+    d3 = await new_draft(c, source="template", template_id="iam-breakfix")
+    assert d3["content"]["files"]["public/setup.sh"].strip()
+    assert d3["read_only_files"] == ["public/setup.sh"]
+    evs = await audits("lab.draft_created")
+    assert [e.details["source"] for e in evs] == ["template", "template", "template"]
+    assert evs[0].details["template_id"] == "s3-basics" and evs[0].details["lab_version_id"]
+
+
+async def test_template_errors_and_access(world):
+    c = await login(world.instructor)
+    r = await c.post(f"{B}/drafts", json={"source": "template", "template_id": "nope"})
+    assert r.status_code == 404 and r.json()["error"]["code"] == "template_not_found"
+    r = await c.post(f"{B}/drafts", json={"source": "template"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "validation_error"
+    stu = await login(world.alice)
+    assert (await stu.get(f"{B}/templates")).status_code == 403
+    assert (await stu.post(f"{B}/drafts", json={"source": "template", "template_id": "s3-basics"})).status_code == 403
+
+
+# ----------------------------------------------------------------------------- break actions (M41)
+async def test_break_action_catalogue_and_break_fix_draft(world):
+    c = await login(world.instructor)
+    r = await c.get(f"{B}/break-actions")
+    assert r.status_code == 200, r.text
+    acts = {a["type"]: a for a in r.json()["break_actions"]}
+    assert {"iam.attach_managed_policy", "s3.disable_versioning", "ec2.authorize_ingress",
+            "lambda.remove_env_var"} <= set(acts)
+    assert {"target_type", "target", "policy"} <= set(acts["iam.attach_managed_policy"]["params_schema"]["properties"])
+
+    d = await new_draft(c)
+    actions = [{"type": "iam.create_group", "group": "baristas-{{ student_short_id }}"},
+               {"type": "iam.attach_managed_policy", "target_type": "group",
+                "target": "baristas-{{ student_short_id }}", "policy": "AdministratorAccess"}]
+    lab = d["content"]["lab"] | {"kind": "break_fix", "services": ["s3", "iam"], "break_actions": actions}
+    r = await c.put(f"{B}/drafts/{d['id']}", json={"lab": lab})
+    assert r.status_code == 200 and r.json()["validation"]["ok"], r.json()["validation"]
+    assert r.json()["content"]["lab"]["break_actions"] == actions
+    assert r.json()["read_only_files"] == []  # compiled actions need no setup file
+
+    r = await c.post(f"{B}/break-actions/summary", json={"lab": lab})
+    lines = r.json()["lines"]
+    assert r.json()["errors"] == [] and len(lines) == 2
+    assert "AdministratorAccess" in lines[1]["summary"]
+    assert "baristas-abc123" in lines[1]["summary"]
+
+    bad = lab | {"break_actions": [{"type": "nope.nope"}]}
+    r = await c.put(f"{B}/drafts/{d['id']}", json={"lab": bad})
+    v = r.json()["validation"]
+    assert not v["ok"] and any(e["break_action"] == 0 for e in v["errors"]), v["errors"]
+
+    stu = await login(world.alice)
+    assert (await stu.get(f"{B}/break-actions")).status_code == 403
+
+
 # --------------------------------------------------------------------------- drafts + ownership
 async def test_blank_draft_crud_and_ownership(world):
     c = await login(world.instructor)

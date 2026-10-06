@@ -1,0 +1,58 @@
+schema_version: 1
+id: sqs-basics
+version: 1.0.0
+title: "Mission 10: CloudCafé's order queue"
+summary: Create an SQS queue for the kitchen, keep orders for an hour and send the first order.
+story: |
+  **CloudCafé** is opening a second counter. The baristas will read orders from a queue instead of shouting
+  them across the room, so the kitchen can work at its own pace.
+
+  Set up the order queue in the **SQS console** or with the **AWS CLI**:
+
+  - a queue named **{{ queue_name }}**
+  - **message retention of 3600 seconds** (one hour) — an order that nobody reads in time is dropped
+  - the first order on the queue, a message whose body contains **latte**
+
+  Queues are the backbone of decoupled systems: the counter keeps serving even if the kitchen is slow.
+services: [sqs]
+runtime: {emulator: default}   # platform default engine; labs must not depend on one engine
+duration_minutes: 40
+idle_minutes: 20
+max_attempts: 3
+variables:
+  queue_name: "cafe-orders-{{ student_short_id }}"
+requires:
+  - sqs:CreateQueue
+  - sqs:SetQueueAttributes
+  - sqs:SendMessage
+tasks:
+  - id: create-queue
+    title: "Create the queue {{ queue_name }}"
+    description: A standard (non-FIFO) queue with the exact name shown above.
+    hints:
+      - "In the console, open **SQS** and find the button that creates a queue."
+      - "Keep the type **Standard** and type the queue name exactly."
+      - "CLI: `aws sqs create-queue --queue-name {{ queue_name }}`."
+    marks: 35
+    checks:
+      - {type: sqs.queue_exists, name: "{{ queue_name }}", fifo: false}
+  - id: retention
+    title: "Keep orders for one hour"
+    description: "Set the queue's message retention period to 3600 seconds."
+    hints:
+      - "Open the queue and look at its **Attributes**; retention is how long unread messages survive."
+      - "The default is 4 days (345600 s). Change it to 3600."
+      - "CLI: `aws sqs set-queue-attributes --attributes MessageRetentionPeriod=3600`."
+    marks: 35
+    checks:
+      - {type: sqs.queue_attribute, queue: "{{ queue_name }}", attribute: retention_period, value: 3600}
+  - id: first-order
+    title: "Send the first order"
+    description: "Put a message on the queue whose body contains the word latte."
+    hints:
+      - "Open the queue's **Send message** tab (or use the CLI)."
+      - "The body can be JSON, for example an order with a drink field."
+      - "CLI: `aws sqs send-message --queue-url <queue-url> --message-body ...`."
+    marks: 30
+    checks:
+      - {type: sqs.message_present, queue: "{{ queue_name }}", body_contains: latte}

@@ -111,8 +111,11 @@ async def test_breakfix_labtest_on_every_engine(real_runner, lab_engine):
     from app.labtest import check_pack
     results = await check_pack(LAB, real_runner, engine=lab_engine)
     assert [(r.name, str(r.actual)) for r in results] == [
-        (f"{lab_engine}/empty", "0.00"), (f"{lab_engine}/partial", "45.00"), (f"{lab_engine}/solution", "100.00")], \
+        (f"{lab_engine}/empty", "0.00"), (f"{lab_engine}/partial", "45.00"),
+        (f"{lab_engine}/solution", "100.00"), (f"{lab_engine}/reset", "0.00")], \
         [(r.name, r.actual, r.detail) for r in results]
+    reset = results[-1]
+    assert reset.ok and "reset reproduced the baseline" in reset.detail
 
 
 @pytest.mark.docker

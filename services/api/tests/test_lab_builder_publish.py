@@ -279,6 +279,57 @@ def test_expectations_default_scenarios():
     assert not errors and {k: str(v) for k, v in expected.items()} == {"empty": "0.00", "solution": "100.00"}
 
 
+# --------------------------------------------------------------------------------- publish readiness
+async def test_readiness_checklist_mirrors_the_publish_gate(world, fake_runner):
+    fake_runner.job_handler = s3_jobs({"solution.sh": create_bucket})
+    c = await login(world.instructor)
+    d = await new_draft(c, title="Bucket basics")
+    url = f"{B}/drafts/{d['id']}/readiness"
+    body = (await c.get(url)).json()
+    checks = {x["id"]: x for x in body["checks"]}
+    assert body["ready"] is False
+    assert checks["validation"]["ok"] and checks["capabilities"]["ok"] and checks["scenarios"]["ok"]
+    assert [x["ok"] for x in (checks["baseline"], checks["solution"], checks["current"])] == [False, False, False]
+    assert checks["reset"]["ok"] is True and checks["reset"]["detail"] == "not applicable to a guided lab"
+    assert checks["baseline"]["detail"] == "not run yet"
+
+    await run_test(c, d["id"])
+    body = (await c.get(url)).json()
+    checks = {x["id"]: x for x in body["checks"]}
+    assert body["ready"] is True, [(c["id"], c["ok"], c["detail"]) for c in body["checks"]]
+    assert "moto 0.00" in checks["baseline"]["detail"] and "floci 0.00" in checks["baseline"]["detail"]
+    assert "moto 100.00" in checks["solution"]["detail"]
+
+    # any edit invalidates the "current content" check (and therefore publish)
+    lab = (await c.get(f"{B}/drafts/{d['id']}")).json()["content"]["lab"] | {"title": "Changed"}
+    await c.put(f"{B}/drafts/{d['id']}", json={"lab": lab})
+    body = (await c.get(url)).json()
+    checks = {x["id"]: x for x in body["checks"]}
+    assert body["ready"] is False and checks["current"]["ok"] is False
+    assert checks["baseline"]["ok"] is True, "the old test still describes the same baseline"
+
+
+async def test_readiness_lists_reset_for_break_fix_and_blocks_unsupported_engines(world):
+    c = await login(world.instructor)
+    d = await new_draft(c)
+    actions = [{"type": "iam.create_group", "group": "baristas-{{ student_short_id }}"}]
+    lab = d["content"]["lab"] | {"kind": "break_fix", "services": ["s3", "iam"], "break_actions": actions}
+    r = await c.put(f"{B}/drafts/{d['id']}", json={"lab": lab})
+    assert r.json()["validation"]["ok"], r.json()["validation"]
+    body = (await c.get(f"{B}/drafts/{d['id']}/readiness")).json()
+    assert "reset" in [x["id"] for x in body["checks"]] and body["ready"] is False
+
+    # IAM actions are not usable on MiniStack, so the capability row fails and testing/publishing is refused
+    bad = lab | {"runtime": {"emulator": "ministack"}}
+    await c.put(f"{B}/drafts/{d['id']}", json={"lab": bad})
+    body = (await c.get(f"{B}/drafts/{d['id']}/readiness")).json()
+    checks = {x["id"]: x for x in body["checks"]}
+    assert body["ready"] is False and checks["capabilities"]["ok"] is False
+    assert any("unsupported emulator operations" in e["message"] for e in checks["capabilities"]["errors"])
+    r = await c.post(f"{B}/drafts/{d['id']}/test")
+    assert r.status_code == 422 and r.json()["error"]["code"] == "lab_invalid"
+
+
 # ------------------------------------------------------------------------ real sandboxes (docker)
 @pytest.mark.docker
 async def test_cloned_mission_1_tests_and_publishes_in_real_sandboxes(world, real_runner):

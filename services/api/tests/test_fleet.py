@@ -4,6 +4,7 @@ concurrency), no migration, runner-lost reconciliation. Two FakeRunners play two
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from datetime import timedelta
 
@@ -11,6 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from app.auth.routes import create_user
+from app.config import get_settings
 from app.db import sessionmaker
 from app.models import Attempt, Enrolment, LabSession, Role, Runner
 from app.runtime import fleet
@@ -21,7 +23,9 @@ from tests.conftest import PASSWORD, idem, login, wait_state
 from tests.fakes import FakeRunner
 from tests.test_courses_roster import audits
 
-A, B = "runner-local-1", "runner-b"
+# A is *the* seeded runner (conftest.seed_runner_row uses CL_RUNNER_ID), so it must come from settings —
+# an isolated Compose project runs under its own runner id (docker-compose.m45.yml / .authoring.yml).
+A, B = get_settings().runner_id, "runner-b"
 
 
 @pytest.fixture
@@ -298,7 +302,9 @@ async def test_cli_drain_is_audited_as_operator(world, two_runners, capsys):
 
 
 # ------------------------------------------------------------------------------ real runtime (2 runners)
-R2_URL, R2_SECRET = "http://runner2:7070", "dev-runner2-secret-change-me"
+R2_ID = os.environ.get("CL_RUNNER2_ID", "runner-local-2")
+R2_URL = os.environ.get("CL_RUNNER2_URL", "http://runner2:7070")
+R2_SECRET = os.environ.get("CL_RUNNER2_SECRET", "cloudlabs-dev-runner2-hmac-secret-0123456789abcdef")
 
 
 @pytest.fixture
@@ -319,7 +325,7 @@ async def real_fleet():
     from app.tasks import background
     await background.drain(90)
     s = get_settings()
-    for rid, url, secret in ((s.runner_id, s.runner_url, s.runner_secret), ("runner-local-2", R2_URL, R2_SECRET)):
+    for rid, url, secret in ((s.runner_id, s.runner_url, s.runner_secret), (R2_ID, R2_URL, R2_SECRET)):
         client = HttpRunnerClient(rid, url, secret, 60)
         for sb in await client.list_sandboxes(env=s.env):
             await client.destroy_sandbox(sb["sandbox_id"])
@@ -330,10 +336,10 @@ async def real_fleet():
 async def test_two_real_runners_schedule_isolate_and_clean_up(world, real_fleet):
     from app.config import get_settings
     from app.runtime.runner_client import client_for_id
-    r2 = await fleet.register("runner-local-2", R2_URL, R2_SECRET)
+    r2 = await fleet.register(R2_ID, R2_URL, R2_SECRET)
     assert r2.status == "healthy" and r2.engines.get("floci") and r2.secret_enc  # own secret, encrypted
     with pytest.raises(Exception):
-        await fleet.register("runner-local-2", R2_URL, "wrong-secret-wrong-secret")  # signature rejected
+        await fleet.register(R2_ID, R2_URL, "wrong-secret-wrong-secret")  # signature rejected
 
     s = get_settings()
     users = await students(world, 3)
@@ -344,11 +350,11 @@ async def test_two_real_runners_schedule_isolate_and_clean_up(world, real_fleet)
         await wait_state(c, sid, {"READY"}, timeout=180)
         sids.append((c, sid))
     placed = {await runner_of(sid) for _, sid in sids}
-    assert placed == {s.runner_id, "runner-local-2"}  # spread over both runners
+    assert placed == {s.runner_id, R2_ID}  # spread over both runners
 
     for c, sid in sids:  # each runner sees only its own sandboxes
         rid = await runner_of(sid)
-        other = "runner-local-2" if rid == s.runner_id else s.runner_id
+        other = R2_ID if rid == s.runner_id else s.runner_id
         mine = {x["sandbox_id"] for x in await (await client_for_id(rid)).list_sandboxes(env=s.env)}
         theirs = {x["sandbox_id"] for x in await (await client_for_id(other)).list_sandboxes(env=s.env)}
         assert sid in mine and sid not in theirs
@@ -357,7 +363,7 @@ async def test_two_real_runners_schedule_isolate_and_clean_up(world, real_fleet)
     # all reach its sandbox through the runner, and a wrong token gets nothing
     c2 = sid2 = None
     for c, sid in sids:
-        if await runner_of(sid) == "runner-local-2":
+        if await runner_of(sid) == R2_ID:
             c2, sid2 = c, sid
     async with sessionmaker()() as db:
         sess2 = await db.get(LabSession, uuid.UUID(sid2))
@@ -388,7 +394,7 @@ async def test_two_real_runners_schedule_isolate_and_clean_up(world, real_fleet)
                 frame = await t.recv()
                 seen += frame if isinstance(frame, bytes) else frame.encode()
 
-    await set_runner_fields("runner-local-2", drain=True)
+    await set_runner_fields(R2_ID, drain=True)
     c3 = await login(users[2])
     code, body = await start(users[2], world)
     assert code in (200, 201), body
@@ -398,7 +404,7 @@ async def test_two_real_runners_schedule_isolate_and_clean_up(world, real_fleet)
     for c, sid in sids + [(c3, body["id"])]:
         assert (await c.post(f"/api/sessions/{sid}/submit", headers=idem())).status_code == 200
         await wait_state(c, sid, {"TERMINATED"}, timeout=120)
-    for rid in (s.runner_id, "runner-local-2"):
+    for rid in (s.runner_id, R2_ID):
         left = [x for x in await (await client_for_id(rid)).list_sandboxes(env=s.env)
                 if x["sandbox_id"] in {sid for _, sid in sids} | {body["id"]}]
         assert left == [], (rid, left)

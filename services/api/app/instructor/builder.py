@@ -9,6 +9,7 @@ sandbox 0, partial optional, reference solution full marks) must pass on the cur
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -16,11 +17,11 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import audit, labtest
+from .. import audit, breakfix, labtest
 from ..auth.policy import Action, Authz, load_draft_for, load_lab_version_visible
 from ..config import get_settings
 from ..db import get_db, sessionmaker
@@ -29,15 +30,16 @@ from ..grader import registry
 from ..grader.checks import load_all
 from ..labs import drafts as dr
 from ..labs.importer import get_bundle, import_package
-from ..labs.package import LabPackage
-from ..labs.render import compute_variables, student_lab_view
-from ..labs.schema import LabValidationError
-from ..labs.schema.v1 import SLUG, CheckSpec, Service
+from ..labs.package import SAMPLE_SHORT_ID, LabPackage
+from ..labs.render import compute_variables, render_break_actions, student_lab_view
+from ..labs.schema import LabValidationError, parse_definition
+from ..labs.schema.v1 import SLUG, BreakActionSpec, CheckSpec, Service
 from ..models import Lab, LabDraft, LabVersion, Role, User
 from ..obs.logging import log
 from ..runtime import emulators
 from ..runtime.runner_client import RunnerError, get_runner
 from ..tasks import background
+from . import templates as tpl
 
 router = APIRouter(prefix="/api/instructor/builder", tags=["lab-builder"])
 
@@ -73,6 +75,69 @@ async def check_types(user: User = Depends(Authz(Action.lab_manage))):
     return {"check_types": out, "common_fields": common, "services": list(Service.__args__),
             "engines": {"primary": list(emulators.ENGINES), "specialised": list(emulators.SPECIALISED)},
             "editable_files": list(dr.EDITABLE_FILES)}
+
+
+# ------------------------------------------------------------------------------------ break actions
+@router.get("/break-actions")
+async def break_actions(user: User = Depends(Authz(Action.lab_manage))):
+    """Every typed break action (phase 9, milestone 41) with its parameter JSON Schema, so the Lab Builder
+    can generate the starting-state forms. Instructors never write shell: actions compile to setup."""
+    breakfix.load_all()
+    out = [{"type": t, "service": a.service, "params_schema": a.params_model.model_json_schema()}
+           for t, a in sorted(breakfix.REGISTRY.items())]
+    return {"break_actions": out}
+
+
+class BreakActionsIn(BaseModel):
+    lab: dict[str, Any] | None = None  # the draft's lab; break actions are read from it and rendered
+    break_actions: list[BreakActionSpec] = Field(default_factory=list, max_length=20)
+
+
+@router.post("/break-actions/summary")
+async def break_actions_summary(body: BreakActionsIn, user: User = Depends(Authz(Action.lab_manage))):
+    """The Broken State Summary: one human line per action, from the same definitions the compiler uses.
+    Send the draft's `lab` so `{{ variables }}` are rendered with a sample student; invalid actions come
+    back as errors instead of lines."""
+    specs = body.break_actions
+    if body.lab is not None:
+        try:
+            d = parse_definition(body.lab)
+            specs = render_break_actions(d.break_actions, compute_variables(d, SAMPLE_SHORT_ID))
+        except LabValidationError as e:
+            return {"lines": [], "errors": list(e.errors)}
+        except Exception as e:  # jinja errors
+            return {"lines": [], "errors": [f"break_actions: template error: {e}"]}
+    lines: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for i, spec in enumerate(specs, 1):
+        where = f"{i}. {spec.type}"
+        try:
+            defn = breakfix.get(spec.type)
+        except KeyError:
+            errors.append(f"{where}: unknown break action type")
+            continue
+        try:
+            params = defn.params_model.model_validate(spec.params)
+        except ValidationError as e:
+            errors += [f"{where}: {'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
+            continue
+        lines.append({"type": spec.type, "service": defn.service, "summary": defn.summary(params)})
+    return {"lines": lines, "errors": errors}
+
+
+# -------------------------------------------------------------------------------------- templates
+@router.get("/templates")
+async def list_templates(user: User = Depends(Authz(Action.lab_manage)), db: AsyncSession = Depends(get_db)):
+    """Curated starting points for the New-lab gallery, resolved against the latest built-in version of
+    each source lab. `available: false` means the built-in pack is not installed on this deployment."""
+    out = []
+    for t in tpl.TEMPLATES:
+        lv = await _builtin_latest(db, t.source_lab_id)
+        out.append({"id": t.id, "title": t.title, "summary": t.summary, "services": list(t.services),
+                    "difficulty": t.difficulty, "highlights": list(t.highlights),
+                    "source_lab_id": t.source_lab_id, "available": lv is not None,
+                    "latest_version": lv.version if lv else None})
+    return {"templates": out}
 
 
 # --------------------------------------------------------------------------------------- helpers
@@ -118,9 +183,13 @@ async def _out(db: AsyncSession, d: LabDraft, full: bool = True) -> dict[str, An
          "base_lab_version_id": str(d.base_lab_version_id) if d.base_lab_version_id else None,
          "published_version_id": str(d.published_version_id) if d.published_version_id else None,
          "validation": d.last_validation, "tested_sha256": d.tested_sha256,
-         "created_at": d.created_at, "updated_at": d.updated_at}
+         "created_at": d.created_at, "updated_at": d.updated_at,
+         # whether the preview sandbox is up — the Tasks tab needs it to offer "run this check" (M47)
+         "preview_status": (d.last_preview or {}).get("status") or "stopped"}
     if full:
-        o.update(content=d.content, last_test=d.last_test, **_files_info(d.content))
+        o.update(content=d.content, last_test=d.last_test, rev=dr.fingerprint(d.content), **_files_info(d.content))
+    else:
+        o["rev"] = dr.fingerprint(d.content)
     return o
 
 
@@ -134,12 +203,27 @@ async def _unique_slug(db: AsyncSession, base: str) -> str:
     return slug
 
 
+def _slug_from_title(title: str, short_id: str) -> str:
+    """A lab id from a teacher's title: lower-case words joined by dashes, suffixed with the author's short
+    id so two teachers naming a lab the same way can never collide (and the SLUG pattern still holds)."""
+    base = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:70].strip("-") or "lab"
+    return f"{base}-{short_id}"
+
+
+async def _builtin_latest(db: AsyncSession, lab_slug: str) -> LabVersion | None:
+    """The newest version of a built-in lab (owner_id NULL = imported from labs/ on disk)."""
+    return await db.scalar(
+        select(LabVersion).join(Lab, Lab.id == LabVersion.lab_id)
+        .where(Lab.slug == lab_slug, Lab.owner_id.is_(None))
+        .order_by(LabVersion.id.desc()).limit(1))
+
+
 def _semver(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in v.split("."))  # lab versions match SEMVER (schema v1)
 
 
 async def _create(db: AsyncSession, user: User, content: dict[str, Any], source: str,
-                  base: LabVersion | None = None) -> LabDraft:
+                  base: LabVersion | None = None, template_id: str | None = None) -> LabDraft:
     d = LabDraft(owner_id=user.id, content=content, status="draft",
                  base_lab_version_id=base.id if base else None, slug="", title="")
     _denorm(d)
@@ -147,7 +231,7 @@ async def _create(db: AsyncSession, user: User, content: dict[str, Any], source:
     await db.flush()
     await _validate(db, d)
     audit.record(db, user, "lab.draft_created", draft_id=d.id, source=source, slug=d.slug,
-                 lab_version_id=base.id if base else None)
+                 lab_version_id=base.id if base else None, template_id=template_id)
     await db.commit()
     await db.refresh(d)
     return d
@@ -164,8 +248,9 @@ async def list_drafts(user: User = Depends(Authz(Action.lab_manage)), db: AsyncS
 
 
 class DraftIn(BaseModel):
-    source: str = Field("blank", pattern=r"^(blank|clone)$")
+    source: str = Field("blank", pattern=r"^(blank|clone|template)$")
     lab_version_id: uuid.UUID | None = None  # clone: a lab version the user can see
+    template_id: str | None = Field(None, max_length=60)  # template: a curated starting point
     title: str | None = Field(None, min_length=1, max_length=200)
     slug: str | None = Field(None, pattern=SLUG)
 
@@ -173,12 +258,33 @@ class DraftIn(BaseModel):
 @router.post("/drafts", status_code=201)
 async def create_draft(body: DraftIn, user: User = Depends(Authz(Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
-    """Blank draft, or a clone of a visible lab version. Cloning your own lab prepares its next version
-    (same id, next minor version); cloning anyone else's lab (or a built-in mission) starts a new lab with a
-    new id, so it can never overwrite the original."""
+    """Blank draft, a clone of a visible lab version, or a fresh lab from a curated template. Cloning your
+    own lab prepares its next version (same id, next minor version); cloning anyone else's lab (or a
+    built-in mission) starts a new lab with a new id, so it can never overwrite the original."""
     if body.source == "blank":
         slug = await _unique_slug(db, body.slug or f"new-lab-{user.short_id}")
         return await _out(db, await _create(db, user, dr.blank_content(slug, body.title or "Untitled lab"), "blank"))
+    if body.source == "template":
+        if not body.template_id:
+            raise ApiError("validation_error", "template_id is required to start from a template", 400)
+        t = tpl.BY_ID.get(body.template_id)
+        if t is None:
+            raise ApiError("template_not_found", "no such lab template", 404)
+        lv = await _builtin_latest(db, t.source_lab_id)
+        if lv is None:
+            raise ApiError("template_unavailable", "this template's built-in lab is not installed", 409)
+        lv, _lab = await load_lab_version_visible(db, user, lv.id)
+        pub, priv = await get_bundle(db, lv.id, "public"), await get_bundle(db, lv.id, "private")
+        try:
+            content = dr.content_from_bundles(pub.data, priv.data)
+        except LabValidationError as e:
+            raise _invalid(e) from e
+        lab_def = content["lab"]
+        title = (body.title or t.title)[:200]
+        lab_def["id"] = await _unique_slug(db, body.slug or _slug_from_title(title, user.short_id))
+        lab_def["version"] = "1.0.0"
+        lab_def["title"] = title
+        return await _out(db, await _create(db, user, content, "template", base=lv, template_id=t.id))
     if body.lab_version_id is None:
         raise ApiError("validation_error", "lab_version_id is required to clone", 400)
     lv, lab = await load_lab_version_visible(db, user, body.lab_version_id)
@@ -243,6 +349,20 @@ async def _save(db: AsyncSession, d: LabDraft, content: dict[str, Any]) -> dict[
 class DraftUpdate(BaseModel):
     lab: dict[str, Any] | None = None
     files: dict[str, str] | None = None
+    base_rev: str | None = Field(default=None, description="the draft rev this edit was based on")
+
+
+def _require_current(d: LabDraft, base_rev: str | None) -> None:
+    """Optimistic concurrency for the builder (M46): an autosave that still carries the rev it was edited
+    from must never overwrite content someone else has saved since — another tab, a revalidate, a test run.
+    Omitting `base_rev` is allowed for callers that have already re-read the draft (the import/clone paths)."""
+    if base_rev is None:
+        return
+    current = dr.fingerprint(d.content)
+    if base_rev != current:
+        raise ApiError("stale_revision",
+                       "this draft was changed somewhere else (another tab, or a test run); reload it so "
+                       "your changes don't overwrite the newer version", 409, extra={"rev": current})
 
 
 @router.put("/drafts/{draft_id}")
@@ -252,6 +372,7 @@ async def update_draft(draft_id: uuid.UUID, body: DraftUpdate, user: User = Depe
     progress); the response carries the validation result for the always-visible validation panel."""
     d = await _load(db, user, draft_id, for_update=True)
     _ensure_editable(d)
+    _require_current(d, body.base_rev)
     try:
         content = dr.apply_edit(d.content, body.lab, body.files)
     except LabValidationError as e:
@@ -272,6 +393,7 @@ async def delete_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.la
 
 class YamlIn(BaseModel):
     yaml: str = Field(max_length=dr.MAX_LAB_JSON_BYTES)
+    base_rev: str | None = None
 
 
 @router.get("/drafts/{draft_id}/yaml")
@@ -288,6 +410,7 @@ async def put_yaml(draft_id: uuid.UUID, body: YamlIn, user: User = Depends(Authz
     exactly like a form save. YAML comments are not kept: the draft stores the lab as JSON."""
     d = await _load(db, user, draft_id, for_update=True)
     _ensure_editable(d)
+    _require_current(d, body.base_rev)
     try:
         lab = dr.yaml_to_lab(body.yaml)
         content = dr.apply_edit(d.content, lab, None)
@@ -321,6 +444,71 @@ async def preview_draft(draft_id: uuid.UUID, user: User = Depends(Authz(Action.l
         raise _invalid(e, d.content.get("lab")) from e
     variables = compute_variables(pkg.definition, user.short_id)
     return {"lab": student_lab_view(pkg.definition, variables), "variables": variables}
+
+
+# --------------------------------------------------------------------------------- publish readiness
+def _short_sha(v: str | None) -> str:
+    return (v or "—")[:12]
+
+
+async def _readiness(d: LabDraft) -> dict[str, Any]:
+    """The publish gate as a checklist: exactly what `publish` requires, one row each, with row-level errors.
+    The gate itself is still enforced by `publish`; this makes it legible before the author clicks."""
+    lab = d.content.get("lab", {})
+    pkg, errors = dr.build(d.content)
+    # `dr.build` returns pack errors when the pack is invalid, and scenario errors when it is valid.
+    pack_errors = errors if pkg is None else []
+    scenario_errors = [] if pkg is None else errors
+    checks: list[dict[str, Any]] = []
+
+    def row(cid: str, label: str, ok: bool, *, errors: list[dict] | None = None,
+            detail: str | None = None) -> None:
+        checks.append({"id": cid, "label": label, "ok": bool(ok), "errors": errors or [], "detail": detail})
+
+    row("validation", "Valid lab pack (schema, services, ownership)", pkg is not None,
+        errors=[dr.row_error(e, lab) for e in pack_errors])
+    cap_errors = [dr.row_error(e, lab) for e in pack_errors if "unsupported emulator operations" in e]
+    row("capabilities", "Checks and break actions supported on every engine the lab may run on",
+        not cap_errors, errors=cap_errors)
+    row("scenarios", "Test scenarios configured (baseline, reference solution, optional partial)",
+        pkg is not None and not scenario_errors,
+        errors=[dr.row_error(e, lab) for e in scenario_errors])
+
+    lt = d.last_test or {}
+    expected = lt.get("expected") or {}
+    by_scenario: dict[str, list[dict[str, Any]]] = {}
+    for s in lt.get("scenarios") or []:
+        by_scenario.setdefault(str(s.get("scenario")), []).append(s)
+
+    def scenario_row(cid: str, label: str, name: str, want: str | None) -> None:
+        rows = by_scenario.get(name, [])
+        ok = bool(rows) and want is not None and all(r.get("ok") and r.get("actual") == want for r in rows)
+        detail = " · ".join(f"{r.get('engine')} {r.get('actual') or '—'}" for r in rows) or "not run yet"
+        row(cid, label, ok, detail=detail)
+
+    full = expected.get("solution")
+    if full is None and pkg is not None:
+        full = str(pkg.definition.max_score.quantize(Decimal("0.01")))
+    base = expected.get("empty", "0.00")
+    scenario_row("baseline", f"Baseline matches baseline.expected_score ({base})", "empty", base)
+    scenario_row("solution", f"Reference solution reaches full marks ({full or '?'})", "solution", full)
+    if pkg is not None and pkg.definition.kind == "break_fix":
+        scenario_row("reset", f"Reset reproduces the baseline ({base})", "reset", base)
+    else:
+        row("reset", "Reset reproduces the baseline", True, detail="not applicable to a guided lab")
+    current = (d.last_validation or {}).get("content_sha256")
+    row("current", "Test passed on the current content",
+        lt.get("status") == "passed" and d.tested_sha256 is not None and d.tested_sha256 == current,
+        detail=f"tested {_short_sha(d.tested_sha256)} · current {_short_sha(current)}")
+    return {"ready": all(c["ok"] for c in checks), "checks": checks}
+
+
+@router.get("/drafts/{draft_id}/readiness")
+async def readiness(draft_id: uuid.UUID, user: User = Depends(Authz(Action.lab_manage)),
+                    db: AsyncSession = Depends(get_db)):
+    """The publish-readiness checklist: schema/capability validation, the baseline, the reference solution,
+    Reset reproducibility, and a passing test of the current content."""
+    return await _readiness(await _load(db, user, draft_id))
 
 
 # ------------------------------------------------------------------------ test run + publish gate

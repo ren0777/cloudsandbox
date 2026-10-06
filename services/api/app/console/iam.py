@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.policy import Action, Authz
+from ..auth.policy import Action, AuthzAny
 from ..db import get_db
 from ..errors import ApiError
 from ..grader.evidence import collect_iam
@@ -105,7 +105,7 @@ async def _attached(sess: LabSession, kind: str, name: str) -> list[dict[str, st
 
 # ------------------------------------------------------------------------------------------ users
 @router.get("/users")
-async def list_users(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_users(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                      db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     out = []
@@ -117,7 +117,7 @@ async def list_users(session_id: uuid.UUID, user: User = Depends(Authz(Action.se
 
 
 @router.post("/users", status_code=201)
-async def create_user(session_id: uuid.UUID, body: CreateUserIn, user: User = Depends(Authz(Action.session_use)),
+async def create_user(session_id: uuid.UUID, body: CreateUserIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                       db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     kw: dict[str, Any] = {"UserName": body.name}
@@ -133,7 +133,7 @@ async def create_user(session_id: uuid.UUID, body: CreateUserIn, user: User = De
 
 
 @router.get("/users/{name}")
-async def get_user(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def get_user(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                    db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     u = (await _call(sess, "get_user", UserName=name))["User"]
@@ -146,7 +146,7 @@ async def get_user(session_id: uuid.UUID, name: str, user: User = Depends(Authz(
 
 @router.put("/users/{name}/groups")
 async def set_user_groups(session_id: uuid.UUID, name: str, body: GroupsIn,
-                          user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                          user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     current = {g["GroupName"] for g in await _pages(sess, "list_groups_for_user", "Groups", UserName=name)}
     for g in sorted(set(body.groups) - current):
@@ -157,7 +157,7 @@ async def set_user_groups(session_id: uuid.UUID, name: str, body: GroupsIn,
 
 
 @router.delete("/users/{name}", status_code=204)
-async def delete_user(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_user(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                       db: AsyncSession = Depends(get_db)):
     """Like the AWS console: removes memberships and policies first, then the user."""
     sess = await console_session(session_id, user, db)
@@ -172,7 +172,7 @@ async def delete_user(session_id: uuid.UUID, name: str, user: User = Depends(Aut
 
 # ------------------------------------------------------------------------------------- groups
 @router.get("/groups")
-async def list_groups(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_groups(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                       db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     out = []
@@ -184,7 +184,7 @@ async def list_groups(session_id: uuid.UUID, user: User = Depends(Authz(Action.s
 
 
 @router.post("/groups", status_code=201)
-async def create_group(session_id: uuid.UUID, body: CreateGroupIn, user: User = Depends(Authz(Action.session_use)),
+async def create_group(session_id: uuid.UUID, body: CreateGroupIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     await _call(sess, "create_group", GroupName=body.name)
@@ -194,7 +194,7 @@ async def create_group(session_id: uuid.UUID, body: CreateGroupIn, user: User = 
 
 
 @router.get("/groups/{name}")
-async def get_group(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def get_group(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                     db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     g = await _call(sess, "get_group", GroupName=name)
@@ -203,7 +203,7 @@ async def get_group(session_id: uuid.UUID, name: str, user: User = Depends(Authz
 
 
 @router.delete("/groups/{name}", status_code=204)
-async def delete_group(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_group(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     for u in (await _call(sess, "get_group", GroupName=name)).get("Users", []):
@@ -217,7 +217,7 @@ async def delete_group(session_id: uuid.UUID, name: str, user: User = Depends(Au
 
 # -------------------------------------------------------------------------------------- roles
 @router.get("/roles")
-async def list_roles(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_roles(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                      db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     out = []
@@ -231,7 +231,7 @@ async def list_roles(session_id: uuid.UUID, user: User = Depends(Authz(Action.se
 
 
 @router.post("/roles", status_code=201)
-async def create_role(session_id: uuid.UUID, body: CreateRoleIn, user: User = Depends(Authz(Action.session_use)),
+async def create_role(session_id: uuid.UUID, body: CreateRoleIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                       db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     trust = {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "sts:AssumeRole",
@@ -244,7 +244,7 @@ async def create_role(session_id: uuid.UUID, body: CreateRoleIn, user: User = De
 
 
 @router.get("/roles/{name}")
-async def get_role(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def get_role(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                    db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     r = (await _call(sess, "get_role", RoleName=name))["Role"]
@@ -253,7 +253,7 @@ async def get_role(session_id: uuid.UUID, name: str, user: User = Depends(Authz(
 
 
 @router.delete("/roles/{name}", status_code=204)
-async def delete_role(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_role(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                       db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     for p in await _attached(sess, "role", name):
@@ -271,7 +271,7 @@ _ATTACH = {"users": ("attach_user_policy", "detach_user_policy", "UserName"),
 
 @router.post("/{kind}/{name}/policies")
 async def attach_policy(session_id: uuid.UUID, kind: Literal["users", "groups", "roles"], name: str, body: ArnIn,
-                        user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                        user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     fn, _, who = _ATTACH[kind]
     await _call(sess, fn, PolicyArn=body.arn, **{who: name})
@@ -281,7 +281,7 @@ async def attach_policy(session_id: uuid.UUID, kind: Literal["users", "groups", 
 @router.delete("/{kind}/{name}/policies", status_code=204)
 async def detach_policy(session_id: uuid.UUID, kind: Literal["users", "groups", "roles"], name: str,
                         arn: str = Query(..., min_length=20, max_length=2048),
-                        user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                        user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     _, fn, who = _ATTACH[kind]
     await _call(sess, fn, PolicyArn=arn, **{who: name})
@@ -291,7 +291,7 @@ async def detach_policy(session_id: uuid.UUID, kind: Literal["users", "groups", 
 @router.get("/policies")
 async def list_policies(session_id: uuid.UUID, scope: Literal["local", "aws", "all"] = "all",
                         search: str = Query("", max_length=128),
-                        user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                        user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     out = []
     scopes = {"local": ["Local"], "aws": ["AWS"], "all": ["Local", "AWS"]}[scope]
@@ -305,7 +305,7 @@ async def list_policies(session_id: uuid.UUID, scope: Literal["local", "aws", "a
 
 
 @router.post("/policies", status_code=201)
-async def create_policy(session_id: uuid.UUID, body: CreatePolicyIn, user: User = Depends(Authz(Action.session_use)),
+async def create_policy(session_id: uuid.UUID, body: CreatePolicyIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                         db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     doc = _policy_doc(body.document)
@@ -316,7 +316,7 @@ async def create_policy(session_id: uuid.UUID, body: CreatePolicyIn, user: User 
 
 @router.get("/policy")
 async def get_policy(session_id: uuid.UUID, arn: str = Query(..., min_length=20, max_length=2048),
-                     user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                     user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     meta = (await _call(sess, "get_policy", PolicyArn=arn))["Policy"]
     doc = (await _call(sess, "get_policy_version", PolicyArn=arn, VersionId=meta["DefaultVersionId"]))["PolicyVersion"]["Document"]
@@ -327,14 +327,14 @@ async def get_policy(session_id: uuid.UUID, arn: str = Query(..., min_length=20,
 
 @router.delete("/policy", status_code=204)
 async def delete_policy(session_id: uuid.UUID, arn: str = Query(..., min_length=20, max_length=2048),
-                        user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                        user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     await _call(sess, "delete_policy", PolicyArn=arn)
 
 
 # ---------------------------------------------------------------------------- policy simulator
 @router.post("/simulate")
-async def simulate(session_id: uuid.UUID, body: SimulateIn, user: User = Depends(Authz(Action.session_use)),
+async def simulate(session_id: uuid.UUID, body: SimulateIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                    db: AsyncSession = Depends(get_db)):
     """CloudLabs policy simulator (support level `simulated`)."""
     sess = await console_session(session_id, user, db)

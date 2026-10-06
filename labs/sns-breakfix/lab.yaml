@@ -1,0 +1,66 @@
+schema_version: 1
+id: sns-breakfix
+version: 1.0.0
+kind: break_fix
+title: "Mission 13: The alerts stopped (break-fix)"
+summary: Orders no longer reach the kitchen queue because the topic subscription was deleted. Restore it.
+story: |
+  **Incident report.** The bell in the kitchen went silent. Orders are still coming in, the topic is
+  still there and the queue is still there — but nothing arrives. A "cleanup" on the alert topic removed
+  the connection to the kitchen.
+
+  Your environment already contains the broken setup:
+
+  - the topic **{{ topic_name }}** exists
+  - the queue **{{ queue_name }}** exists
+  - **the queue is no longer subscribed to the topic**
+
+  Put the subscription back and prove the path works by publishing an alert that contains **latte**.
+  Leave the topic and the queue in place — don't rebuild them.
+services: [sqs, sns]
+runtime: {emulator: default}
+duration_minutes: 35
+idle_minutes: 20
+max_attempts: 3
+variables:
+  queue_name: "cafe-orders-{{ student_short_id }}"
+  topic_name: "cafe-alerts-{{ student_short_id }}"
+break_actions:
+  - {type: sqs.create_queue, name: "{{ queue_name }}", retention_period: 3600}
+  - {type: sns.create_topic, name: "{{ topic_name }}"}
+  - {type: sns.subscribe_sqs, topic: "{{ topic_name }}", queue: "{{ queue_name }}"}
+  - {type: sns.unsubscribe_sqs, topic: "{{ topic_name }}", queue: "{{ queue_name }}"}
+baseline: {expected_score: "20.00"}
+requires:
+  - sns:Subscribe
+  - sns:Publish
+tasks:
+  - id: restore-subscription
+    title: "Subscribe {{ queue_name }} to {{ topic_name }} again"
+    description: "Add the missing SQS subscription back on the topic."
+    hints:
+      - "Open the topic and look at its **Subscriptions**: the queue is gone."
+      - "Create an SQS subscription with your queue as the endpoint."
+      - "CLI: `aws sns subscribe --topic-arn <topic-arn> --protocol sqs --notification-endpoint <queue-arn>`."
+    marks: 50
+    checks:
+      - {type: sns.subscription, topic: "{{ topic_name }}", queue: "{{ queue_name }}"}
+  - id: prove-alerts
+    title: "Publish a test alert and prove it arrives"
+    description: "Publish a message containing latte to the topic and find it on the queue."
+    hints:
+      - "Publish from the topic's page, or with the CLI."
+      - "The queue should receive it immediately — that is the path you just restored."
+      - "CLI: `aws sns publish --topic-arn <topic-arn> --message ...`."
+    marks: 30
+    checks:
+      - {type: sqs.message_present, queue: "{{ queue_name }}", body_contains: latte}
+  - id: leave-things-alone
+    title: "Leave the topic and queue in place"
+    description: "The topic and the queue must survive the repair — don't delete and recreate them."
+    hints:
+      - "Fix the missing subscription; don't rebuild what is already there."
+    marks: 20
+    checks:
+      - {type: sns.topic_exists, name: "{{ topic_name }}"}
+      - {type: sqs.queue_exists, name: "{{ queue_name }}", hidden: true}

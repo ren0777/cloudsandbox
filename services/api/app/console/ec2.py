@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.policy import Action, Authz
+from ..auth.policy import Action, AuthzAny
 from ..db import get_db
 from ..errors import ApiError
 from ..models import LabSession, User
@@ -120,7 +120,7 @@ def _instance_out(i: dict[str, Any]) -> dict[str, Any]:
 
 # ------------------------------------------------------------------------------------ catalogue
 @router.get("/launch-options")
-async def launch_options(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def launch_options(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                          db: AsyncSession = Depends(get_db)):
     """Quick Start images (whatever the engine offers, Linux first), instance types, key pairs, groups."""
     sess = await console_session(session_id, user, db)
@@ -142,7 +142,7 @@ async def launch_options(session_id: uuid.UUID, user: User = Depends(Authz(Actio
 
 # ------------------------------------------------------------------------------------ instances
 @router.get("/instances")
-async def list_instances(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_instances(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                          db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     out = []
@@ -153,7 +153,7 @@ async def list_instances(session_id: uuid.UUID, user: User = Depends(Authz(Actio
 
 
 @router.post("/instances", status_code=201)
-async def launch_instance(session_id: uuid.UUID, body: LaunchIn, user: User = Depends(Authz(Action.session_use)),
+async def launch_instance(session_id: uuid.UUID, body: LaunchIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                           db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     vpc, subnet = await _default_vpc(sess)
@@ -187,7 +187,7 @@ async def launch_instance(session_id: uuid.UUID, body: LaunchIn, user: User = De
 
 
 @router.get("/instances/{instance_id}")
-async def get_instance(session_id: uuid.UUID, instance_id: str, user: User = Depends(Authz(Action.session_use)),
+async def get_instance(session_id: uuid.UUID, instance_id: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     res = (await _call(sess, "describe_instances", InstanceIds=[instance_id])).get("Reservations", [])
@@ -198,7 +198,7 @@ async def get_instance(session_id: uuid.UUID, instance_id: str, user: User = Dep
 
 @router.post("/instances/{instance_id}/state")
 async def change_state(session_id: uuid.UUID, instance_id: str, body: StateIn,
-                       user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                       user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     fn = {"start": "start_instances", "stop": "stop_instances", "terminate": "terminate_instances"}[body.action]
     await _call(sess, fn, InstanceIds=[instance_id])
@@ -207,7 +207,7 @@ async def change_state(session_id: uuid.UUID, instance_id: str, body: StateIn,
 
 @router.put("/instances/{instance_id}/tags")
 async def set_instance_tags(session_id: uuid.UUID, instance_id: str, body: TagsIn,
-                            user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                            user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     tags = [{"Key": t.key, "Value": t.value} for t in body.tags if t.key.strip()]
     if tags:
@@ -217,7 +217,7 @@ async def set_instance_tags(session_id: uuid.UUID, instance_id: str, body: TagsI
 
 # ------------------------------------------------------------------------------ security groups
 @router.get("/security-groups")
-async def list_security_groups(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_security_groups(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                                db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     groups = (await _call(sess, "describe_security_groups")).get("SecurityGroups", [])
@@ -227,7 +227,7 @@ async def list_security_groups(session_id: uuid.UUID, user: User = Depends(Authz
 
 
 @router.post("/security-groups", status_code=201)
-async def create_security_group(session_id: uuid.UUID, body: CreateSgIn, user: User = Depends(Authz(Action.session_use)),
+async def create_security_group(session_id: uuid.UUID, body: CreateSgIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                                 db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     vpc, _ = await _default_vpc(sess)
@@ -238,7 +238,7 @@ async def create_security_group(session_id: uuid.UUID, body: CreateSgIn, user: U
 
 
 @router.get("/security-groups/{group_id}")
-async def get_security_group(session_id: uuid.UUID, group_id: str, user: User = Depends(Authz(Action.session_use)),
+async def get_security_group(session_id: uuid.UUID, group_id: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                              db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     g = (await _call(sess, "describe_security_groups", GroupIds=[group_id]))["SecurityGroups"][0]
@@ -248,7 +248,7 @@ async def get_security_group(session_id: uuid.UUID, group_id: str, user: User = 
 
 @router.put("/security-groups/{group_id}/inbound-rules")
 async def set_inbound_rules(session_id: uuid.UUID, group_id: str, body: RulesIn,
-                            user: User = Depends(Authz(Action.session_use)), db: AsyncSession = Depends(get_db)):
+                            user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
     """AWS 'Edit inbound rules' → 'Save rules': revoke removed rules, authorize new ones."""
     sess = await console_session(session_id, user, db)
     g = (await _call(sess, "describe_security_groups", GroupIds=[group_id]))["SecurityGroups"][0]
@@ -270,7 +270,7 @@ async def set_inbound_rules(session_id: uuid.UUID, group_id: str, body: RulesIn,
 
 
 @router.delete("/security-groups/{group_id}", status_code=204)
-async def delete_security_group(session_id: uuid.UUID, group_id: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_security_group(session_id: uuid.UUID, group_id: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                                 db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     await _call(sess, "delete_security_group", GroupId=group_id)
@@ -278,7 +278,7 @@ async def delete_security_group(session_id: uuid.UUID, group_id: str, user: User
 
 # ---------------------------------------------------------------------------------- key pairs
 @router.get("/key-pairs")
-async def list_key_pairs(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def list_key_pairs(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                          db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     return {"key_pairs": [{"name": k["KeyName"], "fingerprint": k.get("KeyFingerprint", ""), "type": k.get("KeyType", "rsa")}
@@ -286,7 +286,7 @@ async def list_key_pairs(session_id: uuid.UUID, user: User = Depends(Authz(Actio
 
 
 @router.post("/key-pairs", status_code=201)
-async def create_key_pair(session_id: uuid.UUID, body: KeyPairIn, user: User = Depends(Authz(Action.session_use)),
+async def create_key_pair(session_id: uuid.UUID, body: KeyPairIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                           db: AsyncSession = Depends(get_db)):
     """Returns the private key once, like AWS (it's only a training key for a simulated instance)."""
     sess = await console_session(session_id, user, db)
@@ -295,7 +295,7 @@ async def create_key_pair(session_id: uuid.UUID, body: KeyPairIn, user: User = D
 
 
 @router.delete("/key-pairs/{name}", status_code=204)
-async def delete_key_pair(session_id: uuid.UUID, name: str, user: User = Depends(Authz(Action.session_use)),
+async def delete_key_pair(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                           db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
     await _call(sess, "delete_key_pair", KeyName=name)

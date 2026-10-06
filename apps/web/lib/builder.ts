@@ -39,8 +39,19 @@ export type Catalogue = {
   editable_files: string[];
 };
 
-export type ErrorRow = { message: string; loc: string | null; task: string | null; check: number | null; field: string | null };
+export type ErrorRow = { message: string; loc: string | null; task: string | null; check: number | null;
+  field: string | null; break_action?: number | null };
 export type Validation = { ok: boolean; errors: ErrorRow[]; content_sha256: string | null; validated_at?: string };
+
+/** One grading check run against the preview sandbox (M47). Either it ran and the grader's own numbers come
+ * back, or it is blocked and the reason says exactly why (capability, unsupported type, emulator error). */
+export type CheckRun =
+  | { status: "ran"; engine: string; task: { id: string; title: string };
+      check: { type: string; index: number; hidden: boolean; scoring: "all" | "proportional";
+        marks_possible: string };
+      params: Record<string, unknown>; expected: unknown; actual: unknown; passed: boolean; message: string }
+  | { status: "blocked"; check: string;
+      reason: { code: string; message: string; operation?: string; reads?: string[] } };
 
 export type CheckResult = {
   task: string; check: string; params: Record<string, unknown>; expected: unknown; actual: unknown;
@@ -59,10 +70,12 @@ export type DraftStatus = "draft" | "testing" | "passed" | "failed" | "published
 export type Check = { type: string; hidden?: boolean; weight?: number; feedback?: string | null; [param: string]: unknown };
 export type Task = { id: string; title: string; description?: string; hints?: string[]; marks: number | string;
   scoring?: "all" | "proportional"; checks: Check[] };
+export type BreakAction = { type: string; [param: string]: unknown };
 export type Lab = {
   schema_version: number; id: string; version: string; title: string; kind?: string; summary?: string; story?: string;
   services: string[]; runtime?: { emulator?: string }; duration_minutes: number; idle_minutes?: number | null;
   max_attempts?: number; variables?: Record<string, string>; requires?: string[]; setup?: { script: string; timeout_s?: number } | null;
+  break_actions?: BreakAction[]; baseline?: { expected_score: number | string } | null;
   tasks: Task[]; [other: string]: unknown;
 };
 export type Content = { lab: Lab; files: Record<string, string> };
@@ -71,6 +84,11 @@ export type Draft = {
   id: string; slug: string; title: string; status: DraftStatus; owner: { id: string; name: string | null };
   base_lab_version_id: string | null; published_version_id: string | null; validation: Validation | null;
   tested_sha256: string | null; created_at: string; updated_at: string;
+  /** Content revision (sha256 of the draft content) — echo it back on save so a stale autosave can never
+   * overwrite newer content (M46). */
+  rev: string;
+  /** Preview sandbox state: "running" lets the Tasks tab offer "run this check" (M47). */
+  preview_status: "running" | "stopped" | string;
   content: Content; last_test: LastTest | null; editable_files: string[]; read_only_files: string[];
 };
 export type DraftSummary = Omit<Draft, "content" | "last_test" | "editable_files" | "read_only_files">;
@@ -79,6 +97,29 @@ export type LabVersionRow = {
   id: string; lab: string; lab_id: string; title: string; version: string; content_sha256: string; created_at: string;
   builtin: boolean; shared: boolean; mine: boolean; owner: { id: string; name: string | null } | null;
 };
+
+/** A curated starting point (phase 9, milestone 40): a working built-in lab offered as a template. */
+export type Template = {
+  id: string; title: string; summary: string; services: string[]; difficulty: "starter" | "intermediate" | "advanced";
+  highlights: string[]; source_lab_id: string; available: boolean; latest_version: string | null;
+};
+
+/** The interactive preview sandbox of a draft (phase 9 M42). It is not a session: no attempt or grade. */
+export type PreviewSandbox = {
+  status: "running" | "stopped";
+  sandbox_id: string | null;
+  engine: string | null;
+  started_at: string | null;
+  last_active: string | null;
+  error: string | null;
+  ws_path: string;
+  console: string | null;
+  terminal_ticket: string | null;
+};
+
+/** The publish-readiness checklist (M42): exactly what the publish gate requires, one row each. */
+export type ReadinessCheck = { id: string; label: string; ok: boolean; detail: string | null; errors: ErrorRow[] };
+export type Readiness = { ready: boolean; checks: ReadinessCheck[] };
 
 export type PreviewTask = { id: string; title: string; description: string; hints: string[]; marks: string };
 export type Preview = {
@@ -177,6 +218,7 @@ export function errorsFor(v: Validation | null, task: string, check: number | nu
 }
 
 export function rowLabel(e: ErrorRow): string {
+  if (e.break_action != null) return `Starting state · action ${e.break_action + 1}${e.field ? ` · ${e.field}` : ""}`;
   if (e.task && e.check) return `Task ${e.task} · check ${e.check}${e.field ? ` · ${e.field}` : ""}`;
   if (e.task) return `Task ${e.task}${e.field ? ` · ${e.field}` : ""}`;
   return e.loc ?? "Lab";

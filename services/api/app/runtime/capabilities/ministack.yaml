@@ -8,6 +8,7 @@ limitations:
   - Function code runs inside your sandbox's emulator; each invocation takes several seconds.
   - Only Python and Node.js runtimes are available; container-image functions are not supported.
   - All state is in memory and is lost when the emulator restarts.
+  - VPC operations are configuration-level (no real networking). SNS ignores the Tags argument of CreateTopic.
 services:
   lambda:
     CreateFunction: {level: supported}
@@ -26,5 +27,89 @@ services:
     ListRoles: {level: supported}
     DeleteRole: {level: supported}
   s3: {}
-  dynamodb: {}
+  dynamodb:
+    # Verified against MiniStack 1.5.16 by the DynamoDB contract test (all 12 declared ops run on this
+    # engine); declaring the console set also makes the DynamoDB console available in MiniStack labs.
+    CreateTable: {level: supported}
+    ListTables: {level: supported}
+    DescribeTable: {level: supported}
+    UpdateTable: {level: supported}
+    TagResource: {level: supported}
+    ListTagsOfResource: {level: supported}
+    PutItem: {level: supported}
+    GetItem: {level: supported}
+    Query: {level: supported}
+    Scan: {level: supported}
+    DeleteItem: {level: supported}
+    DeleteTable: {level: supported}
   ec2: {}
+  vpc:
+    # M44 preparation (2026-09-27): contract-verified on MiniStack 1.5.16 under sandbox hardening
+    # (docs/M44-SERVICES-EVALUATION.md). MiniStack is still only used by labs that pin it.
+    CreateVpc: {level: supported}
+    DescribeVpcs: {level: supported}
+    DeleteVpc: {level: supported}
+    ModifyVpcAttribute: {level: supported}
+    DescribeVpcAttribute: {level: supported}
+    CreateSubnet: {level: supported}
+    DescribeSubnets: {level: supported}
+    DeleteSubnet: {level: supported}
+    ModifySubnetAttribute: {level: supported}
+    CreateRouteTable: {level: supported}
+    DescribeRouteTables: {level: supported}
+    DeleteRouteTable: {level: supported}
+    CreateRoute: {level: supported}
+    DeleteRoute: {level: supported}
+    AssociateRouteTable: {level: supported}
+    DisassociateRouteTable: {level: supported}
+    CreateInternetGateway: {level: supported}
+    DescribeInternetGateways: {level: supported}
+    AttachInternetGateway: {level: supported}
+    DetachInternetGateway: {level: supported}
+    DeleteInternetGateway: {level: supported}
+    CreateSecurityGroup: {level: supported}
+    DescribeSecurityGroups: {level: supported}
+    AuthorizeSecurityGroupIngress: {level: supported}
+    RevokeSecurityGroupIngress: {level: supported}
+    AuthorizeSecurityGroupEgress: {level: supported}
+    RevokeSecurityGroupEgress: {level: supported}
+    DeleteSecurityGroup: {level: supported}
+    AllocateAddress: {level: unsupported, note: "Implemented by this simulator, but elastic IPs are not part of the M44 teaching scope."}
+    CreateNatGateway: {level: unsupported, note: "Accepted as a configuration record, but no data plane; not part of the M44 teaching scope."}
+    CreateVpcPeeringConnection: {level: unsupported, note: "Accepted as a configuration record; not part of the M44 teaching scope."}
+    CreateVpcEndpoint: {level: unsupported, note: "Accepted as a configuration record; not part of the M44 teaching scope."}
+    CreateFlowLogs: {level: unsupported, note: "Accepted as a configuration record, but no logs are produced; not part of the M44 teaching scope."}
+  sqs:
+    CreateQueue: {level: supported}
+    GetQueueUrl: {level: supported}
+    ListQueues: {level: supported}
+    GetQueueAttributes: {level: supported}
+    SetQueueAttributes: {level: supported}
+    DeleteQueue: {level: supported}
+    SendMessage: {level: supported}
+    ReceiveMessage: {level: supported}
+    DeleteMessage: {level: supported}
+    ChangeMessageVisibility: {level: supported}
+    PurgeQueue: {level: supported}
+    SendMessageBatch: {level: supported}
+    DeleteMessageBatch: {level: supported}
+    TagQueue: {level: supported}
+    UntagQueue: {level: supported}
+    ListQueueTags: {level: supported}
+    AddPermission: {level: unsupported, note: "Implemented by this simulator, but fixed sandbox credentials make queue permissions meaningless in labs."}
+  sns:
+    CreateTopic: {level: supported}
+    ListTopics: {level: supported}
+    GetTopicAttributes: {level: supported}
+    SetTopicAttributes: {level: supported}
+    DeleteTopic: {level: supported}
+    Subscribe: {level: supported}
+    ListSubscriptionsByTopic: {level: supported}
+    GetSubscriptionAttributes: {level: supported}
+    SetSubscriptionAttributes: {level: supported}
+    Unsubscribe: {level: supported}
+    Publish: {level: supported, note: "Used as a probe: Publish delivers to an SQS subscription inside the sandbox; grading reads the queue, not a live publish."}
+    PublishBatch: {level: supported}
+    TagResource: {level: unsupported, note: "Works on this simulator, but CreateTopic ignores its Tags argument; topic tags are out of the M44 teaching scope."}
+    UntagResource: {level: unsupported, note: "Works on this simulator, but topic tags are out of the M44 teaching scope."}
+    ListTagsForResource: {level: unsupported, note: "Works on this simulator after TagResource, but CreateTopic tags are ignored; out of the M44 teaching scope."}

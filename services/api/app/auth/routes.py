@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 import string
 import uuid
@@ -78,9 +79,27 @@ async def create_user(db: AsyncSession, email: str, name: str, role: Role, passw
                 db.add(u)
             return u
         except IntegrityError as e:
-            if "short_id" not in str(e) or short_id:
-                raise
+            if short_id or _violated_column(e) != "short_id":
+                raise  # a duplicate email, a bad enum, … — never retryable
     raise RuntimeError("could not allocate short_id")
+
+
+def _violated_column(e: IntegrityError) -> str | None:
+    """The column a unique violation hit, read from the **constraint name**.
+
+    `str(IntegrityError)` also carries the whole INSERT statement, which lists every column of the
+    table — so a plain substring test for "short_id" matches *any* failure on `users` and turns a
+    duplicate email into ten pointless retries ending in `could not allocate short_id`. Only the text
+    before `[SQL:` (server message + DETAIL) is considered."""
+    head = str(e).split("[SQL:", 1)[0]
+    m = re.search(r'unique constraint "([^"]+)"', head)
+    if m:
+        name = m.group(1)
+        return "short_id" if "short_id" in name else None
+    orig = getattr(e, "orig", None)
+    name = getattr(orig, "constraint_name", None)
+    return "short_id" if name and "short_id" in str(name) else None
+
 
 
 def _set_auth_cookies(resp: Response, user: User, refresh: str) -> None:
@@ -209,5 +228,20 @@ async def change_password(body: ChangePasswordIn, user: User = Depends(Authz(Act
     return user_out(u)
 
 
+@router.get("/demo-accounts")
+async def demo_accounts(db: AsyncSession = Depends(get_db)):
+    """Demo Mode only (PLAN §16): the seeded demo accounts and their shared password, so the login page can
+    offer one-click sign-in. Empty when CL_DEMO_MODE is off or the demo reset has not run, so a real
+    deployment never advertises accounts and a fresh stack shows no dead buttons."""
+    if not get_settings().demo_mode:
+        return {"enabled": False, "password": None, "accounts": []}
+    from ..demo import DEMO_DOMAIN, DEMO_PASSWORD, DEMO_USERS
+    emails = [f"{short}@{DEMO_DOMAIN}" for short, _name, _role, _sid in DEMO_USERS]
+    found = {u.email: u for u in (await db.scalars(select(User).where(User.email.in_(emails)))).all()}
+    accounts = [{"email": e, "name": found[e].name, "role": found[e].role.value} for e in emails if e in found]
+    return {"enabled": bool(accounts), "password": DEMO_PASSWORD if accounts else None, "accounts": accounts}
+
+
 PUBLIC_ROUTES = {("POST", "/api/auth/login"), ("POST", "/api/auth/refresh"),
-                 ("POST", "/api/auth/logout"), ("POST", "/api/auth/register")}
+                 ("POST", "/api/auth/logout"), ("POST", "/api/auth/register"),
+                 ("GET", "/api/auth/demo-accounts")}

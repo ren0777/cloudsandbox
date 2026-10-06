@@ -20,6 +20,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..analytics import course_analytics as compute_analytics
 from ..auth.policy import Action, Authz, load_assignment_for_staff, load_course_for_staff
 from ..db import get_db
 from ..labs.importer import definition_of
@@ -173,16 +174,16 @@ async def gradebook(course_id: uuid.UUID, user: User = Depends(Authz(Action.resu
     return {"course": {"id": str(c.id), "code": c.code, "title": c.title}, "assignments": cols, "students": rows}
 
 
+def safe(v: Any) -> str:
+    s = "" if v is None else str(v)
+    return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s  # spreadsheet formula injection
+
+
 def _csv(course: Course, assignments: list[Assignment], students: list[User], cells: dict[tuple, Cell],
          labs: dict[uuid.UUID, str]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\r\n")
     w.writerow(CSV_COLUMNS)
-
-    def safe(v: Any) -> str:
-        s = "" if v is None else str(v)
-        return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s  # spreadsheet formula injection
-
     for u in students:
         for a in assignments:
             x = cells[(u.id, a.id)]
@@ -227,3 +228,54 @@ async def assignment_csv(assignment_id: uuid.UUID, user: User = Depends(Authz(Ac
     assignments, students, cells = await _course_data(db, c, a)
     text = _csv(c, assignments, students, cells, await _labs(db, assignments))
     return _download(text, f"{_slug(c.code)}-{_slug(a.title)}-grades-{st.now():%Y%m%d}.csv")
+
+
+@router.get("/courses/{course_id}/analytics")
+async def course_analytics(course_id: uuid.UUID, user: User = Depends(Authz(Action.results_view)),
+                           db: AsyncSession = Depends(get_db)):
+    """The teaching view: per-assignment averages, submission rate, attempts used, completion time, late
+    submissions, most-failed tasks and most-missed checks — plus infrastructure interruptions counted
+    **separately**, so a platform failure never reads as a student failing.
+
+    Staff of that course only (404 otherwise; admins see everything). Every figure comes from stored rows,
+    so this never reaches a sandbox."""
+    c = await load_course_for_staff(db, user, course_id)
+    return await compute_analytics(db, c)
+
+
+ANALYTICS_CSV_COLUMNS = ["course_code", "assignment", "lab", "max_score", "students", "submitted",
+                         "submission_rate_pct", "counted_attempts", "avg_attempts_used", "avg_score",
+                         "avg_completion_minutes", "late_submissions", "interruptions", "interruption_reasons"]
+
+
+def _pct(rate: float) -> float:
+    return round(rate * 100, 1)
+
+
+def _analytics_csv(stats: dict[str, Any]) -> str:
+    """One row per assignment, then an "All labs" totals row. The ranked failure lists stay on the page
+    (they are top-N views, not a table); interruptions keep their own columns, apart from the scores."""
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\r\n")
+    w.writerow(ANALYTICS_CSV_COLUMNS)
+    code = stats["course"]["code"]
+    for r in stats["assignments"]:
+        reasons = "; ".join(f"{k}: {v}" for k, v in r["interruption_reasons"].items())
+        w.writerow([safe(v) for v in (
+            code, r["title"], r["lab_title"], r["max_score"], r["students"], r["submitted"],
+            _pct(r["submission_rate"]), r["attempts"], r["avg_attempts_used"], r["avg_score"],
+            r["avg_completion_minutes"], r["late_submissions"], r["interruptions"], reasons)])
+    t = stats["totals"]
+    w.writerow([safe(v) for v in (
+        code, "All labs", "", "", t["students"], t["submissions"], _pct(t["submission_rate"]), "", "",
+        t["avg_score"], "", t["late_submissions"], t["interruptions"], "")])
+    return buf.getvalue()
+
+
+@router.get("/courses/{course_id}/analytics.csv")
+async def course_analytics_csv(course_id: uuid.UUID, user: User = Depends(Authz(Action.results_view)),
+                               db: AsyncSession = Depends(get_db)):
+    """The per-assignment analytics table as CSV, from the same computation as the page (same access rule)."""
+    c = await load_course_for_staff(db, user, course_id)
+    text = _analytics_csv(await compute_analytics(db, c))
+    return _download(text, f"{_slug(c.code)}-analytics-{st.now():%Y%m%d}.csv")

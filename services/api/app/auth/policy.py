@@ -46,20 +46,21 @@ class Action(str, enum.Enum):
     admin = "admin"
 
 
-S, I, A = Role.student, Role.instructor, Role.admin
+# Role shorthands: S/tudent, INS/tructor, A/dmin. `I` alone trips ruff's E741 (ambiguous name).
+S, INS, A = Role.student, Role.instructor, Role.admin
 MATRIX: dict[Action, frozenset[Role]] = {
-    Action.me: frozenset({S, I, A}),
-    Action.assignment_view: frozenset({S, I, A}),
+    Action.me: frozenset({S, INS, A}),
+    Action.assignment_view: frozenset({S, INS, A}),
     Action.session_start: frozenset({S}),
     Action.session_use: frozenset({S}),
     Action.attempt_view_own: frozenset({S}),
-    Action.results_view: frozenset({I, A}),
-    Action.grade_regrade: frozenset({I, A}),
-    Action.override_grant: frozenset({I, A}),
-    Action.lab_manage: frozenset({I, A}),
-    Action.course_manage: frozenset({I, A}),
-    Action.session_manage: frozenset({I, A}),
-    Action.audit_view: frozenset({I, A}),
+    Action.results_view: frozenset({INS, A}),
+    Action.grade_regrade: frozenset({INS, A}),
+    Action.override_grant: frozenset({INS, A}),
+    Action.lab_manage: frozenset({INS, A}),
+    Action.course_manage: frozenset({INS, A}),
+    Action.session_manage: frozenset({INS, A}),
+    Action.audit_view: frozenset({INS, A}),
     Action.admin: frozenset({A}),
 }
 
@@ -88,6 +89,29 @@ class Authz:
         if user.role not in MATRIX[self.action]:
             log.warning("authz.denied", user_id=str(user.id), action=self.action.value,
                         role=user.role.value)
+            raise ApiError("forbidden", "you are not allowed to do this", 403)
+        return user
+
+
+class AuthzAny(Authz):
+    """Like `Authz`, but the route accepts any of several actions. Used by the console and terminal routes,
+    which serve both a student's own session and an instructor's preview sandbox: the role matrix lets the
+    request through, and the resource-level check (session ownership, or draft ownership for a preview) is
+    what actually decides access."""
+
+    def __init__(self, *actions: Action):
+        if not actions:
+            raise ValueError("at least one action is required")
+        self.actions = actions
+        self.action = actions[0]
+
+    async def __call__(self, request: Request, user: User = Depends(current_user)) -> User:
+        check_csrf(request)
+        if user.must_change_password and Action.me not in self.actions:
+            raise ApiError("password_change_required", "choose a new password before continuing", 403)
+        if not any(user.role in MATRIX[a] for a in self.actions):
+            log.warning("authz.denied", user_id=str(user.id),
+                        action="|".join(a.value for a in self.actions), role=user.role.value)
             raise ApiError("forbidden", "you are not allowed to do this", 403)
         return user
 

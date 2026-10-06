@@ -271,7 +271,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def markdown(r: dict[str, Any]) -> str:
-    lines = [f"| Students | Runners (seats) | Wall time | First wave started / full | Capacity rejections | Provisioning p50 / p95 / max | "
+    lines = ["| Students | Runners (seats) | Wall time | First wave started / full | Capacity rejections | Provisioning p50 / p95 / max | "
              "Grading p50 / p95 / max | Failures | Cleanup |", "|---|---|---|---|---|---|---|---|---|"]
     p, g = r["provisioning_seconds"], r["grading_seconds"]
     lines.append(f"| {r['students']} | {len(r['runners'])} ({r['seats']}) | {r['wall_seconds']} s | {r['first_wave']['started']} / "

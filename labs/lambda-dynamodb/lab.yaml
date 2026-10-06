@@ -1,0 +1,76 @@
+schema_version: 1
+id: lambda-dynamodb
+version: 1.0.0
+title: "Mission 7: CloudCafé's serverless orders"
+summary: Build a Lambda function that stores each order in DynamoDB and returns the amount due.
+story: |
+  Orders are arriving from the website, and CloudCafé wants a small **serverless** service to handle
+  them: a **DynamoDB** table for the orders and a **Lambda** function that validates an order, saves it,
+  and returns what the customer owes.
+
+  Your table is **{{ table }}** and your function is **{{ function }}**. Use the Region **us-east-1**.
+
+  Work in the **DynamoDB** and **Lambda consoles**, with the **AWS CLI**, or both. Invoking a function in
+  the simulator takes a few seconds, so be patient with **Test**.
+services: [dynamodb, lambda]
+runtime: {emulator: ministack}   # MiniStack executes Lambda code in-process; no other engine can
+duration_minutes: 50
+max_attempts: 3
+variables:
+  table: "cafe-{{ student_short_id }}-orders"
+  function: "cafe-{{ student_short_id }}-orders-fn"
+requires:
+  - dynamodb:CreateTable
+  - dynamodb:DescribeTable
+  - lambda:CreateFunction
+  - lambda:UpdateFunctionCode
+  - lambda:UpdateFunctionConfiguration
+  - lambda:Invoke
+tasks:
+  - id: create-table
+    title: "Create the orders table {{ table }}"
+    description: Order ID identifies an order, so make orderId (a String) the partition key. Add no sort
+      key, and choose the capacity mode for spiky, small traffic.
+    hints:
+      - "In the console, open **DynamoDB** and create a table. The partition key is part of the primary key."
+      - "Name the partition key exactly `orderId`, keep its type String, and choose **On-demand** capacity."
+      - "CLI: `aws dynamodb create-table help` shows --attribute-definitions, --key-schema and --billing-mode."
+    marks: 30
+    checks:
+      - {type: dynamodb.table_exists, table: "{{ table }}"}
+      - {type: dynamodb.key_schema, table: "{{ table }}", partition_key: orderId, partition_type: S}
+      - {type: dynamodb.billing_mode, table: "{{ table }}", mode: PAY_PER_REQUEST}
+  - id: create-function
+    title: "Create the function {{ function }}"
+    description: >-
+      Author it from scratch with the Python 3.12 runtime and the handler
+      lambda_function.lambda_handler. The table name must not be hard-coded in the code: put it in the
+      environment variable TABLE_NAME. Give the function at least 10 seconds.
+    hints:
+      - "In the console, open **Lambda** and create a function with **Author from scratch**."
+      - "Both the environment variable and the timeout are on the function's **Configuration** tab."
+      - "CLI: `aws lambda create-function help` covers --environment and --timeout."
+    marks: 25
+    checks:
+      - {type: lambda.function, name: "{{ function }}", runtime: python3.12,
+         handler: lambda_function.lambda_handler, env: {TABLE_NAME: "{{ table }}"}, timeout_min: 10}
+  - id: save-and-total
+    title: Save the order and return the amount due
+    description: |
+      The website sends events like
+      `{"orderId": "1001", "items": [{"price": 3, "qty": 2}, {"price": 4.5, "qty": 1}]}`.
+      Your function must save the order in the table and return
+      `{"orderId": "1001", "total": 11.34, "saved": true}` — the sum of price × qty plus 8% tax,
+      rounded to 2 decimal places. An empty order totals 0.
+    hints:
+      - "Edit the code on the **Code** tab, then choose **Deploy** before you test. Undeployed changes don't run."
+      - "Read the table name with `os.environ[\"TABLE_NAME\"]` and write with `put_item`; round the total to 2 decimals."
+      - "Use **Test** with the example event. The item that appears in the table is checked too."
+    marks: 45
+    checks:
+      - {type: lambda.invoke_returns, name: "{{ function }}",
+         payload: {orderId: "1001", items: [{price: 3, qty: 2}, {price: 4.5, qty: 1}]},
+         expect: {orderId: "1001", total: 11.34, saved: true}, weight: 2}
+      - {type: dynamodb.item, table: "{{ table }}", key: {orderId: "1001"}, attributes: {total: 11.34}, hidden: true}
+      - {type: lambda.invoke_returns, name: "{{ function }}", payload: {orderId: "1002", items: []},
+         expect: {total: 0}, hidden: true}

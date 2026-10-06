@@ -7,19 +7,16 @@ Moto contract tests (§8) and cleanup verification."""
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import socket
 import time
 import uuid
 from datetime import timedelta
 
-import boto3
 import httpx
 import pytest
 import uvicorn
 import websockets
-from botocore.config import Config
 from sqlalchemy import update
 
 from app.auth.security import CSRF_COOKIE, CSRF_HEADER
@@ -42,7 +39,7 @@ def engine(request, monkeypatch):
     """Run the test with this engine as the platform default (labs use runtime.emulator: default)."""
     monkeypatch.setattr(get_settings(), "default_emulator", request.param)
     return request.param
-ORIGIN = "http://localhost:3000"
+ORIGIN = get_settings().allowed_origins[0]  # an allowed browser origin for this deployment
 BUCKET = "cafe-alice1-site"
 
 

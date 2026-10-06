@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { expect, type Page, test } from "@playwright/test";
 
 // IAM journey: GUI user group + JSON customer managed policy attached to the group, CLI creates the user
-// and adds it to the group, the CloudLabs policy simulator proves least privilege, submit → 100.
+// and adds it to the group, the Stackora policy simulator proves least privilege, submit → 100.
 
 const PASSWORD = "cloudlabs-demo";
 const ID = "demo03";
@@ -67,7 +67,7 @@ test("student completes the IAM least-privilege lab", async ({ page }) => {
   await page.getByTestId("run-simulation").click();
   await expect(page.getByTestId("sim-result").nth(0)).toContainText("Allowed");
   await expect(page.getByTestId("sim-result").nth(1)).toContainText("Denied");
-  await expect(page.getByText("Simulated by CloudLabs")).toBeVisible();
+  await expect(page.getByText("Simulated by Stackora")).toBeVisible();
   await page.screenshot({ path: "../../docs/screenshots/10-iam-simulator.png" });
 
   // 5) Progress → 100, submit, cleanup

@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from app.config import get_settings
 from app.db import sessionmaker
 from app.models import Attempt, GradingEvidence, LabSession, SessionEvent, SessionState as S
-from tests.conftest import all_sessions, idem, login, make_world, seed_runner_row, wait_state
+from tests.conftest import all_sessions, idem, login, seed_runner_row, wait_state
 
 BUCKET = "cafe-alice1-site"
 

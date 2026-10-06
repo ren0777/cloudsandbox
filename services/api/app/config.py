@@ -1,7 +1,24 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Secrets that are public in git (old defaults in this file, the compose stack or the isolation overrides)
+# or trivially guessable. When demo mode is off, booting with one of these, with "change-me" in it, or with
+# fewer than MIN_SECRET_LENGTH characters is refused, so a real deployment can never inherit a dev value.
+KNOWN_INSECURE_SECRETS = frozenset({
+    "change-me",
+    "dev-insecure-change-me-dev-insecure-change-me",   # config.py default
+    "dev-only-secret-change-me-0123456789abcdef",      # infra/docker-compose.yml default
+    "dev-runner-secret",                               # config.py default
+    "dev-runner-secret-change-me",                     # infra/docker-compose.yml default
+    "dev-runner2-secret-change-me",
+})
+MIN_SECRET_LENGTH = 32
+
+
+def is_insecure_secret(value: str) -> bool:
+    return len(value) < MIN_SECRET_LENGTH or "change-me" in value or value in KNOWN_INSECURE_SECRETS
 
 
 class Settings(BaseSettings):
@@ -25,7 +42,9 @@ class Settings(BaseSettings):
     runner_id: str = "runner-local-1"
     runner_url: str = "http://runner:7070"
     runner_secret: str = "dev-runner-secret"
-    runner_timeout_s: float = 150.0
+    # Must exceed the runner's job cap (job_timeout_cap_s, 180 s): sandbox creation runs the lab's setup
+    # synchronously, and a CLI-heavy compiled setup (a VPC network) can legitimately use the whole cap.
+    runner_timeout_s: float = 240.0
     heartbeat_interval_s: float = 15.0
     runner_unhealthy_after_s: int = 90
     runner_lost_after_s: int = 300  # unreachable this long → its sessions fail (runner_lost), never migrate
@@ -71,8 +90,30 @@ class Settings(BaseSettings):
     # Lab Builder test runs (phase 8): one sandbox at a time per run, on the platform runner
     builder_max_concurrent_tests: int = 2
     builder_test_timeout_s: float = 900.0  # a run still "testing" after this is reported as interrupted
+    # Interactive preview sandboxes (M42): idle lifetime and how many one author may keep running.
+    preview_ttl_s: int = 1800
+    preview_max_per_user: int = 2
+    # Single-check runs against a preview sandbox (M47): minimum spacing between two runs for one draft.
+    preview_check_min_interval_s: float = 1.0
     default_emulator: str = "floci"  # engine for labs with runtime.emulator = default (promoted, EMULATOR-EVALUATION.md)
     grader_version: str = "1.0.0"
+
+    @model_validator(mode="after")
+    def _refuse_insecure_secrets_outside_demo_mode(self) -> "Settings":
+        # Demo mode is the documented dev/presentation escape hatch (PLAN §16): a fresh checkout boots
+        # with known credentials on purpose. Every other mode must carry real secrets.
+        if self.demo_mode:
+            return self
+        insecure = [name for name, value in (("CL_SECRET_KEY", self.secret_key),
+                                             ("CL_RUNNER_SECRET", self.runner_secret))
+                    if is_insecure_secret(value)]
+        if insecure:
+            raise ValueError(
+                f"{' and '.join(insecure)} must be replaced with unique random values of at least "
+                f"{MIN_SECRET_LENGTH} characters when CL_DEMO_MODE is false (e.g. `openssl rand -hex 32`); "
+                "known dev defaults, 'change-me' and shorter values are refused"
+            )
+        return self
 
 
 @lru_cache

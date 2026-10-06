@@ -27,13 +27,13 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from ..auth.policy import Action, Authz, load_session_for
+from ..auth.policy import Action, AuthzAny, load_session_for
 from ..auth.security import sha256_hex
 from ..config import get_settings
 from ..crypto import decrypt
 from ..db import get_db, sessionmaker
 from ..errors import ApiError
-from ..models import LabSession, SessionState as S, TerminalTicket, User
+from ..models import LabDraft, LabSession, Role, SessionState as S, TerminalTicket, User
 from ..obs.logging import bind, log
 from ..sessions import bus, service
 from ..sessions import state as st
@@ -46,18 +46,29 @@ REASONS = {S.SUBMITTING: "submitted", S.SUBMITTED: "submitted", S.RESETTING: "re
 
 
 @router.post("/api/sessions/{session_id}/terminal-ticket")
-async def issue_ticket(session_id: uuid.UUID, user: User = Depends(Authz(Action.session_use)),
+async def issue_ticket(session_id: uuid.UUID,
+                       user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                        db: AsyncSession = Depends(get_db)):
+    """A single-use terminal ticket for a student's READY session, or for an instructor's preview sandbox
+    (phase 9 M42; the same sandbox, but no session, attempt or grade)."""
     s = get_settings()
-    sess = await load_session_for(db, user, session_id)
-    if sess.state != S.READY:
-        raise ApiError("invalid_state", "the terminal is available only while the lab is running", 409,
-                       extra={"state": sess.state.value})
     raw = secrets.token_urlsafe(32)  # 256 bits
-    db.add(TerminalTicket(ticket_hash=sha256_hex(raw), session_id=sess.id, user_id=user.id,
-                          expires_at=st.now() + timedelta(seconds=s.terminal_ticket_ttl_s)))
+    expires = st.now() + timedelta(seconds=s.terminal_ticket_ttl_s)
+    sess = await db.get(LabSession, session_id)
+    if sess is not None:
+        sess = await load_session_for(db, user, session_id)
+        if sess.state != S.READY:
+            raise ApiError("invalid_state", "the terminal is available only while the lab is running", 409,
+                           extra={"state": sess.state.value})
+        db.add(TerminalTicket(ticket_hash=sha256_hex(raw), session_id=sess.id, user_id=user.id, expires_at=expires))
+        key = sess.id
+    else:
+        from ..instructor.preview import preview_for_terminal
+        d = await preview_for_terminal(db, user, session_id)
+        db.add(TerminalTicket(ticket_hash=sha256_hex(raw), draft_id=d.id, user_id=user.id, expires_at=expires))
+        key = d.id
     await db.commit()
-    log.info("terminal.ticket.issued", session_id=str(sess.id), user_id=str(user.id))
+    log.info("terminal.ticket.issued", session_id=str(key), user_id=str(user.id))
     return {"ticket": raw, "expires_in": s.terminal_ticket_ttl_s, "ws_path": "/ws/terminal"}
 
 
@@ -78,38 +89,55 @@ async def terminal_ws(ws: WebSocket, ticket: str = ""):
     if not ticket:
         await _reject(ws, 4401, "invalid_ticket")
         return
+    sess: LabSession | None = None
+    draft: LabDraft | None = None
     async with sessionmaker()() as db:
         row = (await db.execute(
             update(TerminalTicket)
             .where(TerminalTicket.ticket_hash == sha256_hex(ticket), TerminalTicket.used_at.is_(None),
                    TerminalTicket.expires_at > st.now())
             .values(used_at=st.now())
-            .returning(TerminalTicket.session_id, TerminalTicket.user_id))).first()
+            .returning(TerminalTicket.session_id, TerminalTicket.draft_id, TerminalTicket.user_id))).first()
         await db.commit()
         if row is None:
             await _reject(ws, 4401, "invalid_ticket")
             return
-        sess = await db.get(LabSession, row.session_id)
-    if sess is None or sess.user_id != row.user_id or sess.state != S.READY:
-        await _reject(ws, 4409, "session_not_ready", session_id=str(row.session_id))
+        if row.session_id is not None:
+            sess = await db.get(LabSession, row.session_id)
+        else:
+            draft = await db.get(LabDraft, row.draft_id)
+            ticket_user = await db.get(User, row.user_id)
+    if sess is not None:
+        if sess.user_id != row.user_id or sess.state != S.READY:
+            await _reject(ws, 4409, "session_not_ready", session_id=str(row.session_id))
+            return
+        key, endpoint, cred_enc = sess.id, sess.terminal_endpoint, sess.ttyd_cred_enc
+        bind(session_id=sess.id, sandbox_id=sess.id, user_id=sess.user_id)
+    else:
+        lp = (draft.last_preview if draft is not None else None) or {}
+        allowed = draft is not None and ticket_user is not None and (
+            ticket_user.role == Role.admin or draft.owner_id == ticket_user.id)
+        if not allowed or lp.get("status") != "running" or not lp.get("terminal_endpoint"):
+            await _reject(ws, 4409, "session_not_ready", sandbox_id=str(row.draft_id))
+            return
+        key, endpoint, cred_enc = uuid.UUID(lp["sandbox_id"]), lp["terminal_endpoint"], lp.get("ttyd_cred_enc")
+        bind(sandbox_id=key, user_id=row.user_id, draft_id=str(draft.id))
+    if _open[key] >= s.terminal_max_per_session:
+        await _reject(ws, 4429, "too_many_terminals", sandbox_id=str(key))
         return
-    bind(session_id=sess.id, sandbox_id=sess.id, user_id=sess.user_id)
-    if _open[sess.id] >= s.terminal_max_per_session:
-        await _reject(ws, 4429, "too_many_terminals", session_id=str(sess.id))
-        return
-    cred = decrypt(sess.ttyd_cred_enc or "")
+    cred = decrypt(cred_enc or "")
     auth = base64.b64encode(cred.encode()).decode()
     try:
         upstream = await websockets.connect(
-            sess.terminal_endpoint or "", subprotocols=["tty"],  # type: ignore[list-item]
+            endpoint or "", subprotocols=["tty"],  # type: ignore[list-item]
             additional_headers={"Authorization": f"Basic {auth}"}, open_timeout=10,
             max_size=s.terminal_max_frame_bytes * 4)
     except Exception as e:
-        log.warning("terminal.closed", session_id=str(sess.id), reason="upstream_unavailable", error=repr(e))
+        log.warning("terminal.closed", sandbox_id=str(key), reason="upstream_unavailable", error=repr(e))
         await ws.close(code=1011, reason="terminal_unavailable")
         return
     await ws.accept()
-    _open[sess.id] += 1
+    _open[key] += 1
     closing: dict[str, str] = {}
 
     def on_state(state: S, _: str) -> None:
@@ -117,9 +145,18 @@ async def terminal_ws(ws: WebSocket, ticket: str = ""):
             closing["reason"] = REASONS.get(state, "closed")
             asyncio.get_running_loop().create_task(upstream.close())
 
-    unsubscribe = bus.subscribe(sess.id, on_state)
-    log.info("terminal.connected", session_id=str(sess.id))
+    # A session publishes state changes (submit/reset/stop) and its terminal follows them; a preview has no
+    # session state, so its terminal simply ends when the runner replaces or destroys the sandbox.
+    unsubscribe = bus.subscribe(sess.id, on_state) if sess is not None else (lambda: None)
+    log.info("terminal.connected", sandbox_id=str(key), preview=sess is None)
     await upstream.send(json.dumps({"AuthToken": auth, "columns": 100, "rows": 30}))
+
+    async def touch() -> None:
+        if sess is not None:
+            await service.touch(sess.id)
+        else:
+            from ..instructor.preview import _touch
+            await _touch(draft.id, str(key))
 
     async def browser_to_upstream() -> None:
         while True:
@@ -133,7 +170,7 @@ async def terminal_ws(ws: WebSocket, ticket: str = ""):
                 continue
             if m.get("t") == "i" and isinstance(m.get("d"), str):
                 await upstream.send(b"0" + m["d"].encode())
-                await service.touch(sess.id)
+                await touch()
             elif m.get("t") == "r":
                 cols, rows = int(m.get("c", 100)), int(m.get("r", 30))
                 if 10 <= cols <= 500 and 5 <= rows <= 200:
@@ -155,9 +192,9 @@ async def terminal_ws(ws: WebSocket, ticket: str = ""):
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         unsubscribe()
-        _open[sess.id] -= 1
-        if _open[sess.id] <= 0:
-            _open.pop(sess.id, None)
+        _open[key] -= 1
+        if _open[key] <= 0:
+            _open.pop(key, None)
         await upstream.close()
         reason = closing.get("reason", "closed")
         if ws.application_state == WebSocketState.CONNECTED and ws.client_state == WebSocketState.CONNECTED:
@@ -165,7 +202,7 @@ async def terminal_ws(ws: WebSocket, ticket: str = ""):
                 await ws.close(code=1000, reason=reason)
             except RuntimeError:
                 pass
-        log.info("terminal.closed", session_id=str(sess.id), reason=reason)
+        log.info("terminal.closed", sandbox_id=str(key), reason=reason)
 
 
 def open_count(session_id: uuid.UUID) -> int:

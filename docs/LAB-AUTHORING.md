@@ -18,7 +18,7 @@ title: "Mission 1: CloudCafé goes online"
 summary: One line for the lab card.
 story: |                          # markdown-lite: paragraphs, **bold**, `code`; may use variables
   Your bucket is **{{ bucket }}**.
-services: [s3]                    # s3 | dynamodb | iam | ec2 available; lambda later
+services: [s3]                    # s3 | dynamodb | iam | ec2 | lambda | vpc | sqs | sns available
 runtime: {emulator: default}      # platform default engine; name an engine only if a lab truly needs it
 duration_minutes: 45              # hard TTL (capped at 120)
 idle_minutes: 20                  # optional (clamped to 10–30)
@@ -28,7 +28,9 @@ variables:                        # rendered per student; student_short_id is bu
 requires: [s3:CreateBucket, s3:PutBucketVersioning]   # emulator operations students need
 resources:                        # optional; clamped to admin caps
   emulator: {memory_mib: 512}
-setup: {script: setup.sh, timeout_s: 60}             # optional, file in public/
+setup: {script: setup.sh, timeout_s: 60}             # optional legacy break-fix setup, file in public/
+break_actions: []                                    # break_fix: typed starting-state actions (preferred)
+baseline: {expected_score: "0.00"}                   # break_fix: score the broken state should earn
 tasks:
   - id: create-bucket
     title: "Create the bucket {{ bucket }}"
@@ -70,6 +72,21 @@ tasks:
 | `ec2.key_pair_exists` | `key` | the key pair exists |
 | `ec2.running_instance_count` | `min`, `max` | the number of running instances is within the bounds (use `min: 1` so an empty sandbox can't pass) |
 
+| `vpc.exists` | `name` (Name tag), `cidr` | a VPC with that name and CIDR block exists |
+| `vpc.subnet` | `name`, `cidr`, `vpc`?, `public`? | a subnet with that name/CIDR; optionally in that VPC and public (`MapPublicIpOnLaunch`) |
+| `vpc.route` | `route_table`, `destination`, `target` (`igw:<name>` or `local`), `expect` (present/absent) | the route table has (or lacks) that route |
+| `vpc.subnet_route_table` | `subnet`, `route_table`, `expect` (present/absent) | the subnet is (or is no longer) associated with the route table |
+| `vpc.internet_gateway_attached` | `internet_gateway`, `vpc`, `expect` (present/absent) | the gateway is (or is no longer) attached to the VPC |
+| `vpc.security_group_rule` | `group`, `direction` (ingress/egress), `protocol`, `port`, `cidr`, `expect` (present/absent) | the rule is present/absent (an "All traffic" rule covers every port) |
+
+| `sqs.queue_exists` | `name`, `fifo`? | a queue with that name exists (optionally Standard or FIFO) |
+| `sqs.queue_attribute` | `queue`, `attribute` (`visibility_timeout` / `retention_period` / `delay_seconds`), `value` | the queue attribute has that integer value |
+| `sqs.queue_tag` | `queue`, `key`, `value` | the queue has that tag |
+| `sqs.message_present` | `queue`, `body_contains`? | a message is on the queue (probe: peeks up to 10 messages with visibility 0 — nothing is consumed, so grading never steals the student's message) |
+
+| `sns.topic_exists` | `name`, `display_name`? | the topic exists, optionally with that display name |
+| `sns.subscription` | `topic`, `queue`, `expect` (present/absent) | the queue is (or no longer is) subscribed to the topic over SQS. Combine with `sqs.message_present` to grade real delivery: SNS has no egress, so in-sandbox queue delivery is the only safe target |
+
 | `lambda.function` | `name`, `runtime`?, `handler`?, `role_name`?, `env` {K: V}?, `memory_min`?, `timeout_min`? | the function exists with those settings |
 | `lambda.invoke_returns` | `name`, `payload` (event), `expect` | invoking the function with `payload` returns a response containing `expect` (dicts match as a subset, numbers with float tolerance) |
 
@@ -89,19 +106,56 @@ Instances are simulated records: they have a state but no running machine. Check
 import.
 
 ## Break-fix labs
-Set `kind: break_fix` and provide a `setup` script in `public/`. Setup runs in a short-lived job container
-before the lab starts and again on **Reset**, with the AWS CLI pointed at the sandbox and every variable
-exported in upper case (`$GROUP`, `$STUDENT_SHORT_ID`, …). It builds the broken environment. Tasks then check
-the **repaired final state**. Rules of thumb:
-- The untouched broken state must score **0** (`private/expected.yaml` `empty`); labtest runs setup first.
-- Grade the outcome, not the steps: use `expect: absent` for "remove this", `iam.policy_allows` with
-  `expect: deny` for "can no longer", and `absent_ok: true` when deleting the principal is a valid fix.
+Set `kind: break_fix` and describe the broken starting state with **typed break actions** in `lab.yaml`.
+Actions are declarative data, never instructor-written shell: each is a safe operation with a typed
+parameter model, and CloudLabs compiles them into the setup that runs in a short-lived job container before
+the lab starts and again on **Reset**, with the AWS CLI pointed at the sandbox and every variable exported
+in upper case (`$GROUP`, `$STUDENT_SHORT_ID`, …). Tasks then check the **repaired final state**.
+
+```yaml
+kind: break_fix
+break_actions:
+  - {type: iam.create_group, group: "{{ group }}"}
+  - {type: iam.attach_managed_policy, target_type: group, target: "{{ group }}", policy: AdministratorAccess}
+  - {type: s3.disable_versioning, bucket: "{{ bucket }}"}
+  - {type: ec2.authorize_ingress, group: "{{ group }}", protocol: tcp, port: 22, cidr: 0.0.0.0/0}
+  - {type: vpc.delete_route, route_table: "{{ route_table_name }}", destination: "0.0.0.0/0"}
+  - {type: lambda.remove_env_var, function: "{{ function }}", name: TABLE_NAME}
+baseline: {expected_score: "0.00"}   # or e.g. "40.00" when the lab intentionally starts partly correct
+```
+
+The catalogue (services, action types, parameter JSON Schema) is `GET /api/instructor/builder/break-actions`;
+the Lab Builder's **Starting state** tab generates its forms from it and shows the Broken State Summary. The
+catalogue covers IAM (create group/user, membership, attach/detach a managed policy), S3 (create bucket,
+versioning, bucket policy, public access, tags), EC2 (security group, ingress rules), VPC (create a VPC,
+subnet, internet gateway, route table, route, association, security group; authorize/revoke ingress and
+delete a route), SQS (create a queue with attributes, set an attribute, send a message, delete a queue),
+SNS (create/delete a topic, subscribe an SQS queue, unsubscribe it, publish) and Lambda (remove an
+environment variable); new typed actions are added in `services/api/app/breakfix/`. Import-time
+validation rejects an unknown action, bad parameters, a service not listed in `services`, and any action
+an engine cannot perform.
+
+**SNS CLI note:** the AWS CLI v2 exposes the SNS `Endpoint` parameter as
+`--notification-endpoint` (`--endpoint` is parsed as the global `--endpoint-url`). The compiled actions
+use the correct flag; an authored script must too.
+
+Rules of thumb:
+- The untouched broken state must score `baseline.expected_score` (0 unless the lab starts partly correct);
+  `private/expected.yaml`'s `empty` must match it, and it must be **below full marks**. labtest runs setup
+  first.
+- labtest also **resets** the sandbox and re-scores it: Reset must reproduce the identical baseline.
+- Grade the outcome, not the steps: `expect: absent` for "remove this", `iam.policy_allows` with
+  `expect: deny` for "can no longer", `absent_ok: true` when deleting the principal is a valid fix.
 - Add at least one check that a lazy "fix" fails, such as deleting everything or granting `*`. Hidden checks
   work well here.
-- The setup script isn't secret (it describes the problem). Keep solutions in `private/`.
+- The compiled setup isn't secret (it describes the problem). Keep solutions in `private/`.
 - The baseline is captured after setup, so an untouched auto-submit doesn't use an attempt.
+- A compiled setup is a sequence of AWS CLI calls and gets the runner's **180 s** job cap (a whole VPC
+  network is ~30 calls); a legacy `setup` script keeps its own `timeout_s` (max 180 s) for the same reason.
 
-Example: `labs/iam-breakfix` (Mission 6).
+Legacy packs (like `labs/iam-breakfix`) may instead carry a `setup` script in `public/`; it runs the same
+way. A lab uses `break_actions` **or** a setup script, never both; the Lab Builder carries a legacy setup
+script read-only.
 
 ## The simulator is honest
 Every operation in `requires`, and every operation a check reads, must be `supported` or `simulated` in
@@ -134,8 +188,12 @@ Assignments pin a lab version, so editing a pack never changes what running assi
 Instructors can create, test and publish labs from the browser instead of editing files on the server
 (`/instructor/labs`, phase 8). It writes the same schema-v1 packs described above.
 
-- **New / Clone / Import.** *New* starts from a small S3 template. *Clone* copies any lab version you can
-  see: a built-in mission or another author's lab becomes a new id `<id>-<your short id>` at `1.0.0`
+- **New / Templates / Clone / Import.** *New* opens a gallery: **Start from scratch** (a small S3 lab) or a
+  **template** — a working built-in lab offered as a starting point (S3 basics, DynamoDB basics, IAM least
+  privilege, EC2 web server, Lambda serverless, IAM break-fix). A template becomes **your own** lab: new id
+  `<title-slug>-<your short id>`, version `1.0.0`, your title, with all tasks, checks, reference solution and
+  expected scores carried over (`GET /api/instructor/builder/templates`). *Clone* copies any lab version you
+  can see: a built-in mission or another author's lab becomes a new id `<id>-<your short id>` at `1.0.0`
   (titled "… (copy)"), while cloning **your own** lab prepares its next minor version (same id, e.g.
   `1.1.0`). *Import* accepts a `.tar.gz`/`.tar` pack exported from the builder.
 - **Editor.** Overview (including variables), Tasks and Scripts are a form builder; the check parameter
@@ -146,13 +204,35 @@ Instructors can create, test and publish labs from the browser instead of editin
 - **Editable vs read-only files.** Only `private/solution.sh`, `private/partial.sh`,
   `private/expected.yaml` and `private/notes.md` are editable. Any other file from a clone or import (for
   example a break-fix `setup.sh`) is carried unchanged and shown read-only; v1 does not author setup scripts.
+- **Preview sandbox.** From the Starting state tab, *Launch preview sandbox* opens the declared starting state
+  in a **real isolated sandbox** — the same sandbox a student lab gets — inspectable in the AWS-style console
+  and the browser terminal. **Reset** re-runs the declared typed actions, so the broken state comes back
+  identically. A preview is **not a session**: it creates no attempt, grade, XP, badge or leaderboard event,
+  and only the draft's author (or an admin) can see it.
+- **Autosave and undo.** Every edit is saved about a second after you stop typing; the header shows
+  *Saving… / Saved / Save failed*, and a failed save offers *Try again* (it is never retried in a loop).
+  **Undo**/**Redo** (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z) walk your edits in meaningful steps — a burst of typing
+  counts as one — and switching tabs or leaving the page never discards work. If the draft is saved
+  somewhere else meanwhile (another tab, a test run) the builder refuses to overwrite it and offers
+  *Reload draft* instead; published, immutable versions are never touched.
+- **Run this check.** On the Tasks tab each check can be run on its own against the running preview
+  sandbox. It returns the grader's own **expected / actual, pass/fail, marks possible and message** — the
+  same check function and evidence capture final grading uses — without creating an attempt, grade, badge
+  or evidence row. A check the engine cannot answer says so and names the operation; runs are spaced about
+  a second apart, and an invalid pack reports the same row-level errors as the validation panel.
+- **Publish readiness.** The Test & publish tab lists every gate before the Publish button: schema/services/
+  ownership validation, engine capability support, the baseline against `baseline.expected_score`, the
+  reference solution at full marks, Reset reproducing the baseline, and a passing test of the **current**
+  content — each with row-level errors. Publishing is enabled only when every row passes.
 - **Validation** is always shown, and each error is placed on the row that caused it (a task/check/field, or
   a file). Drafts save even while invalid — they are work in progress.
 - **Test & publish gate.** A lab can only be published after a test run in **real sandboxes** on every engine
-  the lab may run on: an untouched sandbox must score `0`, `private/partial.sh` (if present) must reach the
-  score in `expected.yaml`, and the reference solution must score full marks. The run is asynchronous and
-  per-check results appear as they land. Publishing is allowed only while the last test passed on the
-  **current** content hash — editing even `notes.md` invalidates it and requires a new run.
+  the lab may run on: an untouched sandbox must score its baseline (`baseline.expected_score`, default `0`; a
+  break-fix lab may start partly correct), `private/partial.sh` (if present) must reach the score in
+  `expected.yaml`, and the reference solution must score full marks. For a break-fix lab the run also resets
+  the sandbox and re-scores it, so Reset must reproduce the baseline. The run is asynchronous and per-check
+  results appear as they land. Publishing is allowed only while the last test passed on the **current**
+  content hash — editing even `notes.md` invalidates it and requires a new run.
 - **Publishing** imports an immutable lab version owned by the author and records `lab.published`. The lab is
   **private to its author (and admins)** until the author marks it *shared*, which makes it visible to every
   instructor to assign or clone. Versions are immutable: editing a published lab means cloning it into a new

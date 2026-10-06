@@ -1,22 +1,30 @@
-# CloudLabs
+# Stackora
 
-Hands-on AWS labs for college courses, with automatic grading. Each student gets an **isolated simulated AWS
-cloud** in Docker (no AWS account, no cost, no internet). They work in an **AWS-style console** or with the
-**real AWS CLI** in a browser terminal, and are graded on the **actual state** of what they built, using immutable,
-explainable evidence that instructors can inspect.
+**Launch it. Break it. Fix it.** — Hands-on cloud labs with real CLI workflows and instant grading.
 
-**Version 0.1.0.** S3, DynamoDB, IAM, EC2 and Lambda; guided and break-fix labs; instructor and admin tools;
+Each student gets an **isolated simulated AWS cloud** in Docker (no AWS account, no cost, no internet). They
+work in an **AWS-style console** or with the **real AWS CLI** in a browser terminal, and are graded on the
+**actual state** of what they built, using immutable, explainable evidence that instructors can inspect.
+
+> **Branding:** **Stackora** is the public product name. The repository, Python/Node packages, Docker images,
+> database identifiers and API contracts keep the `cloudlabs` codename for compatibility. Older docs and
+> release notes may say CloudLabs; they mean Stackora.
+
+**Version 0.2.0** (VPC, SQS and SNS added since). S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS; guided
+and break-fix labs; instructor and admin tools;
 multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES.md). Verified status:
 [docs/STATUS.md](docs/STATUS.md).
 
-## v0.2.0 (unreleased)
-- **Instructor Lab Builder** (`/instructor/labs`, in progress): create, **clone** or **import** a lab, edit
+## v0.2.0
+- **Instructor Lab Builder** (`/instructor/labs`): create, **clone** or **import** a lab, edit
   it in the browser (a form builder with a synchronised **YAML** view and a redacted **student preview**),
   **validate** it, **test** it in real sandboxes (untouched `0`, optional partial, reference solution full
   marks) and **publish** it as an immutable version. Authored labs are private to their author (and admins)
   until **shared** with all instructors; packs export/import as deterministic `.tar.gz`. See
   [docs/LAB-AUTHORING.md](docs/LAB-AUTHORING.md#instructor-lab-builder-browser) and, for the security
   boundary, [docs/SECURITY.md](docs/SECURITY.md). Optional walkthrough: [docs/DEMO.md](docs/DEMO.md).
+- **Public landing page** at `/` (Stackora marketing site), with `/login` as the authentication page and the
+  authenticated app behind it.
 
 ## Prerequisites
 - Docker Desktop (Windows with the WSL2 backend, or macOS) or Docker Engine 24+ with Compose v2 (Linux).
@@ -28,7 +36,7 @@ multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES
 Windows (PowerShell):
 ```powershell
 scripts\up.ps1           # builds the sandbox images and the stack, starts it  → http://localhost:3000
-scripts\demo-reset.ps1   # seeds demo accounts, a course and six labs
+scripts\demo-reset.ps1   # seeds demo accounts, a course and thirteen labs
 ```
 Linux / macOS:
 ```bash
@@ -37,6 +45,7 @@ scripts/demo-reset.sh
 ```
 The first build takes several minutes. Then sign in at http://localhost:3000 with password `cloudlabs-demo` as
 `demo-student1@cloudlabs.demo` (students 1–3), `demo-instructor@cloudlabs.demo` or `demo-admin@cloudlabs.demo`.
+While `CL_DEMO_MODE=true` the login page lists these accounts, so you can sign in with one click.
 Demo accounts exist only while `CL_DEMO_MODE=true` (the laptop default). The teacher walkthrough is in
 [docs/DEMO.md](docs/DEMO.md).
 
@@ -66,6 +75,7 @@ Load test: [docs/LOADTEST.md](docs/LOADTEST.md).
 | [docs/LOADTEST.md](docs/LOADTEST.md) | Class-scale load test and results |
 | [docs/EMULATOR-EVALUATION.md](docs/EMULATOR-EVALUATION.md) | Why Floci (default), Moto (regression) and MiniStack (Lambda code) |
 | [docs/DEMO.md](docs/DEMO.md) | Reproducible teacher demonstration |
+| [docs/INSTRUCTOR-QUICKSTART.md](docs/INSTRUCTOR-QUICKSTART.md) | Your first lab, step by step, in the browser (no YAML or shell) |
 
 ## Repository
 ```

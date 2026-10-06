@@ -1,0 +1,4 @@
+# Scores the test run must produce (PRIVATE)
+empty: "0.00"
+partial: "55.00"
+solution: "100.00"

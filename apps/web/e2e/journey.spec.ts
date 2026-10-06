@@ -6,6 +6,9 @@ import { expect, type Page, test } from "@playwright/test";
 // instructor sees result + per-check evidence → sandbox cleaned up.
 
 const PASSWORD = "cloudlabs-demo";
+// An isolated Compose project runs under its own runner id (infra/docker-compose.*.yml), so the admin's
+// runner row must not be hardcoded — the same rule fleet.spec.ts already follows for runner2.
+const RUNNER_ID = process.env.CLOUDLABS_RUNNER_ID ?? "runner-local-1";
 const BUCKET = "cafe-demo01-site";
 let sessionId = "";
 const shot = (page: Page, name: string) => page.screenshot({ path: `../../docs/screenshots/${name}.png` });
@@ -35,7 +38,7 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
     await expect(page.getByRole("heading", { name: "My labs" })).toBeVisible();
     await expect(page.getByTestId("lab-card").first()).toBeVisible();
     await shot(page, "01-my-labs");
-    await page.getByTestId("lab-card").filter({ hasText: "Mission 1" }).click();
+    await page.getByTestId("lab-card").filter({ hasText: "Mission 1: CloudCafé goes online" }).click();
     await expect(page.getByRole("heading", { name: /CloudCafé goes online/ })).toBeVisible();
     await shot(page, "02-lab-brief");
     await page.getByTestId("start-lab").click();
@@ -53,7 +56,7 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
     // 1) GUI: S3 → Buckets → Create bucket (AWS-style form, defaults kept).
     await page.getByTestId("open-create-bucket").click();
     await expect(page.getByRole("heading", { name: "Block Public Access settings for this bucket" })).toBeVisible();
-    await expect(page.getByText("Not available in CloudLabs simulator").first()).toBeVisible();
+    await expect(page.getByText("Not available in Stackora simulator").first()).toBeVisible();
     await page.getByTestId("new-bucket-name").fill(BUCKET);
     await page.getByTestId("create-bucket").click();
     await expect(page.getByText(`Successfully created bucket "${BUCKET}".`)).toBeVisible();
@@ -64,7 +67,7 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
     // 2) CLI proves it, then changes state.
     await page.getByTestId("tab-terminal").click();
     await expect(page.getByText("Connected")).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator(".xterm-rows")).toContainText("CloudLabs AWS CLI environment");
+    await expect(page.locator(".xterm-rows")).toContainText("Stackora AWS CLI environment");
     await termRun(page, "aws s3 ls | sed s/^/LS:/", `LS:`);
     await expect(page.locator(".xterm-rows")).toContainText(new RegExp(`LS:.*${BUCKET}`));
     await termRun(page, `aws s3api put-bucket-versioning --bucket ${BUCKET} --versioning-configuration Status=Enabled && echo VERSIONING_$((40+2))`, "VERSIONING_42");
@@ -113,7 +116,7 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
   test("instructor sees the stored result and per-check evidence", async ({ page }) => {
     await signIn(page, "demo-instructor@cloudlabs.demo");
     await expect(page.getByRole("heading", { name: "Courses" })).toBeVisible();
-    await page.getByTestId("assignment-link").filter({ hasText: "Mission 1" }).click();
+    await page.getByTestId("assignment-link").filter({ hasText: "Mission 1: CloudCafé goes online" }).click();
     const row = page.getByTestId("result-row").filter({ hasText: "Sam Student" });
     await expect(row).toContainText("100.00");
     await row.getByRole("link", { name: /#1: 100.00/ }).click();
@@ -127,7 +130,8 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
   test("admin sees runtime status", async ({ page }) => {
     await signIn(page, "demo-admin@cloudlabs.demo");
     await expect(page.getByRole("heading", { name: "Runtime status" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "runner-local-1" })).toBeVisible();
+    // anchored: "runner-m45" must not also match "runner-m45-2" when a second runner is registered
+    await expect(page.getByRole("cell", { name: new RegExp(`^${RUNNER_ID}(\\s|$)`) })).toBeVisible();
     await expect(page.getByText("Healthy").first()).toBeVisible();
     await shot(page, "07-runtime-status");
   });

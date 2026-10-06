@@ -116,7 +116,7 @@ table.data tr:last-child td { border-bottom: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .dialog-backdrop { position: fixed; inset: 0; background: rgba(12, 20, 38, .45); display: grid; place-items: center; z-index: 50; padding: 16px; }
-.dialog { background: #fff; border-radius: 14px; padding: 22px; width: min(460px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+.dialog { background: #fff; border-radius: 14px; padding: 22px; width: min(460px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,.25); max-height: calc(100vh - 32px); overflow: auto; }
 
 .muted { color: var(--muted); }
 .small { font-size: 13px; }

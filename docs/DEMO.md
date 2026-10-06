@@ -1,6 +1,6 @@
-# CloudLabs — teacher demonstration script
+# Stackora — teacher demonstration script
 
-A reproducible 10-minute core demo (CloudLabs v0.1.0): a student completes an S3 lab using **both** the web
+A reproducible 10-minute core demo (Stackora v0.1.0): a student completes an S3 lab using **both** the web
 console and the real AWS CLI, is graded on the **actual state** of their sandbox, and the instructor inspects
 the evidence. The optional sections after it show the other services, instructor and admin tools, the learning
 layer and multi-server readiness. Every section is automated in `apps/web/e2e/` (`journey.spec.ts` for §1–7,
@@ -18,7 +18,7 @@ scripts\demo-reset.ps1  # or: ./scripts/demo-reset.sh
 ```
 
 `demo-reset` must end with `RESULT: READY`. It wipes previous demo data and demo sandboxes, reseeds the
-accounts below and the course *Cloud Computing Demo*, imports the six lab packs (Missions 1–6) and checks the
+accounts below and the course *Cloud Computing Demo*, imports the seven lab packs (Missions 1–7) and checks the
 database, runner and sandbox images.
 
 | Role | Email | Password |
@@ -27,7 +27,8 @@ database, runner and sandbox images.
 | Instructor | `demo-instructor@cloudlabs.demo` | `cloudlabs-demo` |
 | Admin | `demo-admin@cloudlabs.demo` | `cloudlabs-demo` |
 
-Open **http://localhost:3000**. Run `demo-reset` again before every presentation.
+Open **http://localhost:3000**. While `CL_DEMO_MODE=true` the login page lists these accounts (with the
+password) and signs you in with one click. Run `demo-reset` again before every presentation.
 
 ## 1. Student starts the lab
 1. Sign in as **demo-student1**. *My labs* shows "Mission 1: CloudCafé goes online".
@@ -40,7 +41,7 @@ Open **http://localhost:3000**. Run `demo-reset` again before every presentation
 ## 2. Create in the GUI → prove in the CLI
 1. In **Console → S3 → General purpose buckets**, choose **Create bucket**. Point out the AWS-style form
    (AWS Region, Object Ownership, Block Public Access, Bucket Versioning, Tags) and the settings labelled
-   *Not available in CloudLabs simulator*. Enter `cafe-demo01-site`, keep the defaults and choose **Create bucket**.
+   *Not available in Stackora simulator*. Enter `cafe-demo01-site`, keep the defaults and choose **Create bucket**.
 2. Switch to **AWS CLI** and run:
    ```bash
    aws s3 ls
@@ -97,7 +98,7 @@ Sign in as **demo-student3** and open *Mission 3*. In **IAM → User groups**, c
 `arn:aws:s3:::cafe-demo03-site/*` and name it `menu-read-demo03`. Attach it to the group with **Add
 permissions**. In **AWS CLI**, create the user and add it to the group:
 `aws iam create-user --user-name barista-demo03 && aws iam add-user-to-group --group-name baristas-demo03 --user-name barista-demo03`.
-Show the **Policy simulator** (labelled *Simulated by CloudLabs*): GetObject **Allowed**, DeleteObject
+Show the **Policy simulator** (labelled *Simulated by Stackora*): GetObject **Allowed**, DeleteObject
 **Denied**. Then try attaching `AmazonS3ReadOnlyAccess` instead and watch the least-privilege task fail on the
 payroll-bucket check.
 
@@ -128,7 +129,7 @@ a hidden empty-order test.
 3. The temporary password is shown **once** (**Download credentials CSV**). The roster shows *Awaiting first
    sign-in*.
 4. **New assignment** → choose a lab, dates and attempts → **Create assignment**.
-5. In a private window, sign in as `asha@cloudlabs.demo` with the temporary password: CloudLabs requires a new
+5. In a private window, sign in as `asha@cloudlabs.demo` with the temporary password: Stackora requires a new
    password before anything else, then shows the lab.
 6. Every one of these actions is in the audit log (see *Admin* below).
 
@@ -166,7 +167,7 @@ a hidden empty-order test.
 ## Optional: Multi-server readiness (about 4 minutes)
 1. Start the second runner: `docker compose -f infra/docker-compose.yml --profile multi up -d runner2`, then register it
    as **demo-admin** in **Runtime → Register runner** (`runner-local-2`, `http://runner2:7070`, secret
-   `dev-runner2-secret-change-me`). CloudLabs contacts it before saving, so a wrong secret or id is refused.
+   `dev-runner2-secret-change-me`). Stackora contacts it before saving, so a wrong secret or id is refused.
 2. The Runtime page shows both runners: health, seats, CPU and memory, and engine images. runner-local-2 runs in
    **gateway** mode, exactly as a runner on another server would.
 3. Start labs as two students: they land on different runners (least loaded first). Both terminals and consoles work.
@@ -177,9 +178,12 @@ a hidden empty-order test.
 
 ## Optional: Instructor Lab Builder (about 6 minutes)
 1. As **demo-instructor**, nav **Labs**: *My drafts*, *My labs*, *Shared labs* and *Built-in missions*.
-   Point out that a built-in mission (e.g. Mission 1) offers **Clone** and **Export**.
-2. **Clone** Mission 1. The draft opens on Overview with a green validation panel; the Tasks tab shows the
-   checks as generated forms, and **Preview** shows the student view (no checks, no private files).
+   Point out that a built-in mission (e.g. Mission 1) offers **Clone** and **Export**. Choose **New lab**
+   to show the template gallery (S3 basics, DynamoDB basics, IAM least privilege, EC2 web server, Lambda,
+   IAM break-fix) — a working lab, not a blank page.
+2. **Clone** Mission 1 (or start from the S3 basics template). The draft opens on Overview with a green
+   validation panel; the Tasks tab shows the checks as generated forms, and **Preview** shows the student
+   view (no checks, no private files).
 3. Change the first task title, **Save**, then open **YAML** to show the same change. Return to **Test &
    publish** and choose **Run test**: it runs untouched (0), partial (50) and solution (100) in real sandboxes
    on moto and floci. *Publish* stays disabled until the run passes.
@@ -195,7 +199,7 @@ a hidden empty-order test.
 - **Fair grading:** per-student resource names, grading of real state, the same evidence always
   produces the same score, and evidence can't be edited (database triggers).
 - **Honest simulator:** unsupported features are labelled in the console (e.g. *Static website
-  hosting: Not available in CloudLabs simulator*) and rejected when a lab is imported.
+  hosting: Not available in Stackora simulator*) and rejected when a lab is imported.
 
 ## If something goes wrong
 | Symptom | Fix |

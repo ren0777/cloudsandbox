@@ -24,8 +24,12 @@ from .console.ec2 import router as ec2_console_router
 from .console.iam import router as iam_console_router
 from .console.lambda_ import router as lambda_console_router
 from .console.s3 import router as s3_console_router
+from .console.sns import router as sns_console_router
+from .console.sqs import router as sqs_console_router
+from .console.vpc import router as vpc_console_router
 from .fun import router as fun_router
 from .instructor.builder import router as builder_router
+from .instructor.preview import router as preview_router
 from .instructor.courses import router as courses_router
 from .instructor.gradebook import router as gradebook_router
 from .instructor.live import router as live_router
@@ -74,7 +78,7 @@ async def _reconcile() -> None:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="CloudLabs API", version="0.1.0", lifespan=lifespan,
+    app = FastAPI(title="Stackora API", version="0.1.0", lifespan=lifespan,
                   docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
     errors.install(app)
 
@@ -94,9 +98,10 @@ def create_app() -> FastAPI:
         return response
 
     for r in (auth_router, student_router, terminal_router, s3_console_router, dynamodb_console_router,
-              iam_console_router, ec2_console_router, lambda_console_router, instructor_router,
+              iam_console_router, ec2_console_router, vpc_console_router, sqs_console_router, sns_console_router, lambda_console_router, instructor_router,
               courses_router, gradebook_router, live_router, admin_router,
-              admin_manage_router, course_audit_router, fun_router, admin_runners_router, builder_router):
+              admin_manage_router, course_audit_router, fun_router, admin_runners_router, builder_router,
+              preview_router):
         app.include_router(r)
 
     @app.get("/healthz")
@@ -127,6 +132,8 @@ def create_app() -> FastAPI:
 app = create_app()
 
 # Routes that intentionally have no Authz dependency (checked by tests/test_authz_coverage.py).
+# NOTE: FastAPI registers the Swagger OAuth2 redirect at its own default path, not under `docs_url`
+# — the coverage test fails if this list and the real route table drift apart.
 PUBLIC_ROUTES = {("GET", "/healthz"), ("GET", "/metrics"), ("GET", "/api/docs"),
-                 ("GET", "/api/openapi.json"), ("GET", "/api/docs/oauth2-redirect"),
+                 ("GET", "/api/openapi.json"), ("GET", "/docs/oauth2-redirect"),
                  ("WS", "/ws/terminal")}

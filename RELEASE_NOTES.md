@@ -1,4 +1,7 @@
-# CloudLabs v0.2.0 (unreleased)
+# Stackora v0.2.0 (unreleased)
+
+> **Public product name:** Stackora. The repository, packages, Docker images and internal identifiers keep the
+> `cloudlabs` codename for compatibility; older notes may say CloudLabs.
 
 **Instructor Lab Builder.** Instructors create, test and publish their own labs from the browser, without
 editing files on the server.
@@ -33,12 +36,12 @@ editing files on the server.
 
 ---
 
-# CloudLabs v0.1.0 (2026-09-26)
+# Stackora v0.1.0 (2026-09-26)
 
 First complete prototype of a college cloud lab platform: students do hands-on AWS labs in isolated, cost-free
 simulated clouds and are graded automatically on what they actually built.
 
-CloudLabs is licensed under the Apache License 2.0 (see `LICENSE`). Third-party components keep their own licences
+Stackora is licensed under the Apache License 2.0 (see `LICENSE`). Third-party components keep their own licences
 (`THIRD_PARTY_NOTICES.md`).
 
 ## Core platform

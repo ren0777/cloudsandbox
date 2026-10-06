@@ -9,7 +9,7 @@ from jinja2 import StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
 
 from .schema import LabDefinition
-from .schema.v1 import CheckSpec, TaskSpec
+from .schema.v1 import BreakActionSpec, CheckSpec, TaskSpec
 
 _env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
 
@@ -47,6 +47,13 @@ def render_task(task: TaskSpec, variables: dict[str, str]) -> TaskSpec:
         "hints": [_render_str(h, variables) for h in task.hints],
         "checks": checks,
     })
+
+
+def render_break_actions(actions: list[BreakActionSpec], variables: dict[str, str]) -> list[BreakActionSpec]:
+    """Break-action parameters are templates too (`bucket: "{{ bucket }}"`), rendered per student before
+    validation and compilation."""
+    return [BreakActionSpec.model_validate({"type": a.type, **_render_any(a.params, variables)})
+            for a in actions]
 
 
 def student_lab_view(definition: LabDefinition, variables: dict[str, str] | None) -> dict[str, Any]:

@@ -1,17 +1,15 @@
-"""Auth (cookies, refresh rotation, CSRF, rate limit), the authorization matrix and its route coverage,
-and the architecture invariant that the API never talks to Docker."""
+"""Auth: cookies, refresh rotation, CSRF, rate limit, and the authorization matrix (PLAN §9), plus the
+architecture invariant that the API never talks to Docker.
+
+Route coverage for that matrix — every route either carries `Authz(action)` or is on the reviewed public
+allowlist — lives in `tests/test_authz_coverage.py`."""
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from fastapi.routing import APIRoute, APIWebSocketRoute
-
-from app.auth.policy import Authz
-from app.auth.routes import PUBLIC_ROUTES as AUTH_PUBLIC
 from app.auth.security import REFRESH_COOKIE
-from app.main import PUBLIC_ROUTES, app
 from app.runtime.signing import compute
 from tests.conftest import PASSWORD, client, login
 
@@ -36,26 +34,6 @@ def test_signing_known_answer_matches_runner():
         "fa636268028634194c8034692c7170927406acdd5caf029f11dd608934c1571a"
 
 
-def _has_authz(dependant) -> bool:
-    for d in dependant.dependencies:
-        if isinstance(d.call, Authz) or _has_authz(d):
-            return True
-    return False
-
-
-def test_every_route_is_authorized_or_explicitly_public():
-    public = PUBLIC_ROUTES | AUTH_PUBLIC
-    missing = []
-    for r in app.routes:
-        if isinstance(r, APIRoute):
-            for m in r.methods:
-                if (m, r.path) not in public and not _has_authz(r.dependant):
-                    missing.append(f"{m} {r.path}")
-        elif isinstance(r, APIWebSocketRoute) and ("WS", r.path) not in public:
-            missing.append(f"WS {r.path}")
-    assert not missing, f"routes without Authz(action): {missing}"
-
-
 # ---------------------------------------------------------------------------------------- auth
 async def test_login_me_logout(world):
     c = await login(world.alice)
@@ -78,6 +56,30 @@ async def test_login_rate_limited(world):
     codes = [(await c.post("/api/auth/login", json={"email": "alice@x.edu", "password": "nope"})).status_code
              for _ in range(11)]
     assert codes[-1] == 429 and codes[0] == 401
+
+
+async def test_demo_accounts_public_only_when_seeded_and_in_demo_mode(world, monkeypatch):
+    """The login page's one-click demo sign-in: the endpoint is public, but lists accounts only while
+    CL_DEMO_MODE is on AND the demo reset has actually seeded them."""
+    from app.auth.routes import create_user
+    from app.config import get_settings
+    from app.db import sessionmaker
+    from app.models import Role
+
+    c = client()
+    empty = {"enabled": False, "password": None, "accounts": []}
+    assert (await c.get("/api/auth/demo-accounts")).json() == empty
+    monkeypatch.setattr(get_settings(), "demo_mode", True)
+    assert (await c.get("/api/auth/demo-accounts")).json() == empty, "not seeded yet: no dead buttons"
+
+    async with sessionmaker()() as db:
+        await create_user(db, "demo-student1@cloudlabs.demo", "Sam Student", Role.student,
+                          "cloudlabs-demo", short_id="demo01")
+        await db.commit()
+    b = (await c.get("/api/auth/demo-accounts")).json()
+    assert b["enabled"] is True and b["password"] == "cloudlabs-demo"
+    assert [a["email"] for a in b["accounts"]] == ["demo-student1@cloudlabs.demo"]
+    assert b["accounts"][0]["role"] == "student" and b["accounts"][0]["name"] == "Sam Student"
 
 
 async def test_unauthenticated_is_401():

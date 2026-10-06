@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth";
 import { Shell } from "@/components/shell";
 import { ErrorBanner } from "@/components/ui";
 import { api } from "@/lib/api";
-import { type Draft, type DraftSummary, type LabVersionRow, STATUS_LABEL, STATUS_PILL } from "@/lib/builder";
+import { type Draft, type DraftSummary, type LabVersionRow, type Template, STATUS_LABEL, STATUS_PILL } from "@/lib/builder";
 import { fmtDate } from "@/lib/format";
 
 type LabGroup = { lab_id: string; slug: string; title: string; shared: boolean; builtin: boolean; mine: boolean;
@@ -85,7 +85,9 @@ export default function LabLibrary() {
       <div className="stack" style={{ gap: 20 }}>
         <div className="row between">
           <div><div className="eyebrow">Lab Builder</div><h1>Labs</h1>
-            <p className="lede" style={{ margin: "6px 0 0" }}>Write your own labs, test them in real sandboxes and publish them for your courses.</p></div>
+            <p className="lede" style={{ margin: "6px 0 0" }}>Write your own labs, test them in real sandboxes and publish them for your courses.{" "}
+              <a href="https://github.com/ren0777/cloudsandbox/blob/main/docs/INSTRUCTOR-QUICKSTART.md"
+                target="_blank" rel="noreferrer" data-testid="quickstart-link">First-run guide</a>.</p></div>
           <div className="row">
             <input ref={fileRef} type="file" accept=".tar.gz,.tgz,.tar,application/gzip" hidden data-testid="import-file"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void importPack(f); }} />
@@ -175,26 +177,71 @@ function LabSection({ title, empty, groups, busy, onClone, onShare, testId }: {
 
 function NewLab({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const [title, setTitle] = useState("");
+  const [templates, setTemplates] = useState<Template[] | null>(null);
+  const [choice, setChoice] = useState<string | null>(null);  // null = start from scratch
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<{ templates: Template[] }>("/api/instructor/builder/templates")
+      .then((r) => setTemplates(r.templates.filter((t) => t.available)))
+      .catch(setError);
+  }, []);
+
+  function choose(id: string | null, defaultTitle: string) {
+    setChoice(id);
+    setTitle(defaultTitle);
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError(null);
+    const body = choice
+      ? { source: "template", template_id: choice, ...(title.trim() ? { title: title.trim() } : {}) }
+      : { source: "blank", title: title.trim() };
     try {
-      const d = await api<Draft>("/api/instructor/builder/drafts", { method: "POST", body: { source: "blank", title } });
+      const d = await api<Draft>("/api/instructor/builder/drafts", { method: "POST", body });
       onCreated(d.id);
     } catch (err) { setError(err); setBusy(false); }
   }
+
   return (
     <div className="dialog-backdrop" role="dialog" aria-modal aria-labelledby="newlab-title" onClick={onClose}>
-      <form className="dialog stack" onClick={(e) => e.stopPropagation()} onSubmit={save}>
+      <form className="dialog stack" style={{ width: "min(720px, 100%)" }} onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <h2 id="newlab-title">New lab</h2>
-        <label>Title<input required autoFocus maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Host a static website on S3" data-testid="new-lab-title" /></label>
-        <p className="small muted" style={{ margin: 0 }}>The draft starts as a one-task S3 lab with a reference solution. Nothing is visible to students until you test and publish it.</p>
+        <p className="small muted" style={{ margin: 0 }}>
+          Start from scratch (a one-task S3 lab) or from a template — a working lab you can rename and change.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }} data-testid="template-gallery">
+          <button type="button" onClick={() => choose(null, "")} data-testid="template-blank"
+            style={{ textAlign: "left", borderColor: choice === null ? "var(--ink)" : undefined, borderWidth: 2 }}>
+            <strong>Start from scratch</strong>
+            <div className="small muted">A minimal S3 lab with a reference solution.</div>
+          </button>
+          {templates?.map((t) => (
+            <button key={t.id} type="button" onClick={() => choose(t.id, t.title)} data-testid={`template-${t.id}`}
+              style={{ textAlign: "left", borderColor: choice === t.id ? "var(--ink)" : undefined, borderWidth: 2 }}>
+              <strong>{t.title}</strong>
+              <div className="small muted">{t.summary}</div>
+              <div className="row small" style={{ gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                {t.services.map((s) => <span key={s} className="pill">{s}</span>)}
+                <span className="pill info">{t.difficulty}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+        {choice && <p className="small muted" style={{ margin: 0 }}>
+          Everything in the template (tasks, checks, reference solution) is copied into your own draft at
+          version 1.0.0. Nothing is shared until you test and publish it.
+        </p>}
+        <label>Title<input required={choice === null} autoFocus maxLength={200} value={title}
+          onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Host a static website on S3"
+          data-testid="new-lab-title" /></label>
         <ErrorBanner error={error} />
         <div className="row" style={{ justifyContent: "flex-end" }}>
           <button type="button" onClick={onClose}>Cancel</button>
-          <button className="primary" disabled={busy || !title.trim()} data-testid="new-lab-create">Create draft</button>
+          <button className="primary" disabled={busy || !title.trim()} data-testid="new-lab-create">
+            {busy ? <><span className="spinner" /> Creating…</> : "Create draft"}
+          </button>
         </div>
       </form>
     </div>

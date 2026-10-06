@@ -11,7 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.policy import Action, Authz, load_assignment_for, load_own_attempt, load_session_for
+from ..console.common import sandbox_engine
 from ..db import get_db, sessionmaker
+from ..diff import diff_for
 from ..errors import ApiError
 from ..grader.grade import student_view
 from ..idempotency import run_idempotent
@@ -231,12 +233,21 @@ async def get_attempt(attempt_id: uuid.UUID, user: User = Depends(Authz(Action.a
     return await _attempt_result(at.id)
 
 
+@router.get("/attempts/{attempt_id}/diff")
+async def attempt_diff(attempt_id: uuid.UUID, user: User = Depends(Authz(Action.attempt_view_own)),
+                       db: AsyncSession = Depends(get_db)):
+    """This attempt against the previous one that counted — stored grade results only, never a sandbox.
+    Students never see `expected`/`actual` here (PLAN §7b); the instructor's copy does."""
+    at = await load_own_attempt(db, user, attempt_id)
+    return await diff_for(db, at, public=True)
+
+
 @router.get("/console/services")
 async def console_services(session_id: uuid.UUID | None = None, user: User = Depends(Authz(Action.me)),
                            db: AsyncSession = Depends(get_db)):
     """Capability-filtered service catalogue for the console: of the session's engine when a session is
     given (ownership checked), else of the platform default engine. Engine names are never exposed."""
-    engine = (await load_session_for(db, user, session_id)).engine if session_id else emulators.default_engine()
+    engine = await sandbox_engine(db, user, session_id) if session_id else emulators.default_engine()
     caps = emulators.get(engine).capabilities
     return {"services": caps.service_status(), "limitations": caps.limitations,
             "features": {svc: caps.features(svc) for svc in caps.services}}

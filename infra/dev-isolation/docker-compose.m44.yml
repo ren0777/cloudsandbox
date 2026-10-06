@@ -1,0 +1,52 @@
+# Isolation override for running this checkout next to the `cloudlabs` and `cloudlabs-authoring` projects.
+#
+#   COMPOSE_PROJECT_NAME=cloudlabs-m44 \
+#   docker compose -f infra/docker-compose.yml -f infra/dev-isolation/docker-compose.m44.yml --profile multi up -d --build
+#
+# Unique project name, host ports, runner ids, sandbox env, app image tags and terminal image tag, so
+# containers, networks, volumes, runners and databases are never shared with another checkout.
+# The emulator image tags are shared (same content, never rebuilt here).
+services:
+  postgres:
+    ports: !override ["127.0.0.1:57432:5432"]
+  gateway:
+    ports: !override ["127.0.0.1:3300:3000"]
+
+  runner:
+    image: cloudlabs-m44/runner:dev
+    environment:
+      RUNNER_ID: runner-m44
+      RUNNER_SECRET: dev-runner-m44-secret-0123456789abcdef
+
+  runner2:
+    image: cloudlabs-m44/runner:dev
+    environment:
+      RUNNER_ID: runner-m44-2
+      RUNNER_SECRET: dev-runner-m44-2-secret-0123456789abcdef
+
+  api:
+    image: cloudlabs-m44/api:dev
+    # The base file labels the API with ${CL_ENV:-demo} interpolated from the SHELL, not from the
+    # service environment below, so an isolated project must override the label explicitly (the runner
+    # attaches only control-plane containers whose env label matches the sandbox's env).
+    labels:
+      cloudlabs.env: m44
+    environment:
+      CL_RUNNER_ID: runner-m44
+      CL_RUNNER_SECRET: dev-runner-m44-secret-0123456789abcdef
+      CL_ENV: m44
+      CL_ALLOWED_ORIGINS: '["http://localhost:3300"]'
+
+  api-test:
+    image: cloudlabs-m44/api-test:dev
+    environment:
+      CL_RUNNER_ID: runner-m44
+      CL_RUNNER_SECRET: dev-runner-m44-secret-0123456789abcdef
+      CL_ENV: test
+      CL_ALLOWED_ORIGINS: '["http://testserver", "http://localhost:3200"]'
+      CL_RUNNER2_ID: runner-m44-2
+      CL_RUNNER2_URL: http://runner2:7070
+      CL_RUNNER2_SECRET: dev-runner-m44-2-secret-0123456789abcdef
+
+  web:
+    image: cloudlabs-m44/web:dev

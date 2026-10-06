@@ -8,6 +8,7 @@ cloned or imported pack) is carried unchanged and shown read-only (v1 does not a
 from __future__ import annotations
 
 import gzip
+import hashlib
 import io
 import json
 import re
@@ -117,6 +118,17 @@ def blank_content(slug: str, title: str) -> dict[str, Any]:
     return {"lab": lab, "files": files}
 
 
+def fingerprint(content: dict[str, Any]) -> str:
+    """Optimistic-concurrency revision of draft content (M46): a sha256 over canonical JSON.
+
+    Unlike `LabPackage.content_sha256` it never depends on the lab being *valid*, which matters because a
+    draft is deliberately allowed to hold work in progress. Comparing this before writing is what stops a
+    stale autosave (another tab, a test run) from overwriting newer content. `updated_at` cannot be used:
+    validation and status changes bump it too."""
+    blob = json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
 def apply_edit(content: dict[str, Any], lab: dict[str, Any] | None, files: dict[str, str] | None) -> dict[str, Any]:
     """New draft content after an author edit. Only EDITABLE_FILES can change; an empty text removes one."""
     new_files = dict(content.get("files", {}))
@@ -142,12 +154,14 @@ def apply_edit(content: dict[str, Any], lab: dict[str, Any] | None, files: dict[
 
 # ------------------------------------------------------------------------------------ validation
 def expectations(files: dict[str, bytes], d: LabDefinition) -> tuple[dict[str, Decimal], list[str]]:
-    """Test-run scenarios for the publish gate (owner decision): an untouched sandbox scores 0 and the
+    """Test-run scenarios for the publish gate (owner decision): an untouched sandbox scores the lab's
+    baseline (`baseline.expected_score`, 0 unless the lab intentionally starts partially correct) and the
     reference solution full marks; a partial scenario is optional and needs private/partial.sh."""
     errors: list[str] = []
     if not files.get("private/solution.sh", b"").strip():
         errors.append("private/solution.sh: a reference solution is required to test and publish the lab")
     has_partial = bool(files.get("private/partial.sh", b"").strip())
+    base = d.baseline.expected_score if d.baseline else Decimal("0")
     raw: Any = {}
     if "private/expected.yaml" in files:
         try:
@@ -157,7 +171,7 @@ def expectations(files: dict[str, bytes], d: LabDefinition) -> tuple[dict[str, D
         if not isinstance(raw, dict):
             errors.append("private/expected.yaml: must be a mapping like {empty: 0, partial: 50, solution: 100}")
             raw = {}
-    expected: dict[str, Decimal] = {"empty": Decimal("0"), "solution": d.max_score}
+    expected: dict[str, Decimal] = {"empty": base, "solution": d.max_score}
     for k, v in raw.items():
         if k not in SCENARIOS:
             errors.append(f"private/expected.yaml: unknown scenario {k!r} (known: {', '.join(SCENARIOS)})")
@@ -166,8 +180,9 @@ def expectations(files: dict[str, bytes], d: LabDefinition) -> tuple[dict[str, D
             expected[k] = Decimal(str(v))
         except InvalidOperation:
             errors.append(f"private/expected.yaml: {k}: {v!r} is not a number")
-    if expected["empty"] != 0:
-        errors.append("private/expected.yaml: empty: an untouched sandbox must score 0")
+    if expected["empty"] != base:
+        errors.append(f"private/expected.yaml: empty: the broken baseline must score {base} "
+                      "(baseline.expected_score)")
     if expected["solution"] != d.max_score:
         errors.append(f"private/expected.yaml: solution: the reference solution must score full marks "
                       f"({d.max_score})")
@@ -199,17 +214,23 @@ def build(content: dict[str, Any]) -> tuple[LabPackage | None, list[str]]:
 _CHECK_ERR = re.compile(r"^task (?P<task>\S+) check (?P<check>\d+) \((?P<type>[^)]+)\): "
                         r"(?:(?P<field>[A-Za-z_][\w.]*): )?(?P<msg>.*)$", re.S)
 _TASK_ERR = re.compile(r"^task (?P<task>\S+): (?P<msg>.*)$", re.S)
+_BREAK_ERR = re.compile(r"^break action (?P<n>\d+) \((?P<type>[^)]+)\): "
+                        r"(?:(?P<field>[A-Za-z_][\w.]*): )?(?P<msg>.*)$", re.S)
 _LOC_ERR = re.compile(r"^(?P<loc>[A-Za-z_][\w.]*|(?:public|private)/[^:]+|lab\.yaml): (?P<msg>.*)$", re.S)
 
 
 def row_error(message: str, lab: dict[str, Any]) -> dict[str, Any]:
     """A validation message as a row the builder can place next to the field: {message, loc, task, check,
-    field}. `task` is a task id, `check` a 1-based check number, `loc` a dotted schema path or a file."""
-    row: dict[str, Any] = {"message": message, "loc": None, "task": None, "check": None, "field": None}
+    field, break_action}. `task` is a task id, `check` a 1-based check number, `break_action` a 0-based
+    index into `break_actions`, `loc` a dotted schema path or a file."""
+    row: dict[str, Any] = {"message": message, "loc": None, "task": None, "check": None, "field": None,
+                           "break_action": None}
     if m := _CHECK_ERR.match(message):
         row.update(task=m["task"], check=int(m["check"]), field=m["field"])
     elif m := _TASK_ERR.match(message):
         row.update(task=m["task"])
+    elif m := _BREAK_ERR.match(message):
+        row.update(break_action=int(m["n"]) - 1, field=m["field"])
     elif m := _LOC_ERR.match(message):
         row["loc"] = m["loc"]
         parts = m["loc"].split(".")

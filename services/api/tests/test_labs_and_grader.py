@@ -66,7 +66,7 @@ def test_s3_basics_loads_and_bundles_are_deterministic():
     (lambda d: d["requires"].append("s3:MadeUpOperation"), "unsupported emulator operations"),
     (lambda d: d["tasks"][1]["checks"][0].update(status="Sometimes"), "status"),
     (lambda d: d["tasks"][0]["checks"][0].update(extra_param=1), "extra_param"),
-    (lambda d: d.update(setup={"script": "setup.sh"}), "setup script"),
+    (lambda d: d.update(setup={"script": "setup.sh"}), "only a break_fix lab may define setup"),
     (lambda d: d["tasks"].append(dict(d["tasks"][0])), "task ids must be unique"),
     (lambda d: d["tasks"][0].update(title="{{ undefined_var }}"), "template error"),
 ])
@@ -82,7 +82,8 @@ def test_capability_levels():
     assert caps.level("s3:PutBucketWebsite") == "unsupported"
     assert caps.level("s3:Nope") is None
     assert caps.service_status() == {"s3": "available", "iam": "available", "ec2": "available",
-                                     "lambda": "available", "dynamodb": "available"}
+                                     "lambda": "available", "dynamodb": "available", "vpc": "available",
+                                     "sqs": "available", "sns": "available"}
 
 
 def test_variables_render_per_student():

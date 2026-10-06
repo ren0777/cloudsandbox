@@ -14,6 +14,7 @@ from app.driver import CreateSandbox, JobSpec, ResetSandbox
 
 pytestmark = pytest.mark.docker
 ENGINES = ["moto", "floci", "ministack"]  # every configured engine must pass the same sandbox guarantees
+TEST_SECRET = "runner-pytest-secret-0123456789abcdef"  # >= 32 chars: config refuses dev-length secrets
 
 
 def _bundle(files: dict[str, str]) -> JobSpec:
@@ -32,7 +33,7 @@ def _bundle(files: dict[str, str]) -> JobSpec:
 
 @pytest.fixture
 def driver():
-    d = DockerDriver(Settings(secret="x", id="runner-pytest", max_sandboxes=2, reattach_interval_s=0))
+    d = DockerDriver(Settings(secret=TEST_SECRET, id="runner-pytest", max_sandboxes=2, reattach_interval_s=0))
     yield d
     for s in d.list(None):
         d.destroy(s.sandbox_id)
@@ -124,7 +125,7 @@ def test_capacity_reports_host_and_engines_and_stats_are_scoped(driver):
     assert cap.docker_ok and cap.cpu_count and cap.mem_total_mib and 0 < cap.mem_available_mib <= cap.mem_total_mib
     assert cap.engines.get("moto") is True  # emulator + terminal images present
     info = _create(driver)
-    other = DockerDriver(Settings(secret="x", id="runner-pytest-other", max_sandboxes=2, reattach_interval_s=0))
+    other = DockerDriver(Settings(secret=TEST_SECRET, id="runner-pytest-other", max_sandboxes=2, reattach_interval_s=0))
     st = driver.stats("rtest")
     assert [s.sandbox_id for s in st.sandboxes] == [info.sandbox_id]
     assert st.sandboxes[0].memory_mib > 0 and st.sandboxes[0].memory_limit_mib > 0

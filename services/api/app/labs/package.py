@@ -20,7 +20,7 @@ from pydantic import ValidationError
 
 from ..grader import registry
 from ..runtime import emulators
-from .render import compute_variables, render_task
+from .render import compute_variables, render_break_actions, render_task
 from .schema import LabDefinition, LabValidationError, parse_definition
 
 SAMPLE_SHORT_ID = "abc123"
@@ -112,6 +112,27 @@ def validate_definition(d: LabDefinition, public_files: set[str]) -> list[str]:
             svc = c.type.split(".")[0]
             if svc not in d.services:
                 errors.append(f"{where}: service {svc!r} is not listed in services")
+    try:
+        actions = render_break_actions(d.break_actions, variables)
+    except Exception as e:  # jinja errors
+        return [f"break_actions: template error: {e}"]
+    from .. import breakfix
+    for i, a in enumerate(actions):
+        where = f"break action {i + 1} ({a.type})"
+        try:
+            defn = breakfix.get(a.type)
+        except KeyError:
+            errors.append(f"{where}: unknown break action type")
+            continue
+        try:
+            params = defn.params_model.model_validate(a.params)
+        except ValidationError as e:
+            errors += [f"{where}: {'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
+            continue
+        ops.update(defn.reads_for(params))
+        svc = a.type.split(".")[0]
+        if svc not in d.services:
+            errors.append(f"{where}: service {svc!r} is not listed in services")
     for engine in emulators.candidates(d.runtime.emulator):
         bad = emulators.get(engine).capabilities.unusable(sorted(ops))
         if bad:
@@ -194,22 +215,35 @@ SETUP_WRAPPER = "_cloudlabs_setup.sh"
 
 
 def setup_job(pkg_public_bundle: bytes, definition: LabDefinition, variables: dict[str, str]) -> dict | None:
-    """Runner job spec for the lab's setup script, built only from the PUBLIC bundle plus a generated wrapper
-    that exports the session's variables in upper case (`$BUCKET`, `$STUDENT_SHORT_ID`, ...) — the same
-    convention as the private labtest scripts. Break-fix labs use it to create each student's broken state."""
+    """Runner job spec for the lab's setup, built only from the PUBLIC bundle plus a generated wrapper that
+    exports the session's variables in upper case (`$BUCKET`, `$STUDENT_SHORT_ID`, ...) — the same
+    convention as the private labtest scripts. A break-fix lab either carries a legacy setup script or its
+    `break_actions` are compiled here; the generated script comes only from validated, rendered actions."""
     import base64
     import shlex
-    if not definition.setup:
+
+    from .. import breakfix
+    if definition.setup:
+        script, timeout_s, extra = definition.setup.script, definition.setup.timeout_s, {}
+    elif definition.break_actions:
+        # A compiled setup is a sequence of AWS CLI calls (one or more per action, each with CLI startup
+        # cost); a full VPC network is ~30 calls even on a fast host. 180 s is the runner's job cap and
+        # leaves headroom, where the old 60 s could time out a legitimate setup under load.
+        script, timeout_s = "_cloudlabs_break_actions.sh", 180
+        rendered = render_break_actions(definition.break_actions, variables)
+        text = breakfix.compile_actions([{"type": a.type, **a.params} for a in rendered])
+        extra = {f"public/{script}": text.encode()}
+    else:
         return None
     exports = "".join(f"export {k.upper()}={shlex.quote(str(v))}\n" for k, v in sorted(variables.items()))
-    wrapper = f"#!/bin/bash\nset -euo pipefail\n{exports}cd public\nbash {shlex.quote(definition.setup.script)}\n"
-    files = tar_members(pkg_public_bundle)
+    wrapper = f"#!/bin/bash\nset -euo pipefail\n{exports}cd public\nbash {shlex.quote(script)}\n"
+    files = {**tar_members(pkg_public_bundle), **extra, SETUP_WRAPPER: wrapper.encode()}
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tf:
-        for name, data in {**files, SETUP_WRAPPER: wrapper.encode()}.items():
+        for name, data in files.items():
             ti = tarfile.TarInfo(name)
             ti.size, ti.mode = len(data), 0o755 if name.endswith(".sh") else 0o644
             tf.addfile(ti, io.BytesIO(data))
     raw = buf.getvalue()
     return {"bundle_b64": base64.b64encode(raw).decode(), "sha256": hashlib.sha256(raw).hexdigest(),
-            "script": SETUP_WRAPPER, "timeout_s": definition.setup.timeout_s}
+            "script": SETUP_WRAPPER, "timeout_s": timeout_s}
