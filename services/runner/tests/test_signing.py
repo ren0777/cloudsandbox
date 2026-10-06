@@ -1,6 +1,6 @@
-import json
 import time
 
+from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -9,6 +9,7 @@ from app.main import create_app
 from app.signing import SIGNATURE_HEADER, TIMESTAMP_HEADER, compute, verify
 
 KNOWN = "fa636268028634194c8034692c7170927406acdd5caf029f11dd608934c1571a"
+SECRET = "runner-test-signing-secret-0123456789abcdef"  # >= 32 chars: config refuses dev-length secrets
 
 
 def test_known_answer_vector():
@@ -32,12 +33,12 @@ class FakeDriver:
 
 
 def _client():
-    return TestClient(create_app(Settings(secret="test-secret", reattach_interval_s=0), FakeDriver()))
+    return TestClient(create_app(Settings(secret=SECRET, reattach_interval_s=0), FakeDriver()))
 
 
 def signed(method, path, body=b""):
     ts = str(int(time.time()))
-    return {TIMESTAMP_HEADER: ts, SIGNATURE_HEADER: compute("test-secret", method, path, body, ts)}
+    return {TIMESTAMP_HEADER: ts, SIGNATURE_HEADER: compute(SECRET, method, path, body, ts)}
 
 
 def test_unsigned_rejected():
@@ -55,8 +56,10 @@ def test_signed_ok_and_replay_of_other_path_rejected():
 
 
 def test_no_exec_endpoint():
-    app = create_app(Settings(secret="x", reattach_interval_s=0), FakeDriver())
-    paths = {r.path for r in app.routes}
+    app = create_app(Settings(secret=SECRET, reattach_interval_s=0), FakeDriver())
+    # FastAPI 0.142 stores included routers as `_IncludedRouter` wrappers in `app.routes`; the public
+    # `iter_route_contexts` yields the effective routes (same change the API tests needed, STATUS M4).
+    paths = {ctx.route.path for ctx in iter_route_contexts(app.routes) if getattr(ctx.route, "path", None)}
     assert not any("exec" in p for p in paths)
     assert paths >= {"/v1/capacity", "/v1/sandboxes", "/v1/sandboxes/{sandbox_id}",
                      "/v1/sandboxes/{sandbox_id}/reset", "/v1/sandboxes/{sandbox_id}/jobs"}

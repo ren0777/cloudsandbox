@@ -62,7 +62,6 @@ async def test_single_check_runs_against_the_preview_and_grades_nothing(world, f
     await seed_runner_row()
     c = await login(world.instructor)
     d = await new_draft(c, title="Run one check")
-    url = f"{B}/drafts/{d['id']}/preview-sandbox/check"
     assert d["preview_status"] == "stopped"                       # the Tasks tab uses this to enable the button
 
     r = await run(c, d["id"])

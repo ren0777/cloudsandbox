@@ -46,20 +46,21 @@ class Action(str, enum.Enum):
     admin = "admin"
 
 
-S, I, A = Role.student, Role.instructor, Role.admin
+# Role shorthands: S/tudent, INS/tructor, A/dmin. `I` alone trips ruff's E741 (ambiguous name).
+S, INS, A = Role.student, Role.instructor, Role.admin
 MATRIX: dict[Action, frozenset[Role]] = {
-    Action.me: frozenset({S, I, A}),
-    Action.assignment_view: frozenset({S, I, A}),
+    Action.me: frozenset({S, INS, A}),
+    Action.assignment_view: frozenset({S, INS, A}),
     Action.session_start: frozenset({S}),
     Action.session_use: frozenset({S}),
     Action.attempt_view_own: frozenset({S}),
-    Action.results_view: frozenset({I, A}),
-    Action.grade_regrade: frozenset({I, A}),
-    Action.override_grant: frozenset({I, A}),
-    Action.lab_manage: frozenset({I, A}),
-    Action.course_manage: frozenset({I, A}),
-    Action.session_manage: frozenset({I, A}),
-    Action.audit_view: frozenset({I, A}),
+    Action.results_view: frozenset({INS, A}),
+    Action.grade_regrade: frozenset({INS, A}),
+    Action.override_grant: frozenset({INS, A}),
+    Action.lab_manage: frozenset({INS, A}),
+    Action.course_manage: frozenset({INS, A}),
+    Action.session_manage: frozenset({INS, A}),
+    Action.audit_view: frozenset({INS, A}),
     Action.admin: frozenset({A}),
 }
 

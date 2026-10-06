@@ -127,7 +127,7 @@ async def test_first_attempt_diff_is_graceful(world, fake_runner):
 
 
 async def test_diff_reports_fixed_and_unchanged_between_two_attempts(world, fake_runner):
-    a1 = await submit_attempt(world, "partial")     # bucket + versioning → 50
+    await submit_attempt(world, "partial")     # bucket + versioning → 50
     a2 = await submit_attempt(world, "full")        # everything → 100
     out = await student_diff(a2)
     assert out["first_attempt"] is False
@@ -152,7 +152,7 @@ async def test_diff_reports_fixed_and_unchanged_between_two_attempts(world, fake
 
 
 async def test_diff_reports_regressed_and_negative_delta(world, fake_runner):
-    a1 = await submit_attempt(world, "full")        # 100
+    await submit_attempt(world, "full")        # 100
     a2 = await submit_attempt(world, "empty")       # 0
     out = await student_diff(a2)
     assert out["summary"]["delta"] == "-100.00"
@@ -190,7 +190,7 @@ async def test_diff_compares_only_against_attempts_that_counted(world, fake_runn
 
 
 async def test_instructor_diff_includes_expected_and_actual_and_is_owner_scoped(world, fake_runner):
-    a1 = await submit_attempt(world, "partial")
+    await submit_attempt(world, "partial")
     a2 = await submit_attempt(world, "full")
 
     staff = await login(world.instructor)
@@ -221,7 +221,7 @@ async def test_instructor_diff_includes_expected_and_actual_and_is_owner_scoped(
 async def test_diff_follows_the_newest_grade_after_a_regrade(world, fake_runner):
     """A regrade adds a `grades` row and never edits the old one; the diff must read the same newest row
     the results page shows, so per-check detail follows the regrade too."""
-    a1 = await submit_attempt(world, "partial")     # 50
+    await submit_attempt(world, "partial")     # 50
     a2 = await submit_attempt(world, "empty")       # 0
     before = await student_diff(a2)
     assert before["current"]["regraded"] is False
@@ -254,7 +254,7 @@ async def test_diff_follows_the_newest_grade_after_a_regrade(world, fake_runner)
 
 async def test_diff_reads_stored_rows_and_creates_nothing(world, fake_runner):
     """No sandbox is touched: the diff works after every session is gone."""
-    a1 = await submit_attempt(world, "partial")
+    await submit_attempt(world, "partial")
     a2 = await submit_attempt(world, "full")
     async with sessionmaker()() as db:
         assert (await db.scalar(select(Attempt.session_id).where(Attempt.id == uuid.UUID(a2)))) is not None

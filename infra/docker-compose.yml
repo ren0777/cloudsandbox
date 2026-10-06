@@ -10,7 +10,7 @@ x-api-env: &api-env
   CL_SECRET_KEY: ${CL_SECRET_KEY:-dev-only-secret-change-me-0123456789abcdef}
   CL_RUNNER_URL: http://runner:7070
   CL_RUNNER_ID: runner-local-1
-  CL_RUNNER_SECRET: ${CL_RUNNER_SECRET:-dev-runner-secret-change-me}
+  CL_RUNNER_SECRET: ${CL_RUNNER_SECRET:-cloudlabs-dev-runner-hmac-secret-0123456789abcdef}
   CL_ALLOWED_ORIGINS: '["http://localhost:3000"]'
   CL_COOKIE_SECURE: "true"
   CL_LABS_DIR: /labs
@@ -38,7 +38,7 @@ services:
     image: cloudlabs/runner:dev
     environment:
       RUNNER_ID: runner-local-1
-      RUNNER_SECRET: ${CL_RUNNER_SECRET:-dev-runner-secret-change-me}
+      RUNNER_SECRET: ${CL_RUNNER_SECRET:-cloudlabs-dev-runner-hmac-secret-0123456789abcdef}
       RUNNER_MAX_SANDBOXES: ${RUNNER_MAX_SANDBOXES:-4}
       RUNNER_DEFAULT_EMULATOR: ${CL_DEFAULT_EMULATOR:-floci}
       RUNNER_TERMINAL_IMAGE: cloudlabs/terminal:dev
@@ -55,7 +55,7 @@ services:
     image: cloudlabs/runner:dev
     environment:
       RUNNER_ID: runner-local-2
-      RUNNER_SECRET: ${CL_RUNNER2_SECRET:-dev-runner2-secret-change-me}
+      RUNNER_SECRET: ${CL_RUNNER2_SECRET:-cloudlabs-dev-runner2-hmac-secret-0123456789abcdef}
       # gateway mode: the API is NOT attached to this runner's sandbox networks; traffic goes through the runner,
       # exactly as it would for a runner on another server
       RUNNER_ACCESS_MODE: gateway
@@ -69,7 +69,9 @@ services:
       cloudlabs.role: runner
 
   api:
-    build: ../services/api
+    build:
+      context: ../services/api
+      target: runtime    # production image: no test/dev dependencies
     image: cloudlabs/api:dev
     environment:
       <<: *api-env
@@ -98,14 +100,22 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on: [api, web]
 
-  # --- tests: same image, labelled as a control plane for env "test" so the runner attaches it to
-  # test sandboxes; uses its own database.
+  # --- tests: the same code, built from the Dockerfile `test` stage (pytest + moto), labelled as a control
+  # plane for env "test" so the runner attaches it to test sandboxes; uses its own database.
   api-test:
     profiles: ["test"]
-    image: cloudlabs/api:dev
+    build:
+      context: ../services/api
+      target: test
+    image: cloudlabs/api-test:dev
     environment:
       <<: *api-env
       CL_ENV: test
+      # api-test runs with CL_DEMO_MODE=false, so it must carry its own valid secrets (the dev defaults
+      # above are refused). CL_RUNNER_SECRET keeps the same interpolation as the runner service so the
+      # HMAC secret matches for the Docker-marked tests.
+      CL_SECRET_KEY: ${CL_TEST_SECRET_KEY:-cloudlabs-test-api-secret-0123456789abcdef}
+      CL_RUNNER2_SECRET: ${CL_RUNNER2_SECRET:-cloudlabs-dev-runner2-hmac-secret-0123456789abcdef}
       CL_DATABASE_URL: postgresql+asyncpg://cloudlabs_app:app@postgres:5432/cloudlabs_test
       CL_DATABASE_OWNER_URL: postgresql+asyncpg://cloudlabs_owner:owner@postgres:5432/cloudlabs_test
       CL_COOKIE_SECURE: "false"

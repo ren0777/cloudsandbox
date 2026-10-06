@@ -8,23 +8,20 @@ Reset reconstructs the declared baseline, the terminal works, and no session/att
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
 from datetime import timedelta
 from decimal import Decimal
 
 import pytest
-import websockets
 from sqlalchemy import func, select
 
-from app.config import get_settings
 from app.db import sessionmaker
 from app.grader import evidence as ev
 from app.grader.grade import collectors_for, grade, probes_for
 from app.instructor import preview as pv
 from app.labs import drafts as dr
 from app.labs.render import compute_variables
-from app.models import Attempt, Grade, LabDraft, LabSession, SessionEvent, TerminalTicket
+from app.models import Attempt, Grade, LabDraft, LabSession, SessionEvent
 from app.sessions import state as st
 from app.sessions.reconciler import reconcile_once
 from tests.conftest import login, seed_runner_row

@@ -9,9 +9,9 @@
 | End-to-end (Playwright) | `apps/web/e2e` | full compose stack in a browser | `cd apps/web && npx playwright test` |
 
 ```bash
-# runner (needs the Docker socket)
+# runner (needs the Docker socket; RUNNER_SECRET must be >= 32 chars, see config validation)
 MSYS_NO_PATHCONV=1 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-  -e RUNNER_SECRET=x cloudlabs/runner:dev python -m pytest -q
+  -e RUNNER_SECRET=runner-pytest-secret-0123456789abcdef cloudlabs/runner:dev python -m pytest -q
 
 # API (starts postgres + runner + the api-test container labelled for env "test")
 ./scripts/test-api.sh                  # everything
@@ -22,15 +22,15 @@ cd apps/web && npx playwright install chromium && npx playwright test
 
 # A second (or third) checkout running beside the first one — its own project, ports, runner ids,
 # sandbox env, images and test database, so two suites can never truncate each other's tables:
-CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/docker-compose.m45.yml ./scripts/test-api.sh
+CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/dev-isolation/docker-compose.m45.yml ./scripts/test-api.sh
 
 # …and the browser E2E for that checkout, which needs its runner id and URL (see STATUS D47/D53):
 CLOUDLABS_URL=http://localhost:4444 CLOUDLABS_RUNNER_ID=runner-m45 \
-  CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/docker-compose.m45.yml \
+  CL_COMPOSE_PROJECT=cloudlabs-m45 CL_COMPOSE_EXTRA_FILE=infra/dev-isolation/docker-compose.m45.yml \
   npx playwright test
 ```
 
-(The gateway port lives in `infra/docker-compose.m45.yml`. It is **4444** because Windows had excluded
+(The gateway port lives in `infra/dev-isolation/docker-compose.m45.yml`. It is **4444** because Windows had excluded
 3200 and 3900 from the dynamic range after a restart, and Docker could not bind them — "forbidden by its
 access permissions". If a port refuses to bind, pick another and update this file and `CL_ALLOWED_ORIGINS`
 in the override together.)

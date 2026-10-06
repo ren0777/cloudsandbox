@@ -7,6 +7,8 @@ number of queries, so it does not become an N+1 as a class gets bigger.
 
 from __future__ import annotations
 
+import csv
+import io
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
@@ -165,6 +167,41 @@ async def test_analytics_is_owner_scoped(world, fake_runner):
     assert (await admin.get(f"{B}/courses/{world.course.id}/analytics")).status_code == 200
     own = await login(world.instructor)
     assert (await own.get(f"{B}/courses/{world.course.id}/analytics")).status_code == 200
+    csv_url = f"{B}/courses/{world.course.id}/analytics.csv"
+    assert (await other.get(csv_url)).status_code == 404
+    assert (await stu.get(csv_url)).status_code == 403
+    assert (await admin.get(csv_url)).status_code == 200
+
+
+async def test_analytics_csv_matches_the_page(world, fake_runner):
+    """The export is the per-assignment table plus an "All labs" totals row, from the same computation as
+    the JSON, and a title that looks like a spreadsheet formula is neutralised like the gradebook's."""
+    await submit(world, "partial")
+    await submit(world, "full")
+    async with sessionmaker()() as db:
+        a = await db.get(Assignment, world.assignment.id)
+        a.title = "=HYPERLINK(\"x\")"
+        await db.commit()
+
+    c = await login(world.instructor)
+    page = (await c.get(f"{B}/courses/{world.course.id}/analytics")).json()
+    r = await c.get(f"{B}/courses/{world.course.id}/analytics.csv")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    assert "analytics" in r.headers["content-disposition"]
+    rows = list(csv.DictReader(io.StringIO(r.text.lstrip("﻿"))))
+    assert len(rows) == 2
+
+    row, total = rows
+    want = page["assignments"][0]
+    assert row["assignment"] == "'=HYPERLINK(\"x\")"
+    assert row["course_code"] == world.course.code and row["lab"] == want["lab_title"]
+    assert row["max_score"] == "100.00" and row["submitted"] == "1" and row["counted_attempts"] == "2"
+    assert row["submission_rate_pct"] == "50.0" and row["avg_score"] == "100.00"
+    assert row["avg_attempts_used"] == "2.00" and row["interruptions"] == "0"
+
+    assert total["assignment"] == "All labs"
+    assert total["students"] == "2" and total["submitted"] == "1"
+    assert total["submission_rate_pct"] == "50.0" and total["avg_score"] == page["totals"]["avg_score"]
 
 
 async def test_analytics_issues_a_fixed_number_of_queries(world, fake_runner):

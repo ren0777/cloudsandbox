@@ -12,7 +12,7 @@ from ..config import get_settings
 from ..db import sessionmaker
 from ..errors import ApiError
 from ..idempotency import purge_expired
-from ..models import ACTIVE_STATES, Assignment, LabSession, SessionState as S, TerminalTicket
+from ..models import Assignment, LabSession, SessionState as S, TerminalTicket
 from ..obs.logging import log
 from ..runtime.fleet import heartbeat_once, seed_runner  # noqa: F401  (re-exported for the app's loops)
 from ..sessions import service

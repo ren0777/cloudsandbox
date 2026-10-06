@@ -23,7 +23,7 @@ import uuid
 
 import httpx
 from fastapi import Depends, FastAPI
-from fastapi.routing import APIRoute, APIWebSocketRoute
+from fastapi.routing import APIRoute, APIWebSocketRoute, iter_route_contexts
 from starlette.routing import Route as StarletteRoute
 
 from app.auth.policy import MATRIX, Action, Authz, AuthzAny
@@ -53,10 +53,20 @@ PROTECTED_PREFIXES = ("/api/sessions", "/api/instructor", "/api/admin", "/api/co
                       "/api/labs", "/api/drafts", "/api/preview")
 
 
+def _effective_routes():
+    """Every route the app actually serves.
+
+    FastAPI 0.142 groups `include_router` results into `_IncludedRouter` entries, so a flat walk of
+    `app.routes` no longer sees them and every coverage test below would pass vacuously (this happened
+    during the FastAPI 0.142 upgrade, STATUS M4). `iter_route_contexts` is the public helper that
+    resolves included routers into their effective routes."""
+    return (ctx.route for ctx in iter_route_contexts(app.routes))
+
+
 def _iter_routes():
     """Every route the app serves — including the plain Starlette ones FastAPI adds for `/api/docs` and
     friends. Those have no `dependant` at all, so they can only ever be on the public allowlist."""
-    for r in app.routes:
+    for r in _effective_routes():
         if isinstance(r, APIRoute):
             for m in sorted(r.methods - {"HEAD", "OPTIONS"}):
                 yield m, r.path, r
@@ -120,7 +130,7 @@ def _registered() -> tuple[set[tuple[str, str]], set[str]]:
     OAuth2 redirect) match any method, so their paths come back separately."""
     pairs: set[tuple[str, str]] = set()
     any_method: set[str] = set()
-    for r in app.routes:
+    for r in _effective_routes():
         path = getattr(r, "path", None)
         if not path:
             continue
@@ -131,6 +141,16 @@ def _registered() -> tuple[set[tuple[str, str]], set[str]]:
         else:
             any_method.add(path)
     return pairs, any_method
+
+
+def test_route_walk_sees_the_openapi_surface():
+    """Pin the walk to the app's own OpenAPI surface (added after FastAPI 0.142 silently reduced
+    `_iter_routes()` to a handful of top-level routes, making the coverage tests vacuous). A future
+    change in how FastAPI stores included routers fails here instead of hiding a missing `Authz`."""
+    walked = {(m, p) for m, p, _ in _iter_routes()}
+    missing = [f"{method.upper()} {path}" for path, ops in app.openapi()["paths"].items()
+               for method in ops if (method.upper(), path) not in walked]
+    assert not missing, f"route walk missed OpenAPI operations: {missing}"
 
 
 def test_public_allowlist_entries_are_real_routes():

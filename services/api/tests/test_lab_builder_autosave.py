@@ -136,7 +136,7 @@ async def test_yaml_apply_is_protected_by_the_same_revision(world):
     url = f"{B}/drafts/{d['id']}"
     lab, base = d["content"]["lab"], d["rev"]
 
-    form = (await c.put(url, json={"lab": lab | {"title": "form wins"}, "base_rev": base})).json()
+    await c.put(url, json={"lab": lab | {"title": "form wins"}, "base_rev": base})
 
     stale = await c.put(f"{url}/yaml", json={"yaml": dr.lab_to_yaml(lab), "base_rev": base})
     assert stale.status_code == 409, stale.text

@@ -258,13 +258,13 @@ register(BreakActionDef("vpc.create_subnet", CreateSubnet, "vpc",
                                    f'--cidr-block {_q(p.cidr)} --availability-zone us-east-1a '
                                    f'--query "Subnet.SubnetId" --output text)',
                                    f'aws ec2 create-tags --resources "$SUBNET_ID" --tags Key=Name,Value={_q(p.name)}']
-                                  + ([f'aws ec2 modify-subnet-attribute --subnet-id "$SUBNET_ID" --map-public-ip-on-launch']
+                                  + (['aws ec2 modify-subnet-attribute --subnet-id "$SUBNET_ID" --map-public-ip-on-launch']
                                      if p.public else []),
                         lambda p: f"Subnet {p.name} in {p.vpc}" + (" (public)" if p.public else "")))
 register(BreakActionDef("vpc.create_internet_gateway", CreateInternetGateway, "vpc",
                         ("vpc:CreateInternetGateway", "vpc:AttachInternetGateway"),
-                        lambda p: [f'IGW_ID=$(aws ec2 create-internet-gateway '
-                                   f'--query "InternetGateway.InternetGatewayId" --output text)',
+                        lambda p: ['IGW_ID=$(aws ec2 create-internet-gateway '
+                                   '--query "InternetGateway.InternetGatewayId" --output text)',
                                    f'aws ec2 create-tags --resources "$IGW_ID" --tags Key=Name,Value={_q(p.name)}',
                                    f'aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID" '
                                    f'--vpc-id {_vpc_id(p.vpc)}'],

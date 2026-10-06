@@ -22,7 +22,7 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | R1 | **Regression after console-fidelity changes (Moto baseline)** | ☑ | runner 9/9 · API 163/163 (incl. docker) · labtest 0/50/100 · E2E 3/3, 2026-09-25 |
 | 14 | Emulator abstraction + Floci (capabilities, contract, labtest, E2E, isolation/freeze) | ☑ | runner 12/12 · API 174/174 · docker suite 8/8 on both engines · E2E 3/3 on Floci |
 | 15 | Floci promotion gate + decision in EMULATOR-EVALUATION.md | ☑ | Floci is the default (2026-09-25); Moto is the regression backend |
-| 15a | Known flake: `test_append_only...[attempts]` failed once in a full run | ◐ | watch; not reproduced in 8 runs |
+| 15a | Known flake: `test_append_only...[attempts]` failed once in a full run | ☑ | Not reproducible: 8 runs, then 20 stress rounds (all five tables + owner trigger, 120 executions) on 2026-10-06, 0 failures. The guard cannot depend on data (see D60); closed |
 | 15b | Load-sensitive: Moto `DescribeImages` read timeout (20 s) once in a 55-min run under heavy host load | ☑ | passes in isolation 2/2; EC2 client read timeout raised to 60 s |
 | 16 | DynamoDB service (console adapted from Floci UI, checks, lab pack) | ☑ | contract 12 ops + labtest 0/50/100 on Floci **and** Moto; console API tests; E2E `dynamodb.spec.ts`; full regression API 183/183, runner 12/12, E2E 4/4 (2026-09-25) |
 | 17 | IAM service (users, groups, roles, policies; CloudLabs policy evaluator for grading) | ☑ | contract 41 ops + labtest 0/70/100 on Floci and Moto; console + simulator tests; E2E 5/5; full regression API 192/192, runner 12/12 |
@@ -119,6 +119,20 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
 | 48 | Attempt diff ("since your last attempt") | ☑ | New `app/diff.py`: `compare()` walks two **stored** `grades.result` rows and classifies every check as `fixed / regressed / unchanged / added / removed`; `diff_for()` pairs an attempt with the previous attempt that **counted** (a `counts=False` auto-submit is stepped over). Reads the **newest** grade per attempt — the same row the results page uses — so a regrade is reflected without touching `task_results`. Student route `GET /api/attempts/{id}/diff` is redacted (`public=True`: no `expected`, `actual` or params, hidden checks keep their generic message, per PLAN §7b); `GET /api/instructor/attempts/{id}/diff` adds them. First attempt → `first_attempt: true` and an empty `tasks` list, not a wall of "added". UI: `components/attempt-diff.tsx` on the student results page and the instructor attempt view. Tests: `tests/test_attempt_diff.py` **10 passed** (all five classifications, redaction, first attempt, `counts=False` skip, ownership 403/404, regrade-follows-newest, determinism after sandboxes are gone) |
 | 49 | Instructor course analytics | ☑ | `GET /api/instructor/courses/{id}/analytics` (`app/analytics.py`, `Authz(results_view)` + `load_course_for_staff`): per assignment — submission rate, average score under the assignment's grade policy, average attempts used, average completion time (`ready_at`→submit), late submissions — plus course totals, **most-failed tasks** and **most-missed checks** (top 10, counted attempts only) and **interruptions** broken down by `failure_reason` and always reported apart from student results. Fixed query count (enrolments, lab definitions, attempts, sessions, task results) aggregated in memory — no sandbox, no regrade, no query per student. Empty states for a course with no labs and for a course with no submissions. UI `/instructor/courses/[id]/analytics` (five stat cards + three tables), linked from the course page. Tests: `tests/test_course_analytics.py` **5 passed** including a **query-count assertion** (`q2 == q1` after doubling the data); browser `e2e/instructor-analytics.spec.ts`. CSV export left for later (nothing in the implementation made it free) |
 | R7 | **Integration regression: M43 + M44a + M44 (VPC/SQS/SNS) + M45–M49 on `feat/authoring-excellence`** | ☑ | Release-gate audit of the merged branch (`1966557`) on an isolated project, then fixes and a full re-run on the default project (2026-09-29). **Found:** (a) M45's `lab-builder-autosave.spec.ts` / `lab-builder-check-run.spec.ts` still filtered `hasText: "Mission 1"`, which after M44's Missions 10–13 matched five rows (strict-mode violation, 5 E2E failures) — now the full title, as M44 already did in the other specs; (b) M49 course totals divided submitted (student, assignment) pairs by the student count only (the demo course showed **133%**) — `submission_rate` is now over students × assignments, the card reads "of expected submissions", and `test_course_submission_rate_counts_every_student_assignment_pair` (two assignments; fails on the old formula with 1.0 ≠ 0.5) guards it; (c) `vpc.spec.ts` screenshotted on the save banner, before the list reloaded — it now waits for the security group row to report 1 inbound rule. Screenshot `30-course-analytics` renumbered to **`36-course-analytics`** (M44 owns 30–35). The authz sweep now covers **181 protected routes** (192 total, 11 public). **Gate:** API **404 passed, 0 failed, 0 skipped** (incl. Docker and the two-runner gateway test); fast suite **351 passed, 53 deselected**; runner **16/16**; `app.labtest` on all **13 packs: 80/80 scenarios PASS** (Reset reproduces every break-fix baseline on moto and floci; Lambda packs on MiniStack); browser E2E **35/35, 0 skipped** (runner-local-2 registered); `tsc --noEmit` and `next build` clean; all 40 `docs/screenshots` regenerated on the default project. Docs brought in line: README, NEXT, ARCHITECTURE, TESTING, landing page service list |
+
+**Maintenance** (branch `fix/maintenance` from `feat/authoring-excellence`; owner request 2026-10-05)
+
+| # | Item | State | Verification evidence |
+|---|---|---|---|
+| M1 | API image split: Dockerfile `test` stage (requirements-dev) vs `runtime` stage (production); compose + `scripts/test-api.sh` use the test stage | ☑ | `docker compose build api api-test` clean. `cloudlabs/api:dev` runtime `pip list`: **no pytest/moto** (also enforced at build time by `! python -c "import pytest"` / `"import moto"`), `cloudlabs/api-test:dev` has pytest 8.4.2, pytest-asyncio 1.2.0, moto 5.2.3. Fast API suite on the rebuilt test stage: **351 passed, 53 deselected** (819 s, 2026-10-05) |
+| M2 | Refuse insecure secrets at startup: API (`secret_key`, `runner_secret`) when `CL_DEMO_MODE=false`; runner (`RUNNER_SECRET`) always; known dev defaults / `change-me` / < 32 chars | ☑ | New `tests/test_config.py` in both services; API **12 passed**, full fast suite **363 passed, 53 deselected** (779 s); runner image rebuilt → `python -m pytest -q` **31 passed** (incl. Docker, 238 s). Dev/test secrets in compose raised to valid values; `production.env.example` / `runner.env.example` now document `openssl rand -hex 32` (2026-10-05) |
+| M3 | Web dependencies: `next` 15.5.27 (latest 15.x), npm audit highs fixed (`postcss` 8.5.29, `sharp` 0.35.5 overrides), `npm install` fallback removed from the web Dockerfile; Next 16.x evaluated (report in D56) | ☑ | `npm audit` **0 vulnerabilities**; `npm run typecheck` clean; `next build` clean; `npm ci`-only web image built; full Playwright **35/35 passed** (14.3 min, runner-local-2 registered; first run was 34/35 on a one-off `runtime_unavailable` "no healthy runner" immediately after `fleet.spec`'s drain/resume — not reproduced, logged for M8 investigation); screenshots regenerated by the suite were reverted (dynamic content, unrelated to this item) (2026-10-05) |
+| M4 | Python deps: `pip-audit` on both requirement sets, fix every advisory (only what's needed) plus patch releases | ☑ | Before: pyjwt 2.10.1 (20), cryptography 46.0.1 (13), python-multipart 0.0.20 (12), starlette 0.48.0 (12, both services). After: **pip-audit reports no known vulnerabilities** on `services/api/requirements.txt` and `services/runner/requirements.txt`. Bumps: fastapi 0.142.2 (lifts the starlette `<1.0` cap; starlette resolves to 1.7.0), pyjwt 2.15.1, cryptography 50.0.2, python-multipart 0.0.32, plus patch releases sqlalchemy 2.0.54, pydantic 2.11.10, boto3 1.40.76, pyyaml 6.0.3. Fallout found and fixed: FastAPI 0.142 stores included routers as `_IncludedRouter`, so the flat `app.routes` walks in `test_authz_coverage.py` (which then silently passed **vacuously** — only the allowlist test failed) and `test_signing.py::test_no_exec_endpoint` missed most routes; both now use the public `iter_route_contexts`, and an OpenAPI-surface guard pins the walk so it can't go vacuous again. Full API suite incl. Docker: **415 passed, 1 failed** (the walk test; scored as an M4 fix, re-run green `test_authz_coverage.py` **10 passed**); runner suite **31 passed** (real Docker). Final combined full-suite re-run recorded under M6 (2026-10-05) |
+| M6 | CI + lint + architecture guard: `.github/workflows/ci.yml` (ruff, architecture test, fast API suite on Postgres, runner unit tests, web typecheck + build), `ruff.toml` (E4/E7/E9/F), `tests/test_architecture.py` (the file CLAUDE.md named did not exist) | ☑ | `ruff check services` (0.16.10) **all checks passed** after removing unused imports/variables (no behaviour change; `I` → `INS` in the role matrix for E741). `tests/test_architecture.py` in the API container **3 passed, 1 skipped** (runner half skipped there, runs in CI). Full fast suite with the lint edits **367 passed, 1 skipped, 53 deselected** (722 s); runner `-m "not docker"` **20 passed**. First GitHub run (`37367075073`): **Web typecheck + build** and **Runner unit tests** green; API and Ruff were cancelled before starting (*job was not acquired by Runner of type hosted* — a GitHub capacity issue). Jobs pinned to `ubuntu-24.04` (`ubuntu-latest` moves to Ubuntu 26 on 2026-10-19). CI fix: the architecture step ran before Postgres started (the autouse `clean_db` fixture needs the DB) — reordered. **GitHub run `37428993495`: Ruff, API, Runner, Web all green** (2026-10-06) |
+| M5 | Terminal image: AWS CLI pinned (2.37.1, the version the suites were green on) and ttyd 1.7.7, both **sha256-verified**; amd64 + arm64 via `TARGETARCH`; versions as image labels | ☑ | amd64 build: `aws-cli/2.37.1`, `ttyd 1.7.7`, uid 10002; a wrong ttyd hash **fails the build**; arm64 (`buildx --platform linux/arm64`) builds and runs (`aarch64`, same versions). `cloudlabs/terminal:dev` rebuilt from it → docker-marked API suite **53 passed** (46 min: real terminal WebSocket, job containers, sandbox grading). With the fast run: **420 passed, 1 skipped** in total. Browser E2E on this image: see M9 (35/35) |
+| M7 | Per-checkout Compose overrides moved to `infra/dev-isolation/` (+ README) and repaired | ☑ | Two regressions from M1/M2 found while moving: runner secrets of 21–29 chars (refused since M2) lengthened to ≥ 38; `api` and `api-test` shared one image tag per override although they build `runtime` and `test` — `api-test` now has its own tag. `docker compose config` resolves all three with unchanged build contexts and distinct images |
+| M8 | Analytics CSV export (deferred in D52): `GET /api/instructor/courses/{id}/analytics.csv` + *Export CSV* on the analytics page | ☑ | One row per assignment plus an *All labs* totals row, same computation as the JSON, same formula neutralisation as the gradebook (`safe()` now shared), same access rule. `tests/test_course_analytics.py` new CSV test + scope assertions (404 other instructor, 403 student, 200 admin); with gradebook + authz coverage **20 passed**; ruff clean; `tsc --noEmit` clean; E2E `instructor-analytics.spec.ts` (downloads and checks header, row count and totals row) + `instructor-ops.spec.ts` **3 passed** on rebuilt images |
+| M9 | Gateway re-resolves `api`/`web` (dev `infra/gateway/nginx.conf` + production `nginx-tls.conf`) | ☑ | Found by a full E2E run that failed **30/35 at the login page (502)**: `api`/`web` were recreated after the gateway started and nginx kept their old IPs. Now `resolver 127.0.0.11 valid=10s` + variables in `proxy_pass`. `nginx -t` on both configs; with `web` forced from 172.21.0.7 to .8 the untouched gateway still serves `/login` 200. **Full browser E2E 35/35 passed** (12.9 min, runner-local-2 registered) on the stack with every maintenance change (M1–M9) — 2026-10-06 |
 
 ## Implementation decisions log
 - **D1 — Sandbox networking.** Docker can't publish ports from `internal: true` networks. The runner
@@ -447,3 +461,79 @@ Legend: ☐ todo · ◐ in progress · ☑ done + verified (evidence noted)
   WebSocket Origin for the terminal ticket rules, so trimming the list to the checkout's own port failed
   five Docker-marked tests with `terminal.ticket.rejected / origin_not_allowed`. All five pass with the
   list restored.
+- **D54 — The API image has a `test` stage and a `runtime` stage (maintenance M1).** `services/api/Dockerfile`
+  is now `base` (python 3.12-slim, the `api` user, requirements files) → `test` (adds
+  `requirements-dev.txt`: pytest, moto) and `runtime` (`requirements.txt` only). The `runtime` stage is
+  declared **last**, so any plain `docker build` (e.g. someone building the context directly, or the
+  production compose overrides) produces the production image; it also fails the build if `pytest` or
+  `moto` can be imported, so a future dependency change can't silently reintroduce them.
+  `infra/docker-compose.yml` builds `api` with `target: runtime` (`cloudlabs/api:dev`) and `api-test`
+  with `target: test` (`cloudlabs/api-test:dev`), and `scripts/test-api.sh` now builds `api-test` before
+  `up`, so test runs can never reuse a stale image. Isolation override files keep their own image tags
+  but must repeat the target (M7 moves them under `infra/dev-isolation/`).
+- **D55 — Insecure secrets are refused at boot (maintenance M2).** With `CL_DEMO_MODE=false`, the API
+  refuses `CL_SECRET_KEY` / `CL_RUNNER_SECRET` if the value is a known dev default (the ones previously
+  shipped in `config.py` / compose / the isolation overrides), contains `change-me`, or is shorter than
+  32 characters; the error names the variable and suggests `openssl rand -hex 32`. Demo mode stays the
+  documented dev/presentation escape (a fresh checkout boots with known credentials on purpose). The
+  runner has no demo mode and can destroy sandboxes, so it applies the same check to `RUNNER_SECRET`
+  **always**. Consequences: the dev compose runner/runner2 secrets become long values (the API's
+  `api-test` runs with `CL_DEMO_MODE=false` and the HMAC secret must match the runner service, so both
+  read the same `${CL_RUNNER_SECRET:-…}`), `api-test` gets its own test `CL_SECRET_KEY` (the dev one is
+  refused outside demo mode), and `test_fleet`'s runner2 default + `docs/TESTING.md`'s runner command
+  were aligned. `production.env.example` and `runner.env.example` now say to generate each secret with
+  `openssl rand -hex 32`.
+- **D56 — Next stays on 15.x for now; 16.x is a separate upgrade (maintenance M3).** `next` was bumped
+  15.5.26 → **15.5.27** (the current 15.x backport, and the highest stable 15.x on npm). The two audit
+  highs were transitive pins that next 15.x's own ranges already allow: an `overrides` block pins
+  `postcss` 8.5.29 (next pins 8.4.31, vulnerable ≤ 8.5.22) and `sharp` 0.35.5 (next allows
+  `^0.34.3 || ^0.35.4`; 0.34.5 was vulnerable). `npm audit` is now 0. The web Dockerfile no longer falls
+  back to `npm install` if `npm ci` fails: the committed lockfile is the only dependency source, so a
+  broken lock fails the build instead of silently resolving new versions. **Next 16.3.8 evaluation:**
+  checked against the official 15→16 guide and this codebase — no `middleware`/`proxy`, no `next/image`,
+  no `searchParams`, no `cookies()`/`headers()` in server code (all dynamic pages are client components
+  using `useParams`), no `serverRuntimeConfig`, no parallel routes, no custom webpack config, no
+  `next lint` script; Node 22 satisfies the new 20.9+ floor. The remaining risk is the switch to
+  **Turbopack as the default builder** and the React 19.2 canary runtime, which need a dedicated
+  verification pass (typecheck + Turbopack build + full E2E) rather than riding along with a security
+  patch. Recommendation: schedule Next 16 as its own change after this maintenance batch; the 15.x
+  backport channel keeps receiving security fixes meanwhile.
+- **D57 — The Python bump is vulnerability-driven; FastAPI 0.142 needed a route-walk fix (maintenance
+  M4).** `python-multipart` (0.0.20 → 0.0.32), `pyjwt` (2.10.1 → 2.15.1) and `cryptography` (46.0.1 →
+  50.0.2) are self-contained security bumps; our uses (multipart uploads, HS256 encode/decode, Fernet
+  for terminal credentials/secrets) are unchanged APIs. Starlette's advisories are only fixed in 1.x,
+  and FastAPI capped starlette below 1.0 until **0.133.0**, so the minimal fix was to move FastAPI to
+  the current 0.142.2 (its only new hard dependency is `opentelemetry-api`). FastAPI 0.142 registers
+  included routers as `_IncludedRouter` objects instead of flattening them into `app.routes`; the flat
+  walks in `test_authz_coverage.py` and `test_signing.py` therefore saw almost no routes — the authz
+  coverage tests would have passed **vacuously** (the authz sweep silently shrank from 181 protected
+  routes to a handful; only the public-allowlist test failed). Both tests now enumerate the effective
+  routes through the public `fastapi.routing.iter_route_contexts`, and
+  `test_route_walk_sees_the_openapi_surface` pins the walk to `app.openapi()["paths"]` so a future
+  representation change fails loudly instead of hiding a route without `Authz`. Remaining patch-level
+  bumps: sqlalchemy 2.0.54, pydantic 2.11.10, boto3 1.40.76, pyyaml 6.0.3 (no other same-minor patch
+  existed for the pins). `pip-audit` is clean on both requirement files.
+- **D58 — CI runs the fast gates only (maintenance M6).** GitHub Actions runs ruff, the architecture
+  invariant, the API suite without Docker markers (against the repo's own Postgres service and roles),
+  the runner unit tests and the web typecheck/build. The Docker-marked API tests, `app.labtest` and the
+  Playwright E2E need sandbox images and stay a local / pre-release gate (`scripts/test-api.sh`,
+  `apps/web/e2e`). `tests/test_architecture.py` scans imports by AST (no false positives from comments or
+  strings), proves non-vacuity on a synthetic violation, guards against an empty scan root, and checks
+  the runner side when its sources are present.
+- **D59 — Terminal downloads are pinned and checksummed (maintenance M5).** The AWS CLI was "latest" and
+  ttyd had no integrity check, so a rebuild could change student tooling silently or ship a tampered
+  binary. Both are now pinned with per-architecture sha256 values (ttyd from the release's SHA256SUMS; AWS
+  publishes PGP signatures but no checksums, so the hashes were taken from the pinned zips). Bumping a
+  version means updating its hash. The emulator engines (Floci, MiniStack) are upstream images and keep
+  their own architecture support.
+- **D60 — Flake 15a is closed as not reproducible.** For the app role the append-only check cannot depend on data: UPDATE/DELETE are
+  revoked, so both statements fail with *permission denied* even on an empty table. A failure of
+  `test_append_only...[attempts]` can only come from its setup (`_submitted`: the submit must answer 200)
+  or from another suite truncating the same test database (D47). Not reproduced in 8 runs, 20 stress rounds
+  (120 executions) and an independent 10-round check (50 executions).
+- **D61 — The gateway resolves services per request (maintenance M9).** nginx resolves a literal
+  `proxy_pass` host once at startup, so a recreated `api` or `web` container (any upgrade, or
+  `docker compose up --build` after the gateway is running) left the gateway pointing at a dead IP and
+  every route answered 502 until the gateway restarted. Both nginx configs use Docker's embedded DNS
+  (`resolver 127.0.0.11 valid=10s ipv6=off`) and `proxy_pass $api_upstream` / `$web_upstream`; with no URI
+  part in the variable, the request URI is passed unchanged, exactly as before.

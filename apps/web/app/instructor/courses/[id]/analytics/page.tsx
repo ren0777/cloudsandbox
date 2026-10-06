@@ -57,7 +57,10 @@ export default function Analytics() {
               <div className="eyebrow">Analytics · {t.students} students · {t.assignments} {t.assignments === 1 ? "lab" : "labs"}</div>
               <h1>{s.course.code} · {s.course.title}</h1>
             </div>
-            <button className="small" onClick={() => void load()}>Refresh</button>
+            <div className="row" style={{ gap: 8 }}>
+              <button className="small" onClick={() => void load()}>Refresh</button>
+              {!empty && <a className="btn small" href={`/api/instructor/courses/${id}/analytics.csv`} data-testid="export-analytics">Export CSV</a>}
+            </div>
           </div>
           <ErrorBanner error={error} />
 
