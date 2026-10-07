@@ -53,7 +53,7 @@ def _port() -> int:
 async def live(real_runner):
     port = _port()
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, lifespan="off",
-                                           log_level="warning", ws="websockets"))
+                                           log_level="warning", ws="websockets-sansio"))
     task = asyncio.create_task(server.serve())
     while not server.started:
         await asyncio.sleep(0.05)
