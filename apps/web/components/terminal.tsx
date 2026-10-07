@@ -4,6 +4,7 @@ import "@xterm/xterm/css/xterm.css";
 import { api, ApiError } from "@/lib/api";
 
 type Status = "connecting" | "open" | "reconnecting" | "closed";
+const TERM_BG = "#0c1426";
 const FINAL: Record<string, string> = {
   submitted: "Lab submitted. The terminal is closed.",
   reset: "Lab reset. Reconnecting when your fresh sandbox is ready…",
@@ -27,7 +28,7 @@ export function Terminal({ sessionId, active }: { sessionId: string; active: boo
     let timer: ReturnType<typeof setTimeout> | undefined;
     let term: import("@xterm/xterm").Terminal | undefined;
     let fit: import("@xterm/addon-fit").FitAddon | undefined;
-    let onResize: (() => void) | undefined;
+    let sizer: ResizeObserver | undefined;
 
     (async () => {
       const [{ Terminal: XTerm }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
@@ -35,7 +36,7 @@ export function Terminal({ sessionId, active }: { sessionId: string; active: boo
       const mono = getComputedStyle(document.documentElement).getPropertyValue("--f-mono").trim();
       term = new XTerm({
         fontFamily: `${mono ? `${mono}, ` : ""}Consolas, monospace`, fontSize: 14, cursorBlink: true,
-        theme: { background: "#0c1426", foreground: "#dbe6ff", cursor: "#5fd3f0", selectionBackground: "#26406f" },
+        theme: { background: TERM_BG, foreground: "#dbe6ff", cursor: "#5fd3f0", selectionBackground: "#26406f" },
         scrollback: 3000, allowProposedApi: false,
       });
       fit = new FitAddon();
@@ -44,8 +45,10 @@ export function Terminal({ sessionId, active }: { sessionId: string; active: boo
       fit.fit();
       term.onData((d) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ t: "i", d })));
       term.onResize(({ cols, rows }) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ t: "r", c: cols, r: rows })));
-      onResize = () => fit?.fit();
-      window.addEventListener("resize", onResize);
+      // Refit whenever the host box changes size (first layout, tab switches, panel and window resizes):
+      // a single fit() on mount can run before the panel has its final size and leave the default 80x24.
+      sizer = new ResizeObserver(() => fit?.fit());
+      sizer.observe(host.current);
       connect();
     })();
 
@@ -87,7 +90,7 @@ export function Terminal({ sessionId, active }: { sessionId: string; active: boo
     return () => {
       disposed = true;
       clearTimeout(timer);
-      if (onResize) window.removeEventListener("resize", onResize);
+      sizer?.disconnect();
       ws?.close();
       term?.dispose();
     };
@@ -106,7 +109,7 @@ export function Terminal({ sessionId, active }: { sessionId: string; active: boo
         {status === "closed" && active && <button className="small" onClick={() => { setNote(null); setNonce((n) => n + 1); }}>Reconnect</button>}
       </div>
       {note && <div className="term-note small">{note}</div>}
-      <div ref={host} className="term-host" data-testid="terminal" />
+      <div className="term-body"><div ref={host} className="term-host" data-testid="terminal" /></div>
       <style>{`
         .term-wrap { display: flex; flex-direction: column; height: 100%; background: var(--terminal); border-radius: var(--radius); overflow: hidden; border: 1px solid #1e2c4d; }
         .term-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: #aab8d8; border-bottom: 1px solid #1e2c4d; }
@@ -115,8 +118,13 @@ export function Terminal({ sessionId, active }: { sessionId: string; active: boo
         .term-dot.open { background: #3fd08c; } .term-dot.reconnecting, .term-dot.connecting { background: #f2c14e; }
         .term-dot.closed { background: #e5484d; }
         .term-note { background: #1a2542; color: #f2d58a; padding: 6px 12px; }
-        .term-host { flex: 1; min-height: 0; padding: 8px 4px 4px 10px; }
+        /* Padding lives on the wrapper: FitAddon measures the host, and with border-box sizing a padded host
+           would yield one row too many (the last row clipped). */
+        .term-body { flex: 1; min-height: 0; display: flex; padding: 8px 4px 4px 10px; }
+        .term-host { flex: 1; min-height: 0; min-width: 0; }
         .term-host .xterm { height: 100%; }
+        /* xterm.js 6 styles the viewport black and no longer paints it with the theme background */
+        .term-host .xterm .xterm-viewport { background-color: ${TERM_BG}; }
       `}</style>
     </div>
   );
