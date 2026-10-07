@@ -7,4 +7,4 @@ COPY app ./app
 COPY tests ./tests
 COPY pytest.ini ./
 EXPOSE 7070
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7070", "--no-access-log"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7070", "--ws", "websockets-sansio", "--no-access-log"]
