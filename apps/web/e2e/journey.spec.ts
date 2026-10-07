@@ -70,8 +70,38 @@ test.describe.serial("student journey (GUI + CLI) and instructor evidence", () =
     await expect(page.locator(".xterm-rows")).toContainText("Stackora AWS CLI environment");
     await termRun(page, "aws s3 ls | sed s/^/LS:/", `LS:`);
     await expect(page.locator(".xterm-rows")).toContainText(new RegExp(`LS:.*${BUCKET}`));
+    // Alt+Left jumps back one word. xterm.js 6 sends ESC[1;3D (it no longer rewrites Alt+arrow to Ctrl+arrow)
+    // and bash 5.2's readline binds that by default. The cursor lands before "Z", so the output reads
+    // "R2 YZ" only if the jump happened.
+    await page.keyboard.type("echo R$((1+1)) Z", { delay: 5 });
+    await page.keyboard.press("Alt+ArrowLeft");
+    await page.keyboard.type("Y");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".xterm-rows")).toContainText("R2 YZ", { timeout: 30_000 });
     await termRun(page, `aws s3api put-bucket-versioning --bucket ${BUCKET} --versioning-configuration Status=Enabled && echo VERSIONING_$((40+2))`, "VERSIONING_42");
     await shot(page, "03-terminal");
+    // Scrollback works with xterm.js 6's rewritten viewport: only visible rows are in the DOM, so early lines
+    // of a long output come back only by scrolling up.
+    await termRun(page, "seq 1 120 | sed 's/^/LINE-/'", "LINE-120");
+    await expect(page.locator(".xterm-rows")).not.toContainText(/LINE-3(?!\d)/);
+    await page.locator(".xterm-screen").hover();
+    await expect(async () => {
+      for (let i = 0; i < 10; i++) await page.mouse.wheel(0, -100);  // ordinary wheel notches
+      await expect(page.locator(".xterm-rows")).toContainText(/LINE-3(?!\d)/, { timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+    await expect(async () => {
+      for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 100);
+      await expect(page.locator(".xterm-rows")).toContainText("LINE-120", { timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+    // The terminal fills its panel (it used to stay at the default 80x24): the text area spans most of the
+    // terminal box and never overflows it, so no row is clipped.
+    const fill = await page.evaluate(() => {
+      const box = document.querySelector(".xterm")!.getBoundingClientRect();
+      const screen = document.querySelector(".xterm-screen")!.getBoundingClientRect();
+      return { w: screen.width / box.width, overflow: screen.height - box.height };
+    });
+    expect(fill.w).toBeGreaterThan(0.9);
+    expect(fill.overflow).toBeLessThanOrEqual(0);
     await termRun(page, `echo '<h1>CloudCafe</h1>' > index.html && aws s3 cp index.html s3://${BUCKET}/ && echo UPLOADED_$((40+2))`, "UPLOADED_42");
 
     // 3) GUI proves the CLI changes.
