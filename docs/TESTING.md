@@ -10,8 +10,9 @@
 
 ```bash
 # runner (needs the Docker socket; RUNNER_SECRET must be >= 32 chars, see config validation)
+docker build --target test -t cloudlabs/runner-test:dev services/runner   # test stage: pytest + tests/
 MSYS_NO_PATHCONV=1 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-  -e RUNNER_SECRET=runner-pytest-secret-0123456789abcdef cloudlabs/runner:dev python -m pytest -q
+  -e RUNNER_SECRET=runner-pytest-secret-0123456789abcdef cloudlabs/runner-test:dev python -m pytest -q
 
 # API (starts postgres + runner + the api-test container labelled for env "test")
 ./scripts/test-api.sh                  # everything
