@@ -4,7 +4,7 @@ A reproducible 10-minute core demo (Stackora v0.1.0): a student completes an S3 
 console and the real AWS CLI, is graded on the **actual state** of their sandbox, and the instructor inspects
 the evidence. The optional sections after it show the other services, instructor and admin tools, the learning
 layer and multi-server readiness. Every section is automated in `apps/web/e2e/` (`journey.spec.ts` for §1–7,
-`dynamodb`, `iam`, `ec2`, `lambda`, `instructor-roster`, `instructor-ops`, `architecture`, `breakfix-fun`,
+`dynamodb`, `iam`, `ec2`, `vpc-ec2`, `lambda`, `lambda-sqs`, `instructor-roster`, `instructor-ops`, `architecture`, `breakfix-fun`,
 `admin-courses` and `fleet` for the optional parts).
 
 ## 0. Prepare (once, ~5 minutes on first run)
@@ -18,7 +18,7 @@ scripts\demo-reset.ps1  # or: ./scripts/demo-reset.sh
 ```
 
 `demo-reset` must end with `RESULT: READY`. It wipes previous demo data and demo sandboxes, reseeds the
-accounts below and the course *Cloud Computing Demo*, imports the seven lab packs (Missions 1–7) and checks the
+accounts below and the course *Cloud Computing Demo*, imports the fifteen lab packs (Missions 1–15) and checks the
 database, runner and sandbox images.
 
 | Role | Email | Password |
@@ -119,6 +119,27 @@ cafe-demo01-orders --timeout 10 --memory-size 256 --environment "Variables={TAX_
 console, **Test** with `{"items": [{"price": 3, "qty": 2}, {"price": 4.5, "qty": 1}]}`. It returns
 `{"total": 11.34}`. Each run takes about 10 seconds. **Check progress** invokes the function itself, including
 a hidden empty-order test.
+
+## Optional: Mission 14 (SQS-triggered order pipeline, about 8 minutes)
+Sign in as **demo-student3** and open *Mission 14: CloudCafé's order pipeline* (MiniStack, like Mission 5). In
+**AWS CLI**, create the table `cafe-demo03-orders` (partition key `orderId`, on-demand) and the queue
+`cafe-demo03-incoming` with `--attributes VisibilityTimeout=60`. In **Lambda**, create `cafe-demo03-worker`,
+deploy a handler that loops over `event["Records"]`, saves each order with its total and returns the failed
+`messageId`s in `batchItemFailures`, then set the timeout to 10 s and `TABLE_NAME` on **Configuration**. On
+**Test**, pick the **SQS** template: the bad record comes back as `msg-2` while the good order is saved. On
+**Triggers**, **Add trigger** with the queue, batch size 5 and **Report batch item failures**. Now **Send
+message** from the queue in **SQS**: a few seconds later the order is in the table, without anyone invoking
+the function. **Check progress** sends its own test order through the pipeline (and the **Architecture** tab
+draws the queue → function trigger).
+
+## Optional: Mission 15 (web server in its own VPC, about 6 minutes)
+Sign in as **demo-student2** and open *Mission 15*. Build the network in the **VPC** console (or the CLI):
+`cafe-vpc-demo02` with a public subnet `cafe-public-demo02`, an attached internet gateway and a route table
+that sends 0.0.0.0/0 to it, associated with the subnet. In **EC2 → Security Groups → Create security group**,
+pick the new VPC and allow HTTP. In **Launch instance → Network settings**, choose the VPC: the subnet follows,
+*Auto-assign public IP* shows the subnet's setting, and only that VPC's security groups are offered. Point out
+the lesson: launch without choosing the network and the server lands in the default VPC — **Check progress**
+says so ("it runs in VPC default"). The **Architecture** tab draws the instance inside its subnet.
 
 ## Optional: Instructor setup (course, roster, assignment, about 4 minutes)
 1. Sign in as **demo-instructor** → **New course** (e.g. `CS-341`, *Cloud Computing*) → open it.

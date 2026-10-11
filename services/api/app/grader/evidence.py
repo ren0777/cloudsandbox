@@ -154,11 +154,20 @@ def _rules(perms: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def collect_ec2(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, Any]:
     """Instances (by Name tag), security groups (inbound rules) and key pair names. Engine-specific AMI
-    IDs, launch times and IP addresses are deliberately left out."""
+    IDs, launch times and IP addresses are deliberately left out. Network placement is recorded by Name tag:
+    an instance's VPC and subnet, and each group's VPC ("default" for the untagged default VPC, whose id
+    differs between engines; "" for any other untagged VPC or subnet)."""
     c = adapter.client("ec2", endpoint)
+
+    def tag_name(res: dict[str, Any]) -> str:
+        return {t["Key"]: t["Value"] for t in res.get("Tags", [])}.get("Name", "")
+    vpc_label = {v["VpcId"]: tag_name(v) or ("default" if v.get("IsDefault") else "")
+                 for v in c.describe_vpcs().get("Vpcs", [])}
+    subnet_label = {s["SubnetId"]: tag_name(s) for s in c.describe_subnets().get("Subnets", [])}
     groups = c.describe_security_groups().get("SecurityGroups", [])
     by_id = {g["GroupId"]: g["GroupName"] for g in groups}
-    sgs = {g["GroupName"]: {"description": g.get("Description", ""), "ingress": _rules(g.get("IpPermissions", []))}
+    sgs = {g["GroupName"]: {"description": g.get("Description", ""), "ingress": _rules(g.get("IpPermissions", [])),
+                            "vpc": vpc_label.get(g.get("VpcId", ""), "")}
            for g in groups}
     instances = []
     kw: dict[str, Any] = {}
@@ -171,6 +180,8 @@ def collect_ec2(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, 
                                   "type": i.get("InstanceType"), "key_name": i.get("KeyName"),
                                   "security_groups": sorted(g.get("GroupName") or by_id.get(g.get("GroupId"), "")
                                                             for g in i.get("SecurityGroups", [])),
+                                  "vpc": vpc_label.get(i.get("VpcId", ""), ""),
+                                  "subnet": subnet_label.get(i.get("SubnetId", ""), ""),
                                   "tags": dict(sorted(tags.items()))})
         if not page.get("NextToken"):
             break
@@ -243,11 +254,15 @@ def collect_vpc(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, 
 
 
 def collect_sqs(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """Queues with their stable attributes and tags, plus the result of each `sqs_peek` probe.
+    """Queues with their stable attributes and tags, plus the result of each `sqs_peek` and `sqs_deliver`
+    probe (see `_deliver`).
 
     A peek receives up to 10 messages with `VisibilityTimeout=0`, so the student's messages stay visible
     and nothing is consumed: the bodies become stored evidence and grading reads only that."""
     c = adapter.client("sqs", endpoint)
+    # Deliveries go first: a triggered consumer may need the queue empty again before the peeks run.
+    deliveries = {delivery_key(p): _deliver(adapter, endpoint, c, p)
+                  for p in probes or [] if p.get("kind") == "sqs_deliver"}
     peeks: dict[str, Any] = {}
     for p in probes or []:
         if p.get("kind") != "sqs_peek":
@@ -281,7 +296,43 @@ def collect_sqs(adapter: emulators.EmulatorAdapter, endpoint: str, probes: list[
                         "messages": int(attrs.get("ApproximateNumberOfMessages", "0") or 0),
                         "in_flight": int(attrs.get("ApproximateNumberOfMessagesNotVisible", "0") or 0),
                         "tags": dict(sorted(tags.items()))}
-    return {"queues": dict(sorted(queues.items())), "peeks": dict(sorted(peeks.items()))}
+    out = {"queues": dict(sorted(queues.items())), "peeks": dict(sorted(peeks.items()))}
+    if deliveries:
+        out["deliveries"] = dict(sorted(deliveries.items()))
+    return out
+
+
+def delivery_key(p: dict[str, Any]) -> str:
+    return f"{p['queue']}|{p['table']}|{canonical(p['key']).decode()}"
+
+
+def _deliver(adapter: emulators.EmulatorAdapter, endpoint: str, sqs: Any, p: dict[str, Any]) -> dict[str, Any]:
+    """`sqs_deliver` probe: an end-to-end test of a queue-triggered pipeline. Removes the probe's own key
+    from the table (so an item left by an earlier attempt can't pass), sends the probe message, then
+    waits up to `wait` seconds for a consumer (e.g. a Lambda trigger) to write that key. Records whether
+    the item appeared and its typed attributes; never timings."""
+    db = adapter.client("dynamodb", endpoint)
+    key = {k: {"N": str(v)} if isinstance(v, int) else {"S": str(v)} for k, v in p["key"].items()}
+    body = p["body"] if isinstance(p["body"], str) else json.dumps(p["body"], sort_keys=True)
+    rec: dict[str, Any] = {"queue": p["queue"], "table": p["table"], "sent": False, "item": None}
+    try:
+        db.delete_item(TableName=p["table"], Key=key)
+    except ClientError as e:
+        return rec | {"error": f"table: {e.response.get('Error', {}).get('Code', 'error')}"}
+    try:
+        url = sqs.get_queue_url(QueueName=p["queue"])["QueueUrl"]
+        sqs.send_message(QueueUrl=url, MessageBody=body)
+    except ClientError as e:
+        return rec | {"error": f"queue: {e.response.get('Error', {}).get('Code', 'error')}"}
+    rec["sent"] = True
+    deadline = time.monotonic() + min(float(p.get("wait", 20)), 30.0)
+    while True:
+        item = db.get_item(TableName=p["table"], Key=key, ConsistentRead=True).get("Item")
+        if item or time.monotonic() >= deadline:
+            break
+        time.sleep(1.0)
+    rec["item"] = {k: item[k] for k in sorted(item)} if item else None
+    return rec
 
 
 def collect_sns(adapter: emulators.EmulatorAdapter, endpoint: str) -> dict[str, Any]:
@@ -345,7 +396,31 @@ def collect_lambda(adapter: emulators.EmulatorAdapter, endpoint: str, probes: li
         if not page.get("NextMarker"):
             break
         kw = {"Marker": page["NextMarker"]}
-    return {"functions": dict(sorted(functions.items())), "invocations": dict(sorted(invocations.items()))}
+    out = {"functions": dict(sorted(functions.items())), "invocations": dict(sorted(invocations.items()))}
+    if adapter.capabilities.is_usable("lambda:ListEventSourceMappings"):
+        out["event_sources"] = _event_sources(c)
+    return out
+
+
+def _event_sources(c: Any) -> list[dict[str, Any]]:
+    """Triggers (event source mappings) by function and source name. UUIDs, ARNs, timestamps and the last
+    processing result are deliberately left out; 'enabled' folds the transitional states into a boolean."""
+    out: list[dict[str, Any]] = []
+    kw: dict[str, Any] = {}
+    while True:
+        page = c.list_event_source_mappings(**kw)
+        for m in page.get("EventSourceMappings", []):
+            source = m.get("EventSourceArn", "")
+            out.append({"function": m.get("FunctionArn", "").rsplit(":", 1)[-1],
+                        "service": source.split(":")[2] if source.count(":") >= 5 else "",
+                        "source": source.rsplit(":", 1)[-1],
+                        "batch_size": m.get("BatchSize"),
+                        "enabled": m.get("State") in ("Enabled", "Enabling", "Updating", "Creating"),
+                        "report_batch_item_failures": "ReportBatchItemFailures" in (m.get("FunctionResponseTypes") or [])})
+        if not page.get("NextMarker"):
+            break
+        kw = {"Marker": page["NextMarker"]}
+    return sorted(out, key=lambda m: (m["function"], m["service"], m["source"]))
 
 
 COLLECTORS: dict[str, Callable[[emulators.EmulatorAdapter, str], dict[str, Any]]] = {

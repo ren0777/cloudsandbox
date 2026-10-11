@@ -1,8 +1,10 @@
 """EC2 checks. Evidence shape (collector 'ec2'), engine-independent (no AMI IDs, times or IPs):
-{"instances": [{"id", "name", "state", "type", "key_name", "security_groups": [names], "tags": {k: v}}],
- "security_groups": {name: {"description", "ingress": [{"protocol", "from_port", "to_port", "cidr"}]}},
+{"instances": [{"id", "name", "state", "type", "key_name", "security_groups": [names], "vpc", "subnet",
+                "tags": {k: v}}],
+ "security_groups": {name: {"description", "ingress": [{"protocol", "from_port", "to_port", "cidr"}], "vpc"}},
  "key_pairs": [names]}
-Instances are matched by their Name tag and must not be terminated."""
+Instances are matched by their Name tag and must not be terminated. VPCs and subnets are named by their Name
+tag ("default" for the untagged default VPC)."""
 
 from typing import Literal
 
@@ -11,7 +13,8 @@ from pydantic import Field
 from ..registry import CheckOutcome, Params, check
 
 NAME = Field(min_length=1, max_length=255)
-READS = ["ec2:DescribeInstances", "ec2:DescribeSecurityGroups", "ec2:DescribeKeyPairs"]
+READS = ["ec2:DescribeInstances", "ec2:DescribeSecurityGroups", "ec2:DescribeKeyPairs", "ec2:DescribeVpcs",
+         "ec2:DescribeSubnets"]
 
 
 def _ec2(ev: dict) -> dict:
@@ -142,3 +145,35 @@ def running_instance_count(p: CountParams, ev: dict) -> CheckOutcome:
     else:
         msg = f"{n} instances are running; at least {p.min} should be"
     return CheckOutcome(ok, exp, f"{n} running", msg)
+
+
+class InstanceNetworkParams(Params):
+    name: str = NAME
+    vpc: str | None = Field(None, min_length=1, max_length=255)
+    subnet: str | None = Field(None, min_length=1, max_length=255)
+
+
+@check("ec2.instance_network", InstanceNetworkParams, "ec2", READS)
+def instance_network(p: InstanceNetworkParams, ev: dict) -> CheckOutcome:
+    """The instance runs in that VPC/subnet, and every security group it uses belongs to the same VPC (AWS
+    refuses a group from another VPC; the simulators accept it, so the check enforces the rule)."""
+    want = ", ".join(x for x in [f"vpc={p.vpc}" if p.vpc else "", f"subnet={p.subnet}" if p.subnet else ""] if x)         or "groups in the instance's VPC"
+    i = _instance(ev, p.name)
+    if i is None:
+        return CheckOutcome(False, want, "not found", f"No instance named {p.name} (terminated instances don't count)")
+    vpc, subnet = i.get("vpc", ""), i.get("subnet", "")
+    actual = f"vpc={vpc or '(unnamed)'}, subnet={subnet or '(unnamed)'}"
+    problems = []
+    if p.vpc and vpc != p.vpc:
+        problems.append(f"it runs in {f'VPC {vpc}' if vpc else 'an unnamed VPC'}, not {p.vpc}")
+    if p.subnet and subnet != p.subnet:
+        problems.append(f"it runs in {f'subnet {subnet}' if subnet else 'an unnamed subnet'}, not {p.subnet}")
+    groups = _ec2(ev).get("security_groups", {})
+    # every VPC has its own group named "default", and evidence keys groups by name, so it can't be placed
+    foreign = [g for g in i.get("security_groups", [])
+               if g != "default" and g in groups and groups[g].get("vpc", vpc) != vpc]
+    if foreign:
+        problems.append(f"security group {', '.join(foreign)} belongs to another VPC")
+    return CheckOutcome(not problems, want, actual,
+                        f"Instance {p.name} runs in {subnet or vpc or 'its network'}" if not problems
+                        else f"Instance {p.name}: " + "; ".join(problems))

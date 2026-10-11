@@ -1,16 +1,20 @@
 """SQS checks. Evidence shape (collector 'sqs'), engine-independent (no URLs, ARNs or ids):
 {"queues": {name: {"name", "fifo", "visibility_timeout", "retention_period", "delay_seconds",
                     "messages", "in_flight", "tags": {k: v}}},
- "peeks": {"<queue>|<max>": {"queue", "received", "bodies": [...]}}}
+ "peeks": {"<queue>|<max>": {"queue", "received", "bodies": [...]}},
+ "deliveries": {"<queue>|<table>|<key>": {"queue", "table", "sent", "item": {attr: typed}|None, "error"?}}}
 
 `sqs.message_present` declares a *probe*: during evidence capture the collector peeks up to 10 messages
-with `VisibilityTimeout=0` (nothing is consumed), and grading reads only the stored bodies."""
+with `VisibilityTimeout=0` (nothing is consumed), and grading reads only the stored bodies.
+`sqs.delivers_item` declares an `sqs_deliver` probe: the collector sends a test message and records the
+DynamoDB item the queue's consumer wrote (see `evidence._deliver`)."""
 
 from typing import Any, Literal
 
 from pydantic import Field
 
 from ..registry import CheckOutcome, Params, check
+from .dynamodb import TABLE, KeyValue, _expected, _key_text, plain
 
 NAME = Field(min_length=1, max_length=80)
 READS = ["sqs:ListQueues", "sqs:GetQueueAttributes", "sqs:ListQueueTags"]
@@ -107,3 +111,45 @@ def message_present(p: MessageParams, ev: dict) -> CheckOutcome:
     return CheckOutcome(hit, want, f"{len(bodies)} message(s): {shown}",
                         f"{p.queue} holds a matching message" if hit
                         else f"{p.queue} has no message matching {p.body_contains!r} (first messages: {shown})")
+
+
+class DeliveryParams(Params):
+    queue: str = NAME
+    body: dict[str, Any] | str = Field(description="The test message sent to the queue (JSON object or text).")
+    table: str = TABLE
+    key: dict[str, str | int] = Field(min_length=1, max_length=2,
+                                      description="The item the consumer must write; removed before the message is sent.")
+    attributes: dict[str, KeyValue] = Field(default_factory=dict)
+    wait: int = Field(20, ge=5, le=30, description="Seconds to wait for the item to appear.")
+
+
+def _deliver_probe(p: DeliveryParams) -> dict[str, Any]:
+    return {"kind": "sqs_deliver", "queue": p.queue, "body": p.body, "table": p.table, "key": p.key, "wait": p.wait}
+
+
+@check("sqs.delivers_item", DeliveryParams, "sqs",
+       PEEK_READS + ["sqs:GetQueueUrl", "sqs:SendMessage", "dynamodb:DeleteItem", "dynamodb:GetItem"],
+       probe=_deliver_probe)
+def delivers_item(p: DeliveryParams, ev: dict) -> CheckOutcome:
+    """End to end: a message sent to the queue is consumed and produces the expected DynamoDB item."""
+    from ..evidence import delivery_key
+    want = {**p.key, **p.attributes}
+    exp = f"message to {p.queue} → item {_key_text(p.key)} in {p.table}"
+    d = _sqs(ev).get("deliveries", {}).get(delivery_key(_deliver_probe(p)))
+    if d is None:
+        return CheckOutcome(False, exp, "no evidence", f"No delivery evidence for {p.queue}")
+    if d.get("error"):
+        where, _, code = d["error"].partition(": ")
+        name = p.table if where == "table" else p.queue
+        return CheckOutcome(False, exp, d["error"], f"Could not use {name} for the test message ({code})")
+    item = d.get("item")
+    if item is None:
+        return CheckOutcome(False, exp, "no item after waiting",
+                            f"A test order sent to {p.queue} never reached {p.table}. Is a trigger connected, "
+                            "and does the function save the order?")
+    wrong = [k for k, v in p.attributes.items() if k not in item or plain(item[k]) != _expected(v)]
+    actual = ", ".join(f"{k}={plain(item[k]) if k in item else '(missing)'}" for k in want)
+    if wrong:
+        return CheckOutcome(False, exp, actual, f"A test order sent to {p.queue} was saved with the wrong "
+                                                f"{', '.join(wrong)}")
+    return CheckOutcome(True, exp, actual, f"A test order sent to {p.queue} was processed and saved to {p.table}")

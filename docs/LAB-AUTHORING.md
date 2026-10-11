@@ -68,6 +68,7 @@ tasks:
 | `ec2.instance` | `name` (Name tag), `state` (running/stopped/any), `instance_type`?, `key_name`? | a non-terminated instance with that Name matches |
 | `ec2.instance_tag` | `name`, `key`, `value` | the instance has the tag |
 | `ec2.instance_security_group` | `name`, `group` | the instance uses the security group |
+| `ec2.instance_network` | `name`, `vpc`?, `subnet`? | the instance runs in that VPC / subnet (by Name tag; `default` is the untagged default VPC), and none of its security groups belongs to another VPC — AWS refuses that, the simulators accept it, so the check enforces it. Don't grade public IPs: Moto assigns one to every instance, Floci to none; grade the subnet's `public` setting with `vpc.subnet` |
 | `ec2.security_group_rule` | `group`, `protocol`, `port`, `cidr`, `expect` (present/absent) | an inbound rule covers that port from exactly that CIDR (an "All traffic" rule covers every port) |
 | `ec2.key_pair_exists` | `key` | the key pair exists |
 | `ec2.running_instance_count` | `min`, `max` | the number of running instances is within the bounds (use `min: 1` so an empty sandbox can't pass) |
@@ -83,12 +84,14 @@ tasks:
 | `sqs.queue_attribute` | `queue`, `attribute` (`visibility_timeout` / `retention_period` / `delay_seconds`), `value` | the queue attribute has that integer value |
 | `sqs.queue_tag` | `queue`, `key`, `value` | the queue has that tag |
 | `sqs.message_present` | `queue`, `body_contains`? | a message is on the queue (probe: peeks up to 10 messages with visibility 0 — nothing is consumed, so grading never steals the student's message) |
+| `sqs.delivers_item` | `queue`, `body` (JSON object or text), `table`, `key`, `attributes`?, `wait`? (5–30 s, default 20) | end to end: a test message sent to the queue is consumed and produces that DynamoDB item (probe: removes `key` from the table, sends `body`, waits for the item; MiniStack only, since something must consume the queue) |
 
 | `sns.topic_exists` | `name`, `display_name`? | the topic exists, optionally with that display name |
 | `sns.subscription` | `topic`, `queue`, `expect` (present/absent) | the queue is (or no longer is) subscribed to the topic over SQS. Combine with `sqs.message_present` to grade real delivery: SNS has no egress, so in-sandbox queue delivery is the only safe target |
 
 | `lambda.function` | `name`, `runtime`?, `handler`?, `role_name`?, `env` {K: V}?, `memory_min`?, `timeout_min`? | the function exists with those settings |
 | `lambda.invoke_returns` | `name`, `payload` (event), `expect` | invoking the function with `payload` returns a response containing `expect` (dicts match as a subset, numbers with float tolerance) |
+| `lambda.event_source` | `name`, `queue`, `batch_size`?, `enabled`? (default true), `report_batch_item_failures`? | an SQS trigger (event source mapping) connects the queue to the function with those settings. Triggers are declared only on MiniStack |
 
 `audit.*` is reserved and rejected with "not available yet".
 
@@ -96,9 +99,18 @@ tasks:
 progress, submit) the collector first invokes the function with each distinct payload and stores the result;
 grading then reads only the stored evidence. Invoking needs an engine that executes code, so such labs must
 pin `runtime: {emulator: ministack}` (`lambda:Invoke` is unsupported on Floci and Moto, and a `default` lab
-using it is rejected at import). The MiniStack capability file has no S3/DynamoDB/EC2, so keep those labs
-Lambda-only. Invocations take ~10 s each, so use at most a few probes. Use a hidden probe (for example an
-empty input) to catch hard-coded answers.
+using it is rejected at import). On MiniStack, Lambda combines with DynamoDB, SQS, SNS and VPC; it has no
+S3, EC2 or IAM policies, so keep those out of Lambda labs. Invocations take ~10 s each, so use at most a few
+probes. Use a hidden probe (for example an empty input) to catch hard-coded answers.
+
+**Queue-triggered pipelines** (Mission 14, `lambda-sqs-dynamodb`): grade the function's batch handling with
+`lambda.invoke_returns` and a hand-built SQS event (`{"Records": [{"messageId", "body"}, …]}`, expecting
+`batchItemFailures`), the trigger's configuration with `lambda.event_source`, and the whole pipeline with
+`sqs.delivers_item`. Probes run in a fixed order — Lambda invocations, then SQS deliveries and peeks, then
+the other collectors — so a DynamoDB check sees what the probes wrote. Keep the delivery probe's key apart
+from anything a student would use (the probe deletes it first so an earlier attempt can't pass a later
+one). Don't grade dead-letter redrive: MiniStack doesn't move failed messages to a DLQ within a grading
+window.
 
 **Engine-neutral EC2 labs:** AMI IDs differ between engines, so never check or hard-code them. In
 private scripts, discover one with `aws ec2 describe-images --owners amazon --query "Images[0].ImageId" --output text`.

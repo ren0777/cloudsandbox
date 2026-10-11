@@ -55,6 +55,7 @@ class LaunchIn(BaseModel):
     key_name: str | None = None
     security_group_ids: list[str] = Field(default_factory=list, max_length=5)
     create_security_group: NewSgIn | None = None
+    subnet_id: str | None = Field(None, pattern=r"^subnet-[A-Za-z0-9-]+$", max_length=64)  # Network settings → Edit; default: the default VPC's first subnet
     tags: list[TagIn] = Field(default_factory=list, max_length=40)
 
     @model_validator(mode="after")
@@ -71,6 +72,7 @@ class StateIn(BaseModel):
 class CreateSgIn(BaseModel):
     name: str = NAME
     description: str = Field(min_length=1, max_length=255)
+    vpc_id: str | None = Field(None, pattern=r"^vpc-[A-Za-z0-9-]+$", max_length=64)  # default: the default VPC
     rules: list[RuleIn] = Field(default_factory=list, max_length=50)
 
 
@@ -109,12 +111,38 @@ async def _default_vpc(sess: LabSession) -> tuple[str, str | None]:
     return vpc, (sorted(subnets, key=lambda s: s.get("AvailabilityZone", ""))[0]["SubnetId"] if subnets else None)
 
 
+def _name(res: dict[str, Any]) -> str:
+    return {t["Key"]: t["Value"] for t in res.get("Tags", [])}.get("Name", "")
+
+
+async def _placement(sess: LabSession, subnet_id: str | None) -> tuple[str, str | None]:
+    """(vpc, subnet) for a launch: the chosen subnet and its VPC, else the default VPC's first subnet."""
+    if not subnet_id:
+        return await _default_vpc(sess)
+    subnets = (await _call(sess, "describe_subnets", SubnetIds=[subnet_id])).get("Subnets", [])
+    if not subnets:
+        raise ApiError("validation_error", f"subnet {subnet_id} was not found", 400)
+    return subnets[0]["VpcId"], subnet_id
+
+
+async def _require_same_vpc(sess: LabSession, vpc: str, group_ids: list[str]) -> None:
+    """AWS refuses security groups from another VPC; the simulators accept them, so the console enforces it."""
+    if not group_ids:
+        return
+    groups = (await _call(sess, "describe_security_groups", GroupIds=group_ids)).get("SecurityGroups", [])
+    foreign = sorted(g["GroupName"] for g in groups if g.get("VpcId") != vpc)
+    if foreign:
+        raise ApiError("validation_error", f"Security group {', '.join(foreign)} belongs to a different VPC than the "
+                                           "selected subnet. Choose a group from the same VPC.", 400)
+
+
 def _instance_out(i: dict[str, Any]) -> dict[str, Any]:
     tags = {t["Key"]: t["Value"] for t in i.get("Tags", [])}
     return {"id": i["InstanceId"], "name": tags.get("Name", ""), "state": i["State"]["Name"],
             "type": i.get("InstanceType"), "image_id": i.get("ImageId"), "key_name": i.get("KeyName"),
             "security_groups": [{"id": g.get("GroupId"), "name": g.get("GroupName")} for g in i.get("SecurityGroups", [])],
             "private_ip": i.get("PrivateIpAddress"), "launched_at": i.get("LaunchTime"),
+            "vpc_id": i.get("VpcId"), "subnet_id": i.get("SubnetId"),
             "tags": [{"key": k, "value": v} for k, v in sorted(tags.items())]}
 
 
@@ -134,10 +162,28 @@ async def launch_options(session_id: uuid.UUID, user: User = Depends(AuthzAny(Ac
               "platform": "Windows" if "windows" in (i.get("Name") or "").lower() else "Linux"}
              for i in sorted(images, key=rank)[:8]]
     keys = [k["KeyName"] for k in (await _call(sess, "describe_key_pairs")).get("KeyPairs", [])]
-    groups = [{"id": g["GroupId"], "name": g["GroupName"]} for g in (await _call(sess, "describe_security_groups")).get("SecurityGroups", [])]
+    groups = [{"id": g["GroupId"], "name": g["GroupName"], "vpc_id": g.get("VpcId")}
+              for g in (await _call(sess, "describe_security_groups")).get("SecurityGroups", [])]
     vpc, subnet = await _default_vpc(sess)
+    vpcs = [{"id": v["VpcId"], "name": _name(v), "cidr": v.get("CidrBlock"), "is_default": bool(v.get("IsDefault"))}
+            for v in (await _call(sess, "describe_vpcs")).get("Vpcs", [])]
+    subnets = [{"id": x["SubnetId"], "name": _name(x), "vpc_id": x["VpcId"], "cidr": x.get("CidrBlock"),
+                "public": bool(x.get("MapPublicIpOnLaunch"))}
+               for x in (await _call(sess, "describe_subnets")).get("Subnets", [])]
     return {"images": quick, "instance_types": [{"name": t, "free_tier": t in FREE_TIER} for t in INSTANCE_TYPES],
-            "key_pairs": keys, "security_groups": groups, "vpc_id": vpc, "subnet_id": subnet}
+            "key_pairs": keys, "security_groups": groups, "vpc_id": vpc, "subnet_id": subnet,
+            "vpcs": sorted(vpcs, key=lambda v: (not v["is_default"], v["name"] or "~", v["id"])),
+            "subnets": sorted(subnets, key=lambda x: (x["name"] or "~", x["id"]))}
+
+
+@router.get("/vpcs")
+async def list_vpcs(session_id: uuid.UUID, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
+                    db: AsyncSession = Depends(get_db)):
+    """VPC choices for Create security group (default VPC first, then by Name tag)."""
+    sess = await console_session(session_id, user, db)
+    vpcs = [{"id": v["VpcId"], "name": _name(v), "cidr": v.get("CidrBlock"), "is_default": bool(v.get("IsDefault"))}
+            for v in (await _call(sess, "describe_vpcs")).get("Vpcs", [])]
+    return {"vpcs": sorted(vpcs, key=lambda v: (not v["is_default"], v["name"] or "~", v["id"]))}
 
 
 # ------------------------------------------------------------------------------------ instances
@@ -156,8 +202,9 @@ async def list_instances(session_id: uuid.UUID, user: User = Depends(AuthzAny(Ac
 async def launch_instance(session_id: uuid.UUID, body: LaunchIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                           db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
-    vpc, subnet = await _default_vpc(sess)
+    vpc, subnet = await _placement(sess, body.subnet_id)
     sg_ids = list(body.security_group_ids)
+    await _require_same_vpc(sess, vpc, sg_ids)
     if body.create_security_group:
         n = body.create_security_group
         sg = (await _call(sess, "create_security_group", GroupName=n.name, Description=f"{n.name} created by launch-wizard",
@@ -230,7 +277,7 @@ async def list_security_groups(session_id: uuid.UUID, user: User = Depends(Authz
 async def create_security_group(session_id: uuid.UUID, body: CreateSgIn, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
                                 db: AsyncSession = Depends(get_db)):
     sess = await console_session(session_id, user, db)
-    vpc, _ = await _default_vpc(sess)
+    vpc = body.vpc_id or (await _default_vpc(sess))[0]
     gid = (await _call(sess, "create_security_group", GroupName=body.name, Description=body.description, VpcId=vpc))["GroupId"]
     if body.rules:
         await _call(sess, "authorize_security_group_ingress", GroupId=gid, IpPermissions=[_perm(r) for r in body.rules])

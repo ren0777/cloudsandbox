@@ -88,9 +88,17 @@ codename.
   (topic + queue + subscription + publish) and `sns-breakfix` (restore a deleted subscription), with
   delivery graded through the non-destructive SQS message probe; labtest 0/45/100 and baseline
   20/70/100 + Reset on moto and floci; E2E builds and repairs the fan-out.
-- **VPC, SQS and SNS are now available** to students and to the Lab Builder. Next: a
-  **Lambda + SQS + DynamoDB** template (MiniStack) and a **VPC + EC2** template (Floci), then deploy on a
-  real server and collect feedback (`docs/DEPLOYMENT.md`).
+- **VPC, SQS and SNS are now available** to students and to the Lab Builder.
+- **Lambda + SQS + DynamoDB** ☑ (Mission 14, done — see STATUS 44t and D63): an SQS-triggered order
+  pipeline on MiniStack. New: event source mappings (declared on MiniStack only), `lambda.event_source` and
+  the end-to-end `sqs.delivers_item` probe check, the Lambda console's **Triggers** tab and SQS test-event
+  template, and the diagram's trigger edge; labtest 0/70/100; template `lambda-sqs-dynamodb`.
+- **VPC + EC2** ☑ (Mission 15, done — see STATUS 44w and D64): the web server launched into its own public
+  subnet, on moto and floci. New: the EC2 Launch wizard's VPC/subnet choice (groups from another VPC are
+  refused), Create security group in a chosen VPC, instance VPC/subnet in the EC2 evidence,
+  `ec2.instance_network`, and the diagram's instance → subnet edge; labtest 0/65/100; template `vpc-ec2-web`.
+- Next: deploy on a real server and collect feedback (`docs/DEPLOYMENT.md`) — that needs a server and
+  credentials from the owner.
 - Each new lab must pass `app.labtest` (empty 0 / partial / solution 100) on every engine it may run on
   before it appears in the gallery.
 

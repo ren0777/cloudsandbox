@@ -101,6 +101,8 @@ def build_graph(collectors: dict[str, Any]) -> dict[str, Any]:
             edges.append({"source": nid, "target": f"ec2:sg:{g}", "kind": "uses"})
         if i.get("key_name"):
             edges.append({"source": nid, "target": f"ec2:key:{i['key_name']}", "kind": "key pair"})
+        if i.get("subnet"):  # drawn when the lab also collects VPC evidence (the subnet node exists)
+            edges.append({"source": nid, "target": f"vpc:subnet:{i['subnet']}", "kind": "in"})
     for name, g in sorted(ec2.get("security_groups", {}).items()):
         flags = []
         for r in g.get("ingress", []):
@@ -191,6 +193,10 @@ def build_graph(collectors: dict[str, Any]) -> dict[str, Any]:
                            + (f" · {_plural(env, 'env var')}" if env else "")))
         if f.get("role_name"):
             edges.append({"source": nid, "target": f"iam:role:{f['role_name']}", "kind": "runs as"})
+    for m in (collectors.get("lambda") or {}).get("event_sources", []):
+        if m.get("service") == "sqs":
+            edges.append({"source": f"sqs:{m['source']}", "target": f"lambda:{m['function']}",
+                          "kind": "triggers" if m.get("enabled") else "triggers (disabled)"})
 
     ids = {n["id"] for n in nodes}
     edges = [e for e in edges if e["source"] in ids and e["target"] in ids]  # e.g. a deleted security group

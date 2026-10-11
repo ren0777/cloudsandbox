@@ -135,6 +135,20 @@ journey with the session freeze, and terminal ticket rules. Run the browser E2E 
   proves Reset reproduces its baseline). `test_vpc_console.py`, `test_sqs_console.py` and
   `test_sns_console.py` cover grading, the console journeys and the break-fix states. Browser:
   `e2e/vpc.spec.ts`, `e2e/sqs.spec.ts` and `e2e/sns.spec.ts` (Missions 8–13 built or repaired in the console).
+- **Lambda + SQS + DynamoDB (Mission 14):** `test_lambda_sqs.py` covers the trigger check, the end-to-end
+  delivery check, the lab's 0/70/100 scoring from hand-built evidence, the diagram's trigger edge and the
+  console Triggers API (on Moto with the trigger operations switched on for the test). Docker-marked: the
+  trigger contract and the `sqs_deliver` probe on a real MiniStack sandbox (an item appears while the trigger
+  is enabled and not once it is disabled) and the labtest (0 / 70 / 100). `test_lambda.py`'s contract test
+  now also exercises the five event source mapping operations MiniStack declares. Browser:
+  `e2e/lambda-sqs.spec.ts` (function built and tested with the SQS event template, trigger added in the
+  Triggers tab, an order sent from the SQS console is saved, 100).
+- **VPC + EC2 (Mission 15):** `test_vpc_ec2.py` covers `ec2.instance_network` (placement, a group from another
+  VPC, the per-VPC `default` group), the lab's scoring including the default-VPC mistake (65), the diagram's
+  instance → subnet edge, and the EC2 console launching into a chosen subnet (groups from another VPC refused,
+  Create security group in a chosen VPC). Docker-marked: labtest 0/65/100 on moto and floci. Browser:
+  `e2e/vpc-ec2.spec.ts` (network from the CLI, security group and launch in the console, the architecture
+  edge, 100).
 - **E2E:** the DEMO.md flow in Chromium, including `docker ps` cleanup checks. It writes screenshots to
   `docs/screenshots/`.
 

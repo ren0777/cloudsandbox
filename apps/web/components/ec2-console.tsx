@@ -12,8 +12,11 @@ type Instance = { id: string; name: string; state: string; type: string; image_i
 type Sg = { id: string; name: string; description: string; vpc_id: string; inbound_rules: number };
 type Rule = { protocol: string; from_port: number | null; to_port: number | null; cidr: string; description?: string };
 type Options = { images: { id: string; name: string; description: string; platform: string }[];
-  instance_types: { name: string; free_tier: boolean }[]; key_pairs: string[]; security_groups: { id: string; name: string }[];
-  vpc_id: string; subnet_id: string | null };
+  instance_types: { name: string; free_tier: boolean }[]; key_pairs: string[]; security_groups: { id: string; name: string; vpc_id: string | null }[];
+  vpc_id: string; subnet_id: string | null; vpcs: Vpc[];
+  subnets: { id: string; name: string; vpc_id: string; cidr: string | null; public: boolean }[] };
+type Vpc = { id: string; name: string; cidr: string | null; is_default: boolean };
+const vpcLabel = (v: Vpc) => `${v.name || v.id}${v.name ? ` (${v.id})` : ""}${v.is_default ? " (default)" : ""}`;
 type Section = "instances" | "sgs" | "keys";
 type View = { section: Section; page: "list" | "launch" | "detail" | "create"; id?: string };
 type Ctx = { base: string; fail: (e: unknown) => void; notify: Notify; go: (v: View) => void; features: Record<string, Feature> };
@@ -132,10 +135,20 @@ function Launch(ctx: Ctx) {
   const [http, setHttp] = useState(false);
   const [https, setHttps] = useState(false);
   const [existing, setExisting] = useState<string[]>([]);
+  const [vpcId, setVpcId] = useState("");
+  const [subnetId, setSubnetId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
-    try { const x = await api<Options>(`${ctx.base}/launch-options`); setO(x); setImage((v) => v || x.images[0]?.id || ""); } catch (e) { ctx.fail(e); }
+    try {
+      const x = await api<Options>(`${ctx.base}/launch-options`); setO(x); setImage((v) => v || x.images[0]?.id || "");
+      setVpcId((v) => v || x.vpc_id); setSubnetId((v) => v ?? x.subnet_id);
+    } catch (e) { ctx.fail(e); }
   }, [ctx.base, ctx.fail]);
+  function chooseVpc(id: string) {
+    // a subnet and the security groups always belong to the chosen VPC
+    setVpcId(id); setExisting([]);
+    setSubnetId(id === o?.vpc_id ? o.subnet_id : (o?.subnets.find((x) => x.vpc_id === id)?.id ?? null));
+  }
   useEffect(() => { void load(); }, [load]);
 
   async function createKey() {
@@ -148,13 +161,16 @@ function Launch(ctx: Ctx) {
     setBusy(true);
     try {
       await api(`${ctx.base}/instances`, { method: "POST", body: {
-        name, image_id: image, instance_type: itype, key_name: key || null, tags,
+        name, image_id: image, instance_type: itype, key_name: key || null, tags, subnet_id: subnetId,
         security_group_ids: sgMode === "existing" ? existing : [],
         create_security_group: sgMode === "create" ? { name: sgName, ssh_cidr: ssh ? sshFrom : null, http, https } : null } });
       ctx.notify("pass", `Successfully initiated launch of instance ${name}.`); ctx.go({ section: "instances", page: "list" });
     } catch (e) { ctx.fail(e); } finally { setBusy(false); }
   }
   if (!o) return <p className="muted small">Loading launch options…</p>;
+  const subnets = o.subnets.filter((x) => x.vpc_id === vpcId);
+  const subnet = subnets.find((x) => x.id === subnetId);
+  const groups = o.security_groups.filter((g) => !g.vpc_id || g.vpc_id === vpcId);
   return (
     <div className="launch">
       <div>
@@ -180,9 +196,14 @@ function Launch(ctx: Ctx) {
           {newKey && <PemNotice pem={newKey.pem} name={newKey.name} />}
         </div></div>
         <div className="panel"><div className="panel-head"><h3>Network settings</h3></div><div className="panel-body">
-          <dl className="kv" style={{ margin: 0 }}><div><dt>VPC</dt><dd className="mono small">{o.vpc_id} (default)</dd></div>
-            <div><dt>Subnet</dt><dd className="mono small">{o.subnet_id ?? "No preference"}</dd></div>
-            <div><dt>Auto-assign public IP</dt><dd className="small">Enable <SimLabel note="Public IP addresses are not simulated." /></dd></div></dl>
+          <label>VPC<select value={vpcId} onChange={(e) => chooseVpc(e.target.value)} style={{ maxWidth: 520 }} data-testid="launch-vpc">
+            {o.vpcs.map((v) => <option key={v.id} value={v.id}>{vpcLabel(v)}</option>)}</select></label>
+          <label>Subnet<select value={subnetId ?? ""} onChange={(e) => setSubnetId(e.target.value || null)} style={{ maxWidth: 520 }} data-testid="launch-subnet">
+            {vpcId === o.vpc_id && !o.subnet_id && <option value="">No preference</option>}
+            {subnets.map((x) => <option key={x.id} value={x.id}>{x.name ? `${x.name} (${x.id})` : x.id}{x.cidr ? ` · ${x.cidr}` : ""}</option>)}</select>
+            {subnets.length === 0 && <span className="help">This VPC has no subnets yet. Create one in the VPC console.</span>}</label>
+          <dl className="kv" style={{ margin: 0 }}>
+            <div><dt>Auto-assign public IP</dt><dd className="small" data-testid="launch-public-ip">{subnet?.public ? "Enable" : "Disable"} (subnet setting) <SimLabel note="Public IP addresses are not simulated." /></dd></div></dl>
           <span className="small" style={{ fontWeight: 600 }}>Firewall (security groups)</span>
           <label className="choice"><input type="radio" checked={sgMode === "create"} onChange={() => setSgMode("create")} /> Create security group</label>
           <label className="choice"><input type="radio" checked={sgMode === "existing"} onChange={() => setSgMode("existing")} data-testid="sg-existing" /> Select existing security group</label>
@@ -197,7 +218,8 @@ function Launch(ctx: Ctx) {
             </div>
           ) : (
             <div className="stack" style={{ marginLeft: 22 }}>
-              {o.security_groups.map((g) => <label key={g.id} className="choice"><input type="checkbox" aria-label={`Security group ${g.name}`} checked={existing.includes(g.id)}
+              {groups.length === 0 && <span className="help">There are no security groups in this VPC yet.</span>}
+              {groups.map((g) => <label key={g.id} className="choice"><input type="checkbox" aria-label={`Security group ${g.name}`} checked={existing.includes(g.id)}
                 onChange={(e) => setExisting(e.target.checked ? [...existing, g.id] : existing.filter((x) => x !== g.id))} /><span className="mono small">{g.name} ({g.id})</span></label>)}
             </div>
           )}
@@ -211,6 +233,7 @@ function Launch(ctx: Ctx) {
           <div>Number of instances: <strong>1</strong></div>
           <div>Software image: <span className="mono">{o.images.find((i) => i.id === image)?.name ?? "-"}</span></div>
           <div>Instance type: <span className="mono">{itype}</span></div>
+          <div>Network: <span className="mono">{subnet?.name || subnetId || "default subnet"}</span></div>
           <div>Firewall: {sgMode === "create" ? `New security group (${sgName})` : `${existing.length} selected`}</div>
           <button className="primary" disabled={busy || !name || !image || (sgMode === "existing" && existing.length === 0)} onClick={() => void launch()} data-testid="launch-instance">
             {busy ? "Launching…" : "Launch instance"}</button>
@@ -322,8 +345,13 @@ function CreateSg(ctx: Ctx) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [rules, setRules] = useState<Rule[]>([]);
+  const [vpcs, setVpcs] = useState<Vpc[]>([]);
+  const [vpcId, setVpcId] = useState("");
+  useEffect(() => {
+    void api<{ vpcs: Vpc[] }>(`${ctx.base}/vpcs`).then((r) => { setVpcs(r.vpcs); setVpcId((v) => v || r.vpcs[0]?.id || ""); }).catch((e) => ctx.fail(e));
+  }, [ctx.base, ctx.fail]);
   async function create() {
-    try { await api(`${ctx.base}/security-groups`, { method: "POST", body: { name, description: description || name, rules: rules.map(toApi) } });
+    try { await api(`${ctx.base}/security-groups`, { method: "POST", body: { name, description: description || name, vpc_id: vpcId || null, rules: rules.map(toApi) } });
       ctx.notify("pass", `Security group ${name} created.`); ctx.go({ section: "sgs", page: "list" }); } catch (e) { ctx.fail(e); }
   }
   return (
@@ -332,6 +360,8 @@ function CreateSg(ctx: Ctx) {
       <div className="panel"><div className="panel-head"><h3>Basic details</h3></div><div className="panel-body">
         <label>Security group name<input className="mono" value={name} onChange={(e) => setName(e.target.value)} style={{ maxWidth: 360 }} data-testid="new-sg-name" /></label>
         <label>Description<input value={description} onChange={(e) => setDescription(e.target.value)} style={{ maxWidth: 520 }} /></label>
+        <label>VPC<select value={vpcId} onChange={(e) => setVpcId(e.target.value)} style={{ maxWidth: 520 }} data-testid="new-sg-vpc">
+          {vpcs.map((v) => <option key={v.id} value={v.id}>{vpcLabel(v)}</option>)}</select></label>
       </div></div>
       <div className="panel"><div className="panel-head"><h3>Inbound rules</h3></div><div className="panel-body"><RuleEditor rules={rules} setRules={setRules} /></div></div>
       <div className="panel disabled"><div className="panel-head"><h3>Outbound rules</h3><span className="pill">All traffic allowed (default)</span></div></div>
