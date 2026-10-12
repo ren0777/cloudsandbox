@@ -179,6 +179,13 @@ named above — comes first. Goal: grade *how* a student did something, not only
   serializer, check unit tests, runner Docker test, API docker test (CLI vs console source, forged header
   ignored, gateway), E2E `audit.spec.ts`.
 
+## Phase 12: production rehearsal (milestone 51) ☑ (done — see STATUS 51)
+DEPLOYMENT.md was executed end to end on one machine (TLS, first admin, gateway runner, backup/restore, migrations on
+start); three gaps fixed (lab import step, hard-coded `server_name`, reused Postgres volume) and a production smoke
+test added (`apps/web/e2e-prod`, DEPLOYMENT §11). **Next: the real server.** Needs from the owner: a Linux host
+(32 GB / 8 cores for ≈15 concurrent labs), a DNS name and certificate (or certbot), and who the pilot students are.
+Then: DEPLOYMENT §1–§2, import the packs, run the smoke test, pilot with one class, collect feedback.
+
 ## Verification
 - API: `tests/test_lab_builder.py` (templates catalogue/create/errors, drafts, publish gate) — fast suite
   must stay green; `scripts/test-api.sh` for the full suite before a release.

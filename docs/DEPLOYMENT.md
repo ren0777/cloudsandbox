@@ -48,6 +48,11 @@ docker compose -f infra/docker-compose.yml -f infra/production/docker-compose.pr
                --env-file production.env up -d --build
 ```
 
+Use a **fresh** Postgres volume. `infra/production/init-roles.sh` sets the production role passwords only when
+the volume is empty (first start). On a host that already ran the laptop stack under the same Compose project
+name, the old volume keeps the development passwords and the API fails with *password authentication failed for
+user "cloudlabs_app"*. Start with an empty volume, or pass a distinct project name (`-p cloudlabs`) on first install.
+
 `infra/production/docker-compose.prod.yml` switches the laptop stack to production:
 
 | | Laptop stack | Production override |
@@ -68,6 +73,15 @@ async def main():
 asyncio.run(main())"
 ```
 Sign in, change the password, then create instructor accounts under **Users** and courses under **Courses & staff**.
+
+Import the lab packs (the missions in `labs/`; demo mode, which imports them on the laptop, is off). Re-running
+it is safe: unchanged packs answer `unchanged`, and a pack with a new `version` becomes a new lab version.
+```bash
+docker compose … exec api python -m app.labs.importer $(ls labs | sed 's#^#/labs/#')
+```
+Instructors can then assign them, or start their own labs from the Lab Builder templates.
+
+Then run the **production smoke test** (§11) once before students arrive.
 
 ## 3. Add a runner server (multi-runner)
 
@@ -199,3 +213,25 @@ resources and doesn't take a seat).
 - **Sizing:** see `docs/LOADTEST.md`. Floci sandboxes use about 30–40 MiB of RAM each when idle, but provisioning
   and grading are CPU-bound. Plan about 0.5 CPU per concurrent lab, and run `python -m app.loadtest` on your
   hardware before setting `RUNNER_MAX_SANDBOXES`.
+
+## 11. Production smoke test
+
+`apps/web/e2e-prod/production.spec.ts` drives the first hour of a deployment through a browser, over HTTPS, and
+never resets anything: `/healthz` reports database and runner up, a demo account is refused, the admin signs in
+(changing the temporary password if needed) and creates an instructor; the instructor creates a course, imports
+a one-student roster and assigns Mission 16; the new student changes their password, works in the console **and
+the terminal** (WebSocket through TLS, graded through the audit proxy), scores 100; the instructor sees the result.
+It needs the lab packs imported (§2) and takes about 2 minutes.
+```bash
+cd apps/web && npm ci && npx playwright install chromium
+CLOUDLABS_URL=https://labs.college.edu CLOUDLABS_ADMIN_EMAIL=you@college.edu CLOUDLABS_ADMIN_PASSWORD='…' \
+  npx playwright test -c playwright.prod.config.ts
+```
+Set `CLOUDLABS_ADMIN_NEW_PASSWORD` too if the admin has never signed in (the test then chooses that password).
+It **creates real accounts** (`smoke-instructor-<stamp>@`, `smoke-student-<stamp>@` in the admin's domain) and a
+course `Smoke test <stamp>`; **Deactivate** them under **Users** afterwards if you don't want them listed. To prove a
+runner server (§3) works, drain the others for the run (Runtime → Drain), so the lab is placed on it.
+
+The whole of this guide (§2 one server with TLS, §3 a gateway runner registered from the CLI, §7 backup and restore,
+§8 migrations on API start) was rehearsed on one machine with a self-signed certificate on 2026-10-13
+(`docs/STATUS.md` milestone 51).
