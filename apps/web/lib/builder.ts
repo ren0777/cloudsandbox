@@ -26,6 +26,7 @@ export type CheckType = {
   service: string;
   params_schema: JsonSchema;
   reads: string[];
+  collector?: string;  // "audit": graded from the sandbox's recorded AWS calls, not its resources
   supported: boolean;
   unsupported_reason: string | null;
   engines: Record<string, { usable: boolean; unusable_ops: string[] }>;

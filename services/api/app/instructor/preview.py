@@ -34,7 +34,7 @@ from ..db import get_db, sessionmaker
 from ..errors import ApiError, not_found
 from ..grader import registry
 from ..grader.evidence import capture
-from ..grader.grade import _dec
+from ..grader.grade import _dec, needs_audit
 from ..labs import drafts as dr
 from ..labs.package import setup_job
 from ..labs.render import compute_variables, render_task
@@ -131,7 +131,7 @@ async def load_preview_context(db: AsyncSession, user: User, sandbox_id: uuid.UU
     if lp.get("status") != "running" or not lp.get("emulator_endpoint"):
         raise ApiError("invalid_state", "this preview sandbox is not running", 409)
     return SandboxContext(id=uuid.UUID(lp["sandbox_id"]), engine=lp["engine"],
-                          emulator_endpoint=lp["emulator_endpoint"],
+                          emulator_endpoint=lp["emulator_endpoint"], audit_endpoint=lp.get("audit_endpoint"),
                           touch=lambda: _touch(d.id, lp["sandbox_id"]))
 
 
@@ -181,7 +181,7 @@ async def start_preview(draft_id: uuid.UUID, user: User = Depends(Authz(Action.l
     req = {"sandbox_id": sid, "env": s.env, "engine": engine, "terminal_credential": cred,
            "emulator": {"cpus": s.emulator_cpus, "memory_mib": s.emulator_memory_mib, "pids": s.emulator_pids},
            "terminal": {"cpus": s.terminal_cpus, "memory_mib": s.terminal_memory_mib, "pids": s.terminal_pids},
-           "setup": setup_job(pkg.public_bundle, pkg.definition, variables)}
+           "setup": setup_job(pkg.public_bundle, pkg.definition, variables), "audit": needs_audit(pkg.definition)}
     try:
         info = await runner.create_sandbox(req)
     except RunnerError as e:
@@ -192,7 +192,7 @@ async def start_preview(draft_id: uuid.UUID, user: User = Depends(Authz(Action.l
     d.last_preview = {"status": "running", "sandbox_id": sid, "engine": info.get("engine", engine),
                       "started_at": now, "started_by": str(user.id), "last_active": now,
                       "emulator_endpoint": info["emulator_endpoint"], "terminal_endpoint": info["terminal_endpoint"],
-                      "ttyd_cred_enc": encrypt(cred), "error": None}
+                      "audit_endpoint": info.get("audit_endpoint"), "ttyd_cred_enc": encrypt(cred), "error": None}
     await db.commit()
     await db.refresh(d)
     log.info("preview.started", draft_id=str(d.id), sandbox_id=sid, engine=engine)
@@ -248,7 +248,8 @@ async def reset_preview(draft_id: uuid.UUID, user: User = Depends(Authz(Action.l
         raise ApiError("preview_unavailable", f"the preview sandbox could not be reset: {e.message}",
                        503 if e.code in ("unavailable", "timeout") else 409) from None
     d.last_preview = {**lp, "last_active": st.now().isoformat(), "error": None,
-                      "emulator_endpoint": info["emulator_endpoint"], "terminal_endpoint": info["terminal_endpoint"]}
+                      "emulator_endpoint": info["emulator_endpoint"], "terminal_endpoint": info["terminal_endpoint"],
+                      "audit_endpoint": info.get("audit_endpoint")}
     await db.commit()
     await db.refresh(d)
     log.info("preview.reset", draft_id=str(d.id), sandbox_id=str(lp["sandbox_id"]))
@@ -352,10 +353,14 @@ async def run_single_check(draft_id: uuid.UUID, body: CheckRunIn,
         if block is not None:
             return block
 
+        if cd.collector == "audit" and not lp.get("audit_endpoint"):
+            return _blocked(rc.type, "audit_unavailable", "This preview sandbox was started without API call "
+                            "recording (the draft had no audit check then). Restart the preview to run it.")
         collectors = [] if cd.collector == "none" else [cd.collector]
         probes = [cd.probe(params)] if cd.probe else None
         try:
-            payload = await capture(lp["emulator_endpoint"], collectors, lp["engine"], probes)
+            payload = await capture(lp["emulator_endpoint"], collectors, lp["engine"], probes,
+                                    lp.get("audit_endpoint"))
             outcome = cd.fn(params, payload.get("collectors", {}))
         except (ClientError, EndpointConnectionError, BotoCoreError) as e:
             code = (e.response.get("Error", {}).get("Code") or type(e).__name__) \

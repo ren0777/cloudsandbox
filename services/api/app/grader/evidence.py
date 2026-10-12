@@ -14,6 +14,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from ..runtime import emulators
+from .audit import collect_audit
 
 MAX_OBJECTS_PER_BUCKET = 1000
 MAX_ITEMS = 1000
@@ -443,14 +444,19 @@ def digest(payload: dict[str, Any]) -> tuple[str, str]:
 
 
 async def capture(endpoint: str, collectors: list[str], engine: str,
-                  probes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                  probes: list[dict[str, Any]] | None = None, audit_endpoint: str | None = None) -> dict[str, Any]:
     """Run collectors in a thread (boto3 is blocking). Raises on any infrastructure error. The evidence
-    format is engine-independent; the engine only selects the client configuration."""
+    format is engine-independent; the engine only selects the client configuration. Collectors and probes
+    use the emulator endpoint directly, so they never appear in the audit log; the `audit` collector reads
+    that log from `audit_endpoint` (the sandbox's proxy) last, after every probe has run."""
     adapter = emulators.get(engine)
 
     def run() -> dict[str, Any]:
         out: dict[str, Any] = {}
         names = sorted(set(collectors))
+        audit = "audit" in names
+        if audit:
+            names.remove("audit")
         # Probe collectors run first so their (non-destructive) reads see the final state.
         if "lambda" in names:  # probes run first so their side effects are visible to the other collectors
             names.remove("lambda")
@@ -462,6 +468,8 @@ async def capture(endpoint: str, collectors: list[str], engine: str,
             if name not in COLLECTORS:
                 raise RuntimeError(f"no collector {name!r}")
             out[name] = COLLECTORS[name](adapter, endpoint)
+        if audit:
+            out["audit"] = collect_audit(audit_endpoint)
         return out
     data = await asyncio.to_thread(run)
     return {"format": EVIDENCE_FORMAT, "captured_at": datetime.now(timezone.utc).isoformat(),

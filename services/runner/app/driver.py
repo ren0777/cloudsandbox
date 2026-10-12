@@ -19,6 +19,9 @@ class JobSpec(BaseModel):
     sha256: str  # sha256 of the decoded bundle bytes; verified by the runner
     script: str = Field(pattern=r"^[A-Za-z0-9_./-]+$")
     timeout_s: int = Field(60, ge=1)
+    # Labtest scripts stand in for the student, so they go through the sandbox's audit proxy (when it has one);
+    # setup jobs never do, so a lab's starting state is not in the student's audit log.
+    audited: bool = False
 
 
 EMULATOR_PATTERN = r"^[a-z][a-z0-9-]{1,30}$"
@@ -32,6 +35,9 @@ class CreateSandbox(BaseModel):
     terminal: Resources = Resources(cpus=0.5, memory_mib=256, pids=128)
     terminal_credential: str = Field(pattern=r"^[A-Za-z0-9_-]{4,64}:[A-Za-z0-9_-]{8,128}$")
     setup: JobSpec | None = None
+    # Put an API-audit proxy in front of the emulator (only labs with audit.* checks ask for it). A Reset keeps
+    # the sandbox's choice.
+    audit: bool = False
 
 
 class ResetSandbox(BaseModel):
@@ -49,6 +55,9 @@ class SandboxInfo(BaseModel):
     terminal_endpoint: str  # ws://<ip>:7681/ws on the sandbox network
     emulator_image_id: str
     terminal_image_id: str
+    # the audit proxy (console calls go through it; the log is read at <audit_endpoint>/_cloudlabs/audit).
+    # None when the sandbox has no proxy.
+    audit_endpoint: str | None = None
 
 
 ComponentState = Literal["running", "starting", "exited", "oom", "missing"]

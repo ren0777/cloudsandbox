@@ -24,7 +24,7 @@ from ..crypto import encrypt
 from ..db import sessionmaker
 from ..errors import ApiError
 from ..grader import evidence as ev
-from ..grader.grade import collectors_for, grade, probes_for, to_json
+from ..grader.grade import collectors_for, grade, needs_audit, probes_for, to_json
 from ..labs.importer import definition_of, get_bundle
 from ..labs.package import setup_job
 from ..labs.render import compute_variables
@@ -174,7 +174,7 @@ async def provision(session_id: uuid.UUID) -> None:
         cred = new_terminal_credential()
         req = {"sandbox_id": str(sess.id), "env": sess.env, "engine": sess.engine, "terminal_credential": cred,
                "emulator": sess.resources["emulator"], "terminal": sess.resources["terminal"],
-               "setup": setup_job(public.data, d, sess.variables)}
+               "setup": setup_job(public.data, d, sess.variables), "audit": needs_audit(d)}
     t0 = time.monotonic()
     log.info("sandbox.create.started", session_id=str(session_id))
     try:
@@ -193,7 +193,7 @@ async def provision(session_id: uuid.UUID) -> None:
              duration_ms=int((time.monotonic() - t0) * 1000))
     try:
         baseline = await ev.capture(info["emulator_endpoint"], collectors_for(d), sess.engine,
-                                    probes_for(d, sess.variables))
+                                    probes_for(d, sess.variables), info.get("audit_endpoint"))
     except Exception as e:
         log.warning("sandbox.create.failed", session_id=str(session_id), error=f"baseline: {e!r}")
         await fail(session_id, [S.PROVISIONING], "provision_error")
@@ -205,8 +205,8 @@ async def provision(session_id: uuid.UUID) -> None:
         ok = await st.transition(
             db, sess, [S.PROVISIONING], S.READY, reason="provisioned", actor=SYSTEM,
             state_deadline_at=None, emulator_endpoint=info["emulator_endpoint"],
-            terminal_endpoint=info["terminal_endpoint"], ttyd_cred_enc=encrypt(cred),
-            image_digest=info["emulator_image_id"], terminal_image_digest=info["terminal_image_id"],
+            terminal_endpoint=info["terminal_endpoint"], audit_endpoint=info.get("audit_endpoint"),
+            ttyd_cred_enc=encrypt(cred), image_digest=info["emulator_image_id"], terminal_image_digest=info["terminal_image_id"],
             ready_at=now, last_activity_at=now, expires_at=now + timedelta(minutes=sess.ttl_minutes))
         if ok:
             await _store_baseline(db, sess, baseline)
@@ -291,7 +291,8 @@ async def reset(user: User, session_id: uuid.UUID) -> LabSession:
         info = await (await client_for_id(runner_id)).reset_sandbox(str(session_id), {
             "terminal_credential": cred, "emulator": resources["emulator"],
             "terminal": resources["terminal"], "setup": setup_job(public.data, d, variables)})
-        baseline = await ev.capture(info["emulator_endpoint"], collectors_for(d), engine, probes_for(d, variables))
+        baseline = await ev.capture(info["emulator_endpoint"], collectors_for(d), engine, probes_for(d, variables),
+                                    info.get("audit_endpoint"))
     except Exception as e:
         log.warning("sandbox.create.failed", session_id=str(session_id), error=f"reset: {e!r}")
         await fail(session_id, [S.RESETTING], "reset_failed")
@@ -302,7 +303,7 @@ async def reset(user: User, session_id: uuid.UUID) -> LabSession:
         ok = await st.transition(db, sess, [S.RESETTING], S.READY, reason="reset_done", actor=SYSTEM,
                                  state_deadline_at=None, emulator_endpoint=info["emulator_endpoint"],
                                  terminal_endpoint=info["terminal_endpoint"], ttyd_cred_enc=encrypt(cred),
-                                 last_activity_at=st.now())
+                                 audit_endpoint=info.get("audit_endpoint"), last_activity_at=st.now())
         if not ok:
             raise _state_conflict(sess)
         await _store_baseline(db, sess, baseline)
@@ -347,11 +348,12 @@ async def submit(session_id: uuid.UUID, trigger: str, actor: str) -> Attempt:
         await st.commit(db)  # closes terminals (bus) — mutation paths are now blocked
         lv, d = await _definition(db, sess.lab_version_id)
         endpoint, variables, engine = sess.emulator_endpoint, dict(sess.variables), sess.engine
+        audit_endpoint = sess.audit_endpoint
     log.info("grader.submit.started", session_id=str(session_id), trigger=trigger)
     t0 = time.monotonic()
     try:
         # 2. Capture evidence only after mutation paths are blocked. 3. Pure grading.
-        payload = await ev.capture(endpoint, collectors_for(d), engine, probes_for(d, variables))
+        payload = await ev.capture(endpoint, collectors_for(d), engine, probes_for(d, variables), audit_endpoint)
         result = grade(d, variables, payload)
     except Exception as e:
         log.error("grader.submit.failed", session_id=str(session_id), error=repr(e))
@@ -443,7 +445,7 @@ async def progress(sess: LabSession) -> dict:
         _, d = await _definition(db, sess.lab_version_id)
     try:
         payload = await ev.capture(sess.emulator_endpoint or "", collectors_for(d), sess.engine,
-                                   probes_for(d, sess.variables))
+                                   probes_for(d, sess.variables), sess.audit_endpoint)
     except Exception as e:
         raise ApiError("progress_unavailable", f"could not read your sandbox ({e.__class__.__name__})",
                        503) from None

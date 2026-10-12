@@ -280,7 +280,7 @@ async def _recover_submitting(sess: LabSession, sb: dict | None) -> None:
     await _act(sess.id, "retry_grading", attempt=fresh.recovery_attempts)
     try:
         payload = await ev.capture(sess.emulator_endpoint or "", collectors_for(d), sess.engine,
-                                   probes_for(d, sess.variables))
+                                   probes_for(d, sess.variables), sess.audit_endpoint)
         result = grade(d, sess.variables, payload)
         await service._persist_attempt(sess.id, trigger, payload, result, d)
     except ApiError:

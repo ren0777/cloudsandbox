@@ -22,6 +22,7 @@ from ..auth.policy import load_session_for
 from ..errors import ApiError
 from ..models import LabSession, SessionState as S, User
 from ..obs.logging import bind
+from ..grader.audit import console_headers
 from ..runtime import emulators
 from ..sessions import service
 
@@ -33,6 +34,8 @@ class SandboxContext:
     engine: str
     emulator_endpoint: str
     touch: Callable[[], Awaitable[None]]
+    # the sandbox's API-audit proxy (labs with audit.* checks): console calls go through it, marked as console
+    audit_endpoint: str | None = None
 
 
 async def session_context(session_id: uuid.UUID, user: User, db: AsyncSession) -> SandboxContext:
@@ -44,7 +47,7 @@ async def session_context(session_id: uuid.UUID, user: User, db: AsyncSession) -
         raise ApiError("invalid_state", "the console is available only while the lab is running", 409,
                        extra={"state": sess.state.value})
     return SandboxContext(id=sess.id, engine=sess.engine, emulator_endpoint=sess.emulator_endpoint,
-                          touch=lambda: service.touch(sess.id))
+                          audit_endpoint=sess.audit_endpoint, touch=lambda: service.touch(sess.id))
 
 
 async def console_session(session_id: uuid.UUID, user: User, db: AsyncSession) -> SandboxContext:
@@ -62,6 +65,21 @@ async def sandbox_engine(db: AsyncSession, user: User, sandbox_id: uuid.UUID) ->
         return (await load_session_for(db, user, sandbox_id)).engine
     from ..instructor.preview import load_preview_context
     return (await load_preview_context(db, user, sandbox_id)).engine
+
+
+def console_client(ctx: SandboxContext, aws_service: str):
+    """A boto3 client for a console action. With an audit proxy the call goes through it, marked as a console
+    call, so `audit.*` checks see what the student did in the console (D65)."""
+    adapter = emulators.get(ctx.engine)
+    if not ctx.audit_endpoint:
+        return adapter.client(aws_service, ctx.emulator_endpoint)
+    client = adapter.client(aws_service, ctx.audit_endpoint)
+
+    def mark(request: Any, **_: Any) -> None:  # after signing: the proxy strips it, so it must not be signed
+        for k, v in console_headers().items():
+            request.headers[k] = v
+    client.meta.events.register("before-send", mark)
+    return client
 
 
 def operation_name(fn_name: str) -> str:
@@ -84,7 +102,7 @@ async def aws_call(ctx: SandboxContext, aws_service: str, fn_name: str, **kw: An
     require_capability(ctx, aws_service, fn_name)
 
     def run() -> dict:
-        client = emulators.get(ctx.engine).client(aws_service, ctx.emulator_endpoint)
+        client = console_client(ctx, aws_service)
         return getattr(client, fn_name)(**kw)
     try:
         out = await asyncio.to_thread(run)

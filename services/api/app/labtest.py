@@ -28,7 +28,7 @@ import yaml
 
 from .config import get_settings
 from .grader import evidence as ev
-from .grader.grade import collectors_for, grade, probes_for, to_json
+from .grader.grade import collectors_for, grade, needs_audit, probes_for, to_json
 from .labs.package import LabPackage, load_pack, setup_job, tar_members
 from .labs.render import compute_variables
 from .runtime import emulators
@@ -66,14 +66,16 @@ def _job_bundle(pkg: LabPackage, script: str, variables: dict[str, str]) -> dict
             ti.size, ti.mode = len(data), 0o755 if name.endswith(".sh") else 0o644
             tf.addfile(ti, io.BytesIO(data))
     raw = buf.getvalue()
+    # audited: the script stands in for the student, so its calls go through the audit proxy (if any)
     return {"bundle_b64": base64.b64encode(raw).decode(), "sha256": hashlib.sha256(raw).hexdigest(),
-            "script": "_labtest_run.sh", "timeout_s": 120}
+            "script": "_labtest_run.sh", "timeout_s": 120, "audited": True}
 
 
-async def _score(runner: RunnerClient, pkg: LabPackage, engine: str, endpoint: str,
+async def _score(runner: RunnerClient, pkg: LabPackage, engine: str, info: dict,
                  variables: dict[str, str]) -> dict:
     d = pkg.definition
-    payload = await ev.capture(endpoint, collectors_for(d), engine, probes_for(d, variables))
+    payload = await ev.capture(info["emulator_endpoint"], collectors_for(d), engine, probes_for(d, variables),
+                               info.get("audit_endpoint"))
     return grade(d, variables, payload)
 
 
@@ -89,15 +91,16 @@ async def run_scenario(runner: RunnerClient, pkg: LabPackage, name: str, expecte
         "emulator": {"cpus": s.emulator_cpus, "memory_mib": s.emulator_memory_mib, "pids": s.emulator_pids},
         "terminal": {"cpus": s.terminal_cpus, "memory_mib": s.terminal_memory_mib, "pids": s.terminal_pids},
         "setup": setup_job(pkg.public_bundle, d, variables),
+        "audit": needs_audit(d),
     }
     try:
         info = await runner.create_sandbox(req)
         detail = ""
         if name == RESET:
-            first = await _score(runner, pkg, engine, info["emulator_endpoint"], variables)
+            first = await _score(runner, pkg, engine, info, variables)
             reset = {k: v for k, v in req.items() if k in ("emulator", "terminal", "terminal_credential", "setup")}
             info = await runner.reset_sandbox(sid, reset)
-            second = await _score(runner, pkg, engine, info["emulator_endpoint"], variables)
+            second = await _score(runner, pkg, engine, info, variables)
             if first["score"] != second["score"]:
                 return ScenarioResult(name, expected, None,
                                       f"reset changed the baseline: {first['score']} -> {second['score']}",
@@ -110,7 +113,7 @@ async def run_scenario(runner: RunnerClient, pkg: LabPackage, name: str, expecte
             if res["exit_code"] != 0:
                 return ScenarioResult(name, expected, None, f"{SCRIPTS[name]} exited {res['exit_code']}: "
                                                             f"{res['output'][-400:]}", engine)
-        result = await _score(runner, pkg, engine, info["emulator_endpoint"], variables)
+        result = await _score(runner, pkg, engine, info, variables)
         failed = [f"{t['task_id']}" for t in result["tasks"] if not t["passed"]]
         detail = f"failed tasks: {', '.join(failed) or '-'}"
         return ScenarioResult(name, expected, result["score"], detail, engine, to_json(result))

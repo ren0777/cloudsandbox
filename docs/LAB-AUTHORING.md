@@ -93,7 +93,25 @@ tasks:
 | `lambda.invoke_returns` | `name`, `payload` (event), `expect` | invoking the function with `payload` returns a response containing `expect` (dicts match as a subset, numbers with float tolerance) |
 | `lambda.event_source` | `name`, `queue`, `batch_size`?, `enabled`? (default true), `report_batch_item_failures`? | an SQS trigger (event source mapping) connects the queue to the function with those settings. Triggers are declared only on MiniStack |
 
-`audit.*` is reserved and rejected with "not available yet".
+| `audit.called` | `action` (`service:Operation`), `source`? (`any`/`cli`/`console`, default any), `min_count`? (1–100) | the student made that AWS call successfully (HTTP 2xx), at least `min_count` times, from that source |
+| `audit.order` | `actions` (2–10 `service:Operation` names), `source`? | the calls happened in this order (each one after the previous; other calls in between are fine) |
+
+**Audit checks** grade *how* a student worked, not only the end state (Mission 16, `s3-versioning-order`:
+versioning must be on before the first upload, which no resource check can see). A lab with any `audit.*` check
+gets an **API-audit proxy** in its sandbox: the terminal and the console reach the emulator through it, and it
+records each call. Calls typed in the terminal count as `cli`, calls made in the console as `console`.
+- Actions are the API operation names with the AWS signing name as prefix, as in the API reference:
+  `s3:PutObject`, `s3:PutBucketVersioning`, `dynamodb:PutItem`, `lambda:Invoke`, `ec2:RunInstances`. VPC
+  operations are `ec2:…` (`ec2:CreateVpc`). The action's service must be one of the lab's `services`.
+- High-level CLI commands map to API calls: `aws s3 cp` (small file) is `s3:PutObject`, `aws s3 mb` is
+  `s3:CreateBucket`, `aws s3 ls s3://b` is `s3:ListObjectsV2`.
+- Only successful calls count. Setup scripts, break actions, grading reads and probes are **never** recorded,
+  and a Reset starts an empty log, like the fresh resources.
+- Checks are positive by design (there is no "never called"): a call that bypasses the proxy is simply not seen,
+  so it can only cost the student marks, never earn them.
+- labtest runs `partial.sh`/`solution.sh` through the proxy (they stand in for the student, as `cli`), so a lab
+  that requires the console (`source: console`) can't reach 100 in labtest; prefer `any` or `cli`.
+- Use `feedback:` to explain *why* the order matters; the default message only names the calls.
 
 **Lambda labs and probes:** `lambda.invoke_returns` declares a *probe*. During evidence capture (baseline,
 progress, submit) the collector first invokes the function with each distinct payload and stores the result;

@@ -125,6 +125,7 @@ services:
     volumes:
       - ../services/api:/srv
       - ../labs:/labs:ro
+      - ../images/terminal/audit_proxy.py:/opt/cloudlabs/audit_proxy.py:ro  # FakeRunner runs the real proxy
     labels:
       cloudlabs.role: control-plane
       cloudlabs.env: test

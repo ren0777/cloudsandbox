@@ -112,3 +112,8 @@ def collectors_for(definition: LabDefinition) -> list[str]:
         for c in task.checks:
             names.add(registry.get(c.type).collector)
     return sorted(names)
+
+
+def needs_audit(definition: LabDefinition) -> bool:
+    """Whether the lab's sandbox needs the API-audit proxy (any check reads the `audit` collector)."""
+    return "audit" in collectors_for(definition)

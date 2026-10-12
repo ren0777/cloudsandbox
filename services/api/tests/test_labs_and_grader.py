@@ -56,8 +56,7 @@ def test_s3_basics_loads_and_bundles_are_deterministic():
     (lambda d: d.pop("schema_version"), "unsupported schema_version"),
     (lambda d: d.update(bogus=1), "bogus"),
     (lambda d: d["tasks"][0]["checks"].append({"type": "s3.nope", "bucket": "x"}), "unknown check type"),
-    (lambda d: d["tasks"][0]["checks"].append({"type": "audit.called", "action": "s3:PutObject"}),
-     "not available yet"),
+    (lambda d: d["tasks"][0]["checks"].append({"type": "s3.not_built_yet"}), "not available yet"),
     (lambda d: d["tasks"][0]["checks"].append({"type": "lambda.function", "name": "x"}), "not listed in services"),
     # Moto/Floci can't execute Lambda code, so an invoke check needs a code-running engine pinned
     (lambda d: (d["services"].append("lambda"), d["tasks"][0]["checks"].append(
@@ -70,7 +69,7 @@ def test_s3_basics_loads_and_bundles_are_deterministic():
     (lambda d: d["tasks"].append(dict(d["tasks"][0])), "task ids must be unique"),
     (lambda d: d["tasks"][0].update(title="{{ undefined_var }}"), "template error"),
 ])
-def test_invalid_labs_rejected(tmp_path, mutate, needle):
+def test_invalid_labs_rejected(tmp_path, mutate, needle, unsupported_check):
     with pytest.raises(LabValidationError) as e:
         load_pack(_pack(tmp_path, mutate))
     assert needle in str(e.value), e.value.errors

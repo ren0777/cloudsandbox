@@ -77,6 +77,16 @@ def tar_members(bundle: bytes) -> dict[str, bytes]:
         return {m.name: tf.extractfile(m).read() for m in tf.getmembers() if m.isfile()}  # type: ignore[union-attr]
 
 
+def _audited_actions(params: object) -> list[str]:
+    return list(getattr(params, "actions", None) or [getattr(params, "action", "")])
+
+
+def _audits_lab_service(action: str, d: LabDefinition) -> bool:
+    """Audit actions use the AWS signing name: VPC operations are `ec2:…`, so a VPC lab may audit them."""
+    svc = action.split(":", 1)[0]
+    return svc in d.services or any(emulators.SERVICE_CLIENT.get(s) == svc for s in d.services)
+
+
 def validate_definition(d: LabDefinition, public_files: set[str]) -> list[str]:
     """Semantic validation beyond the schema: known+supported checks, param types (after rendering
     with a sample student), capability support levels, setup script presence."""
@@ -105,12 +115,17 @@ def validate_definition(d: LabDefinition, public_files: set[str]) -> list[str]:
                 errors.append(f"{where}: {e}")
                 continue
             try:
-                defn.params_model.model_validate(c.params)
+                params = defn.params_model.model_validate(c.params)
             except ValidationError as e:
                 errors += [f"{where}: {'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()]
+                params = None
             ops.update(defn.reads)
             svc = c.type.split(".")[0]
-            if svc not in d.services:
+            if svc == "audit":  # not a service: the audited actions' services must be the lab's
+                if params is not None:
+                    errors += [f"{where}: {action}: service {action.split(':')[0]!r} is not listed in services"
+                               for action in _audited_actions(params) if not _audits_lab_service(action, d)]
+            elif svc not in d.services:
                 errors.append(f"{where}: service {svc!r} is not listed in services")
     try:
         actions = render_break_actions(d.break_actions, variables)

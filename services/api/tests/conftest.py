@@ -63,6 +63,21 @@ async def seed_runner_row(healthy: bool = True, max_sandboxes: int = 4) -> None:
         await db.commit()
 
 
+UNSUPPORTED_CHECK = "s3.not_built_yet"
+
+
+@pytest.fixture
+def unsupported_check():
+    """A check type that is registered but not available (registry.stub), for the "not available yet" paths.
+    Every real namespace is built now, so the tests register one and remove it again."""
+    from app.grader import registry
+    from app.grader.checks import load_all
+    load_all()
+    registry.stub(UNSUPPORTED_CHECK, "kept for tests: a check the platform can't run yet")
+    yield UNSUPPORTED_CHECK
+    registry.REGISTRY.pop(UNSUPPORTED_CHECK, None)
+
+
 @pytest.fixture
 async def fake_runner():
     fr = FakeRunner()

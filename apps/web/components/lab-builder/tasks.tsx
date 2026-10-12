@@ -177,7 +177,10 @@ function CheckEditor({ check, index, count, task, labEngine, catalogue, validati
         <p className="small" style={{ color: "var(--warn)", margin: "6px 0 0" }}>Not available on {unusable.join(", ")}
           {ct.unsupported_reason ? `: ${ct.unsupported_reason}` : ""}.</p>
       )}
-      {ct && <p className="lb-hint" style={{ margin: "6px 0 10px" }}>Reads {ct.reads.join(", ")}</p>}
+      {ct && <p className="lb-hint" style={{ margin: "6px 0 10px" }}>
+        {ct.collector === "audit"
+          ? "Reads the AWS calls recorded in the student's sandbox (terminal = cli, console = console). Actions use the API name, e.g. s3:PutObject."
+          : `Reads ${ct.reads.join(", ")}`}</p>}
       {ct ? (
         <SchemaForm key={check.type} schema={ct.params_schema} value={params} idPrefix={`t${task.id}-c${index}`}
           onChange={(p) => onChange({ ...common, type: check.type, ...p } as Check)} />

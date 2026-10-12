@@ -39,6 +39,7 @@ CloudLabs runs on one machine or on a fleet of runner servers without code chang
 |---|---|---|
 | Emulator | 0.5 CPU, 384 MiB, 128 PIDs | about 20–30 MiB |
 | Terminal | 0.5 CPU, 256 MiB, 128 PIDs | about 5–10 MiB |
+| Audit proxy (only labs with `audit.*` checks) | 0.25 CPU, 96 MiB, 64 PIDs | about 15 MiB |
 | Provisioning | | about 12 s alone; about 47 s with 16 starting at once on 6 vCPUs |
 | Grading (Submit) | | about 3 s; about 17 s with 16 concurrent labs on 6 vCPUs |
 

@@ -29,7 +29,7 @@ Note: the LocalStack Community Edition was archived in March 2026. We will use *
 |---|---|---|
 | Runner | **A separate Runner Agent process** (`services/runner`, FastAPI, the only thing holding the Docker socket). The API talks to it only through `RunnerClient` → `HttpRunnerClient` (HMAC + timestamp over localhost/internal network in slice 1; mTLS is added on top later, see §10). The API **never** imports the Docker SDK, and a test enforces this. | more runners + mTLS + scheduler |
 | Redis / queues | none; grading is synchronous, cleanup is an asyncio loop in the API (`app/tasks/janitor.py`) | arq worker + Redis |
-| Audit | `AuditSource` protocol → `NullAuditSource`; `audit.*` checks are registered but raise `NotSupportedInSlice` | proxy-backed audit source |
+| Audit | `AuditSource` protocol → `NullAuditSource`; `audit.*` checks are registered but raise `NotSupportedInSlice` | proxy-backed audit source (**built in milestone 50**, STATUS D65–D67: per-sandbox proxy only for labs with `audit.*` checks; in-memory log, no Redis) |
 | Other services | check registry namespaces `iam/ec2/lambda/dynamodb` exist and are empty; the console nav shows them as "Coming soon" | fill in the modules |
 | Gamification, multi-server, LTI, analytics | not built | roadmap phases below |
 

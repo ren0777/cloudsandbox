@@ -2,7 +2,11 @@
 # Modes:
 #   terminal (default): serve an interactive bash over ttyd; credential comes from TTYD_CREDENTIAL.
 #   job <script>      : run a lab-pack script (setup / labtest) from /work and exit with its status.
+#   audit-proxy       : the sandbox's API-audit proxy (own container and uid, see audit_proxy.py).
 set -euo pipefail
+if [ "${1:-}" = "audit-proxy" ]; then
+  exec python3 -I /usr/local/lib/cloudlabs/audit_proxy.py
+fi
 mkdir -p "$HOME/.aws"
 cat > "$HOME/.aws/config" <<CFG
 [default]
