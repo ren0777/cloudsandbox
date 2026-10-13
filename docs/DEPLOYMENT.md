@@ -4,7 +4,8 @@ Two supported shapes:
 
 | Shape | When | Servers |
 |---|---|---|
-| **One server** | a department pilot, up to ≈15 concurrent labs on a 32 GB / 8-core machine | control plane + one runner on the same host (`direct` access mode) |
+| **Laptop pilot** | a first class: ≈8 concurrent labs on an ordinary laptop (16 GB RAM, Docker given ~6 GB / 6 CPUs) | the whole stack on the laptop, see §12 |
+| **One server** | a department: up to ≈15 concurrent labs on a 32 GB / 8-core machine | control plane + one runner on the same host (`direct` access mode) |
 | **Multi-runner** | whole classes at once | one control-plane server + N runner servers (`gateway` access mode) |
 
 Everything runs in Docker. The control plane is `postgres`, `api`, `web` and `gateway` (nginx). A runner is one
@@ -48,6 +49,11 @@ docker compose -f infra/docker-compose.yml -f infra/production/docker-compose.pr
                --env-file production.env up -d --build
 ```
 
+Use a **fresh** Postgres volume. `infra/production/init-roles.sh` sets the production role passwords only when
+the volume is empty (first start). On a host that already ran the laptop stack under the same Compose project
+name, the old volume keeps the development passwords and the API fails with *password authentication failed for
+user "cloudlabs_app"*. Start with an empty volume, or pass a distinct project name (`-p cloudlabs`) on first install.
+
 `infra/production/docker-compose.prod.yml` switches the laptop stack to production:
 
 | | Laptop stack | Production override |
@@ -68,6 +74,15 @@ async def main():
 asyncio.run(main())"
 ```
 Sign in, change the password, then create instructor accounts under **Users** and courses under **Courses & staff**.
+
+Import the lab packs (the missions in `labs/`; demo mode, which imports them on the laptop, is off). Re-running
+it is safe: unchanged packs answer `unchanged`, and a pack with a new `version` becomes a new lab version.
+```bash
+docker compose … exec api python -m app.labs.importer $(ls labs | sed 's#^#/labs/#')
+```
+Instructors can then assign them, or start their own labs from the Lab Builder templates.
+
+Then run the **production smoke test** (§11) once before students arrive.
 
 ## 3. Add a runner server (multi-runner)
 
@@ -199,3 +214,65 @@ resources and doesn't take a seat).
 - **Sizing:** see `docs/LOADTEST.md`. Floci sandboxes use about 30–40 MiB of RAM each when idle, but provisioning
   and grading are CPU-bound. Plan about 0.5 CPU per concurrent lab, and run `python -m app.loadtest` on your
   hardware before setting `RUNNER_MAX_SANDBOXES`.
+
+## 11. Production smoke test
+
+`apps/web/e2e-prod/production.spec.ts` drives the first hour of a deployment through a browser, over HTTPS, and
+never resets anything: `/healthz` reports database and runner up, a demo account is refused, the admin signs in
+(changing the temporary password if needed) and creates an instructor; the instructor creates a course, imports
+a one-student roster and assigns Mission 16; the new student changes their password, works in the console **and
+the terminal** (WebSocket through TLS, graded through the audit proxy), scores 100; the instructor sees the result.
+It needs the lab packs imported (§2) and takes about 2 minutes.
+```bash
+cd apps/web && npm ci && npx playwright install chromium
+CLOUDLABS_URL=https://labs.college.edu CLOUDLABS_ADMIN_EMAIL=you@college.edu CLOUDLABS_ADMIN_PASSWORD='…' \
+  npx playwright test -c playwright.prod.config.ts
+```
+Set `CLOUDLABS_ADMIN_NEW_PASSWORD` too if the admin has never signed in (the test then chooses that password).
+It **creates real accounts** (`smoke-instructor-<stamp>@`, `smoke-student-<stamp>@` in the admin's domain) and a
+course `Smoke test <stamp>`; **Deactivate** them under **Users** afterwards if you don't want them listed. To prove a
+runner server (§3) works, drain the others for the run (Runtime → Drain), so the lab is placed on it.
+
+The whole of this guide (§2 one server with TLS, §3 a gateway runner registered from the CLI, §7 backup and restore,
+§8 migrations on API start) was rehearsed on one machine with a self-signed certificate on 2026-10-13
+(`docs/STATUS.md` milestone 51).
+
+## 12. Laptop pilot (no server)
+
+The production stack (§2: demo mode off, generated secrets, TLS, real accounts) can run on the instructor's laptop
+for a first class. Labs are light: each running lab uses about 30–40 MiB, and the load test on a 6-CPU / 6 GB Docker
+Desktop VM served 16 seats (`docs/LOADTEST.md`); the script defaults to **8 seats** (`RUNNER_MAX_SANDBOXES` in the
+state file). The laptop must stay on and awake for the whole class, and the dev stack should be stopped first
+(`docker compose -f infra/docker-compose.yml stop`). Everything is one script (Git Bash on Windows):
+```bash
+scripts/pilot.sh up --lan          # or: scripts/pilot.sh up   (Cloudflare Tunnel, below)
+scripts/pilot.sh admin you@college.edu "Your Name"     # prints a temporary password, changed at first sign-in
+scripts/pilot.sh url               # the address students use
+scripts/pilot.sh down              # stop (data is kept)
+```
+The first `up` creates `infra/laptop-pilot/state/` (git-ignored): `production.env` with fresh secrets and a
+self-signed certificate. It imports the lab packs on every `up` (unchanged packs are skipped). Then run the smoke
+test (§11) against `scripts/pilot.sh url` with `CLOUDLABS_INSECURE_TLS=1`.
+
+**Classroom network (`up --lan`).** Students on the same network open `https://<laptop address>:8443` (the script
+finds the address of the adapter that has a default gateway; pass it explicitly if that is wrong:
+`up --lan 192.168.1.20`). No account or tunnel is needed. Things to know:
+- The certificate is self-signed, so each browser warns once (Advanced → Continue). Chrome may also block **file
+  downloads** on such a site; the roster import therefore shows new students' temporary passwords on screen too.
+- Windows Firewall must allow inbound connections. Docker Desktop installs an inbound "Docker Desktop Backend" rule;
+  check it covers the network profile in use (`Get-NetConnectionProfile`), or allow TCP 8443.
+- Some Wi-Fi networks isolate clients from each other (common on guest and campus Wi-Fi). Try opening the address
+  from a phone on the same network before class; if it doesn't load, use the tunnel or a hotspot the laptop provides.
+- The address can change between sessions (DHCP). Run `up --lan` again before each class.
+
+**Cloudflare Tunnel (`up`).** A public `https://…` address with a real certificate; nothing is opened on the laptop
+(`cloudflared` connects out and forwards to the gateway inside Docker, `infra/laptop-pilot/docker-compose.tunnel.yml`).
+Without an account the script uses a **quick tunnel** (a random `….trycloudflare.com` name, new on every `up`); for
+a fixed name, create a named tunnel in the Cloudflare dashboard, route its hostname to `https://gateway:443` with
+*No TLS Verify*, and put the token and hostname in the state file (`CLOUDFLARE_TUNNEL_TOKEN`, `PUBLIC_HOST`).
+`cloudflared` needs **outbound TCP port 7844**; the script runs it over HTTP/2 (UDP is often blocked) and stops with
+an explanation if no connection registers. Networks that block 7844 can't use the tunnel; a VPN on the laptop (for
+example Cloudflare WARP) can also interfere, so try with it switched off.
+
+Rehearsed on 2026-10-13 (`docs/STATUS.md` milestone 52): `up --lan` + smoke test green through the laptop's network
+address; the tunnel path stopped at port 7844 on the rehearsal network (blocked), which the script now reports.

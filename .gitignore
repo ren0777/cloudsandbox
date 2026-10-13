@@ -38,3 +38,6 @@ backups/
 .DS_Store
 Thumbs.db
 *.log
+
+# laptop pilot secrets and origin certificate (scripts/pilot.sh)
+infra/laptop-pilot/state/

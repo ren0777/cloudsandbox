@@ -1,0 +1,24 @@
+# Laptop pilot (docs/DEPLOYMENT.md §12): the PRODUCTION stack on one laptop, reached through Cloudflare Tunnel.
+# Use it on top of the production overlay; scripts/pilot.sh does all of this for you:
+#
+#   docker compose -p cloudlabs-pilot -f infra/docker-compose.yml -f infra/production/docker-compose.prod.yml \
+#                  -f infra/laptop-pilot/docker-compose.tunnel.yml --env-file infra/laptop-pilot/state/production.env up -d
+#
+# Nothing is published on the laptop: cloudflared connects OUT to Cloudflare, which serves the public HTTPS name and
+# forwards to the gateway's TLS port inside Docker (the gateway keeps its own self-signed origin certificate, so
+# the production TLS config is unchanged). WebSockets (the browser terminal) pass through the tunnel.
+#   quick tunnel  (no account): TUNNEL_COMMAND="tunnel --url https://gateway:443 --no-tls-verify"
+#                               → a random https://<words>.trycloudflare.com name, new on every restart
+#   named tunnel  (your domain): CLOUDFLARE_TUNNEL_TOKEN=…, TUNNEL_COMMAND="tunnel run"; in the Cloudflare dashboard
+#                               route the hostname to https://gateway:443 with "No TLS Verify" on
+services:
+  gateway:
+    ports: !reset []
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.9.3
+    restart: unless-stopped
+    depends_on: [gateway]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command: ${TUNNEL_COMMAND:-tunnel run}

@@ -1,0 +1,7 @@
+# Laptop pilot, classroom-LAN mode (docs/DEPLOYMENT.md §12): the production stack served straight from the laptop
+# to students on the same network, at https://<laptop LAN address>:8443. No tunnel and no account; students accept
+# the laptop's self-signed certificate once. Port 80 is not published (Windows reserves it; nothing needs it here).
+services:
+  gateway:
+    ports: !override
+      - "8443:443"
