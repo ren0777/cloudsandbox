@@ -28,9 +28,11 @@ RUN set -eu; \
  && mkdir -p /work && chown student:student /work
 COPY bashrc /etc/cloudlabs.bashrc
 COPY entrypoint.sh /usr/local/bin/cloudlabs-terminal
+# The API-audit proxy runs from this image as a separate container (never inside the student's terminal).
+COPY audit_proxy.py /usr/local/lib/cloudlabs/audit_proxy.py
 RUN chmod 0755 /usr/local/bin/cloudlabs-terminal && echo 'source /etc/cloudlabs.bashrc' >> /etc/bash.bashrc
 USER 10002
 WORKDIR /home/student
-EXPOSE 7681
+EXPOSE 7681 7690
 ENTRYPOINT ["/usr/local/bin/cloudlabs-terminal"]
 LABEL cloudlabs.image=terminal cloudlabs.awscli_version=${AWSCLI_VERSION} cloudlabs.ttyd_version=${TTYD_VERSION}

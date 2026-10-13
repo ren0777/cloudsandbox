@@ -14,6 +14,9 @@ docker build --target test -t cloudlabs/runner-test:dev services/runner   # test
 MSYS_NO_PATHCONV=1 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
   -e RUNNER_SECRET=runner-pytest-secret-0123456789abcdef cloudlabs/runner-test:dev python -m pytest -q
 
+# audit proxy (stdlib unittest; it runs inside the terminal image, so no dependencies)
+python -m unittest discover -s images/terminal/tests
+
 # API (starts postgres + runner + the api-test container labelled for env "test")
 ./scripts/test-api.sh                  # everything
 ./scripts/test-api.sh -m "not docker"  # fast subset

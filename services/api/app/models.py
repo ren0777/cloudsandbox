@@ -250,6 +250,7 @@ class LabSession(Base):
     idle_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     emulator_endpoint: Mapped[str | None] = mapped_column(String(255))
     terminal_endpoint: Mapped[str | None] = mapped_column(String(255))
+    audit_endpoint: Mapped[str | None] = mapped_column(String(255))  # API-audit proxy (labs with audit.* checks)
     ttyd_cred_enc: Mapped[str | None] = mapped_column(Text)
     image_digest: Mapped[str | None] = mapped_column(String(100))
     terminal_image_digest: Mapped[str | None] = mapped_column(String(100))

@@ -40,7 +40,8 @@ DEMO_LABS = [("s3-basics", "Mission 1: CloudCafé goes online"),
              ("sns-basics", "Mission 12: CloudCafé's order alerts"),
              ("sns-breakfix", "Mission 13: The alerts stopped (break-fix)"),
              ("lambda-sqs-dynamodb", "Mission 14: CloudCafé's order pipeline"),
-             ("vpc-ec2-web", "Mission 15: CloudCafé's web server in its own network")]
+             ("vpc-ec2-web", "Mission 15: CloudCafé's web server in its own network"),
+             ("s3-versioning-order", "Mission 16: CloudCafé's audit trail")]
 DEMO_USERS = [
     ("demo-admin", "Dana Admin", Role.admin, "dadmin"),
     ("demo-instructor", "Dr. Ira Instructor", Role.instructor, "dinstr"),

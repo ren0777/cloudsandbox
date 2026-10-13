@@ -1,7 +1,8 @@
 """Sandbox gateway (phase 7, RUNNER_ACCESS_MODE=gateway): how a control plane on ANOTHER server reaches a
-student's sandbox. The runner attaches itself to each sandbox's internal network and forwards two things only:
+student's sandbox. The runner attaches itself to each sandbox's internal network and forwards these only:
 
-    ANY  /gw/<sandbox>/<token>/emulator/<path>   → that sandbox's emulator (console, grading, probes)
+    ANY  /gw/<sandbox>/<token>/emulator/<path>   → that sandbox's emulator (grading, probes)
+    ANY  /gw/<sandbox>/<token>/audit/<path>      → its API-audit proxy, when it has one (console, audit log)
     WS   /gw/<sandbox>/<token>/terminal/ws        → that sandbox's ttyd (browser terminal, via the API proxy)
 
 The per-sandbox token is created with the sandbox, returned only to the control plane (inside its signed
@@ -53,10 +54,20 @@ def make_router(get_driver: Callable[[], DockerDriver]) -> APIRouter:
             raise DriverError("not_found", "not found", 404)
         return targets[component]
 
-    @router.api_route("/gw/{sid}/{token}/emulator", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"])
-    @router.api_route("/gw/{sid}/{token}/emulator/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"])
+    METHODS = ["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"]
+
+    @router.api_route("/gw/{sid}/{token}/emulator", methods=METHODS)
+    @router.api_route("/gw/{sid}/{token}/emulator/{path:path}", methods=METHODS)
     async def emulator(sid: str, token: str, request: Request, path: str = "") -> Response:
-        base = await upstream(sid, token, "emulator")
+        return await forward(sid, token, "emulator", request, path)
+
+    @router.api_route("/gw/{sid}/{token}/audit", methods=METHODS)
+    @router.api_route("/gw/{sid}/{token}/audit/{path:path}", methods=METHODS)
+    async def audit(sid: str, token: str, request: Request, path: str = "") -> Response:
+        return await forward(sid, token, "audit", request, path)
+
+    async def forward(sid: str, token: str, component: str, request: Request, path: str) -> Response:
+        base = await upstream(sid, token, component)
         body = await request.body()
         if len(body) > MAX_BODY:
             return JSONResponse({"error": {"code": "too_large", "message": "request body too large"}}, 413)

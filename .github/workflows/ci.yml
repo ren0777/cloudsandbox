@@ -88,6 +88,8 @@ jobs:
       - name: Unit tests
         working-directory: services/runner
         run: python -m pytest -q -m "not docker"
+      - name: Audit proxy unit tests (stdlib, runs in the terminal image)
+        run: python -m unittest discover -s images/terminal/tests
 
   web:
     name: Web typecheck + build

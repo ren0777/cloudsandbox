@@ -150,9 +150,34 @@ Build in this order; each sub-milestone must be green before starting the next.
   empty states. CSV export left for later.
 
 ## After phase 10
-Deploy on a real server (docs/DEPLOYMENT.md) → run it with actual students → collect feedback → the audit
-proxy (`audit.*`) → expand AWS coverage beyond S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS in the order
-the feedback justifies.
+Deploy on a real server (docs/DEPLOYMENT.md) → run it with actual students → collect feedback → expand AWS
+coverage beyond S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS in the order the feedback justifies. (The
+audit proxy, `audit.*`, is done: phase 11 below.)
+
+## Phase 11: audit proxy (milestone 50, branch `feat/audit-proxy`) ☑ (done — see STATUS 50 and D65–D67)
+Deployment needs a server and credentials from the owner, so the audit proxy — the next architecture milestone
+named above — comes first. Goal: grade *how* a student did something, not only the end state (PLAN "Audit" row).
+
+- **Proxy** (`images/terminal/audit_proxy.py`, stdlib only, run from the terminal image as its own container
+  `audit` sharing the emulator's network namespace): forwards every request to the emulator unchanged and records
+  method, path, query, `X-Amz-Target`, the form `Action`, the SigV4 service, header names, status and source.
+  Serves the log at `GET /_cloudlabs/audit` (never logged, refused to the terminal). Ring buffer, `dropped` count.
+- **Source:** `cli` by default; `console` only when the request carries `X-CloudLabs-Source: console` **and**
+  does not come from the terminal container (so a student can't forge console calls).
+- **What is audited:** the student terminal and the console (the API sends the header). Setup jobs, grading
+  collectors and probes keep the direct emulator endpoint, so they never appear. Labtest scripts run audited
+  (they stand in for the student).
+- **Runner:** `CreateSandbox.audit` (only labs that use `audit.*` pay for the extra container), label
+  `cloudlabs.audit`, `SandboxInfo.audit_endpoint`, gateway component `audit`, `JobSpec.audited`.
+- **API:** `lab_sessions.audit_endpoint`, console calls through it, collector `audit` resolves raw requests to
+  `service:Operation` with botocore's own service models (evidence stores resolved events only), checks
+  `audit.called` (action, source, min_count) and `audit.order` (actions as an ordered subsequence); only 2xx calls
+  count. Lab validation: the action's service must be in `services`.
+- **Lab:** Mission 16 `s3-versioning-order` — versioning must be on *before* the upload; the partial uploads first
+  and has a perfect end state, which only the audit log can tell apart. labtest 0 / partial / 100 on moto + floci.
+- **Tests:** proxy unit tests (`images/terminal/tests`, stdlib unittest), resolver round-trip against botocore's
+  serializer, check unit tests, runner Docker test, API docker test (CLI vs console source, forged header
+  ignored, gateway), E2E `audit.spec.ts`.
 
 ## Verification
 - API: `tests/test_lab_builder.py` (templates catalogue/create/errors, drafts, publish gate) — fast suite

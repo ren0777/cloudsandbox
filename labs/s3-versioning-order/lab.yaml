@@ -1,0 +1,72 @@
+schema_version: 1
+id: s3-versioning-order
+version: 1.0.0
+title: "Mission 16: CloudCafé's audit trail"
+summary: Store the café's sales ledger in a versioned S3 bucket, in the right order, from the AWS CLI.
+story: |
+  CloudCafé's accountant keeps the daily sales ledger in Amazon S3. The auditors have one rule:
+  **every version of the ledger must have a version ID, including the very first one.**
+
+  S3 only assigns version IDs once **Bucket Versioning** is enabled. An object uploaded before that keeps the
+  version ID `null`, and turning versioning on later doesn't change it. So the order of your steps matters,
+  and this lab checks it: Stackora records the AWS calls you make in this lab, the way AWS CloudTrail does.
+
+  The accountant also wants a script they can re-run, so upload the ledger with the **AWS CLI** in the
+  terminal. You can create the bucket and change its settings wherever you like.
+
+  Your bucket: **{{ bucket }}** (us-east-1). The file: **ledger.csv**.
+services: [s3]
+runtime: {emulator: default}
+duration_minutes: 30
+max_attempts: 3
+variables:
+  bucket: "cafe-{{ student_short_id }}-ledger"
+requires:
+  - s3:CreateBucket
+  - s3:PutBucketVersioning
+  - s3:PutObject
+tasks:
+  - id: create-bucket
+    title: "Create the S3 bucket {{ bucket }}"
+    hints:
+      - "Console: **S3** → **Create bucket**. CLI: `aws s3 help` lists a command that makes a bucket."
+    marks: 15
+    checks:
+      - {type: s3.bucket_exists, bucket: "{{ bucket }}"}
+  - id: enable-versioning
+    title: Enable Bucket Versioning
+    hints:
+      - "Console: the bucket's **Properties** → **Bucket Versioning**."
+      - "CLI: `aws s3api help` lists the low-level bucket operations; look for one about versioning."
+    marks: 15
+    checks:
+      - {type: s3.versioning, bucket: "{{ bucket }}", status: Enabled}
+  - id: upload-ledger
+    title: Upload ledger.csv to the bucket
+    description: Any small CSV file will do, uploaded as ledger.csv at the top level of the bucket.
+    hints:
+      - "Create a file first, for example `echo 'date,total' > ledger.csv`."
+      - "CLI: `aws s3 cp help` shows how to copy a local file into a bucket."
+    marks: 20
+    checks:
+      - {type: s3.object_exists, bucket: "{{ bucket }}", key: ledger.csv, min_size: 1}
+  - id: versioning-first
+    title: Versioning was on before the ledger was uploaded
+    description: The ledger's first version must have a real version ID, not null.
+    hints:
+      - "Think about which call has to come first: turning on versioning, or writing the object."
+      - "Already uploaded too early? Upload the ledger again now that versioning is on. The new upload gets a real version ID."
+      - "Compare `aws s3api list-object-versions --bucket {{ bucket }}` before and after: look at the VersionId values."
+    marks: 30
+    checks:
+      - type: audit.order
+        actions: ["s3:PutBucketVersioning", "s3:PutObject"]
+        feedback: "The ledger was not uploaded after Bucket Versioning was enabled, so its version ID is null."
+  - id: upload-from-cli
+    title: The ledger was uploaded with the AWS CLI
+    description: The accountant will re-run your command, so do the upload in the terminal.
+    hints:
+      - "Open the **Terminal** tab. `aws s3 cp ledger.csv s3://{{ bucket }}/ledger.csv` is the shape of it."
+    marks: 20
+    checks:
+      - {type: audit.called, action: "s3:PutObject", source: cli}

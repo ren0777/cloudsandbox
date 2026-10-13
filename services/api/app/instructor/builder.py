@@ -68,7 +68,7 @@ async def check_types(user: User = Depends(Authz(Action.lab_manage))):
             bad = emulators.get(name).capabilities.unusable(list(c.reads))
             engines[name] = {"usable": c.supported and not bad, "unusable_ops": bad}
         out.append({"type": t, "service": t.split(".")[0], "params_schema": c.params_model.model_json_schema(),
-                    "reads": list(c.reads), "supported": c.supported,
+                    "reads": list(c.reads), "collector": c.collector, "supported": c.supported,
                     "unsupported_reason": c.unsupported_reason or None, "engines": engines})
     common = CheckSpec.model_json_schema()
     common["properties"] = {k: v for k, v in common["properties"].items() if k != "type"}

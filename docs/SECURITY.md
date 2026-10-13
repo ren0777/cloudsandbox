@@ -100,5 +100,7 @@ test isolation, and for demo reset only when `CL_DEMO_MODE=true`.
 - Rate limits and the terminal/progress throttles are per-process (Redis in a later phase).
 - IAM is **not enforced** inside sandboxes (any training credential works). IAM tasks are graded by the
   CloudLabs evaluator (`grader/iam_eval.py`), which covers identity-based policies only.
-- The audit proxy isn't built (`audit.*` checks are rejected at import).
+- The audit proxy (labs with `audit.*` checks) records what reaches it. A student can bypass it by calling the
+  emulator's own port from the terminal; that only hides their own calls, which can only cost them marks
+  (audit checks are positive, D67). The `console` source can't be forged from the terminal (D65).
 - Consider gVisor (`runsc`) as the container runtime for defence in depth.

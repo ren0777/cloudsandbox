@@ -5,5 +5,5 @@ def load_all() -> None:
     global _loaded
     if _loaded:
         return
-    from . import dynamodb, ec2, iam, lambda_, s3, sns, sqs, stubs, vpc  # noqa: F401  (register checks)
+    from . import audit, dynamodb, ec2, iam, lambda_, s3, sns, sqs, vpc  # noqa: F401  (register checks)
     _loaded = True

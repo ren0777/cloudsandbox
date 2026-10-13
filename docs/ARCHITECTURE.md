@@ -75,8 +75,21 @@ REQUESTED → PROVISIONING → READY ⇄ RESETTING
 stable fields only (no timestamps), so baseline comparisons and regrades are deterministic. Evidence is
 canonical JSON with a sha256 and a normalized sha256. Checks live in `grader/checks/` (s3, dynamodb, iam, ec2, lambda, vpc, sqs, sns). A check may declare a *probe* (e.g. a
 Lambda invocation, or the non-destructive SQS peek that also grades SNS delivery) that the collector runs first during capture, so its result is evidence too. IAM decisions use the CloudLabs evaluator
-(`grader/iam_eval.py`, support level `simulated`), which also powers the console's Policy simulator. The `audit` namespace exists as
-a stub that is rejected at import.
+(`grader/iam_eval.py`, support level `simulated`), which also powers the console's Policy simulator. **Audit
+checks** (`audit.called`, `audit.order`) read the `audit` collector: the raw log of the sandbox's API-audit proxy,
+resolved to `service:Operation` names with botocore's service models (`grader/audit.py`); only the resolved events
+are stored (D66).
+
+**API-audit proxy** (labs with `audit.*` checks, docs/NEXT.md milestone 50). The runner adds an `audit` container
+(terminal image, `images/terminal/audit_proxy.py`, stdlib only, uid 10003, 96 MiB) that joins the emulator's
+network namespace and listens on 7690:
+```
+terminal (AWS CLI) ──▶ audit proxy :7690 ──▶ emulator      console (API, X-CloudLabs-Source) ──▶ audit proxy
+setup jobs, grading collectors, probes ─────▶ emulator (direct: never recorded)
+grader ──GET /_cloudlabs/audit──▶ audit proxy (refused to the terminal)
+```
+`SandboxInfo.audit_endpoint` / `lab_sessions.audit_endpoint` (migration 0008); in gateway mode it is
+`/gw/<sandbox>/<token>/audit`. Source attribution rules are D65.
 
 ## Data
 PostgreSQL 16, Alembic migrations `0001` (schema), `0002` (`lab_sessions.engine`) and `0003` (phase 5:

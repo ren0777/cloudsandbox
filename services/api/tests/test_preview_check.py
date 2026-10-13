@@ -180,7 +180,8 @@ async def test_single_check_rejects_an_unknown_task_or_index(world, fake_runner,
     assert (await run(c, d["id"], task=TASK, check=0)).status_code == 422   # 1-based
 
 
-async def test_a_check_the_platform_cannot_answer_is_reported_clearly(world, fake_runner, no_spacing):
+async def test_a_check_the_platform_cannot_answer_is_reported_clearly(world, fake_runner, no_spacing,
+                                                                     unsupported_check):
     """An unsupported check never reaches a half-run: the run answers with the same row-level errors the
     validation panel shows, so the author knows exactly what to change. (The draft is edited *after* the
     preview started — an invalid pack can't launch a sandbox in the first place.)"""
@@ -191,15 +192,15 @@ async def test_a_check_the_platform_cannot_answer_is_reported_clearly(world, fak
     await start(c, d["id"])
 
     lab = d["content"]["lab"]
-    lab["tasks"][0]["checks"] = [{"type": "audit.called", "action": "s3:PutObject"}]
+    lab["tasks"][0]["checks"] = [{"type": unsupported_check}]
     saved = (await c.put(f"{B}/drafts/{d['id']}", json={"lab": lab})).json()
     assert saved["validation"]["ok"] is False                    # saved, but refused by validation
-    assert any("audit.called" in e["message"] for e in saved["validation"]["errors"])
+    assert any(unsupported_check in e["message"] for e in saved["validation"]["errors"])
 
     r = await run(c, d["id"])
     assert r.status_code == 422, r.text
     assert r.json()["error"]["code"] == "lab_invalid"
-    assert any("audit" in e["message"] for e in r.json()["error"]["errors"])
+    assert any(unsupported_check in e["message"] for e in r.json()["error"]["errors"])
 
     # and an invalid pack can't launch a sandbox either
     await c.delete(f"{B}/drafts/{d['id']}/preview-sandbox")

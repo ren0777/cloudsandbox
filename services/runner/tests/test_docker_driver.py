@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import io
+import json
 import tarfile
 import uuid
 
@@ -52,6 +53,7 @@ def test_create_status_job_reset_destroy(driver, engine):
     port = {"moto": "5000", "floci": "4566", "ministack": "4566"}[engine]
     assert info.engine == engine
     assert info.emulator_endpoint.endswith(f":{port}") and info.terminal_endpoint.endswith(":7681/ws")
+    assert info.audit_endpoint is None  # no proxy unless the lab asks for one
     st = driver.status(sid)
     assert st.exists and st.emulator.state == "running" and st.terminal.state == "running"
 
@@ -157,3 +159,71 @@ def test_reattach_never_blocks_destroy(driver):
             client.networks.get(net_name(sid))
     finally:
         cp.remove(force=True)
+
+
+READ_LOG = """python3 - <<'EOF'
+import json, os, urllib.request
+host = os.environ["AWS_ENDPOINT_URL"].split("//")[1].rsplit(":", 1)[0]
+print("LOG=" + urllib.request.urlopen(f"http://{host}:7690/_cloudlabs/audit", timeout=10).read().decode())
+EOF
+"""
+
+
+def _log(driver, sid) -> dict:
+    res = driver.run_job(sid, _bundle({"run.sh": READ_LOG}))
+    assert res.exit_code == 0, res.output
+    return json.loads(res.output.split("LOG=", 1)[1].strip())
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_audit_proxy_records_student_calls_only(driver, engine):
+    info = _create(driver, engine, audit=True, setup=_bundle({"run.sh": "aws s3 mb s3://seeded-bucket\n"}))
+    sid = info.sandbox_id
+    assert info.audit_endpoint and info.audit_endpoint.endswith(":7690")
+    client = docker.from_env()
+    proxy = client.containers.get(f"cl-sbx-{sid}-audit")
+    hc = proxy.attrs["HostConfig"]
+    emu = client.containers.get(f"cl-sbx-{sid}-emulator")
+    assert hc["NetworkMode"] == f"container:{emu.id}" and hc["ReadonlyRootfs"] and hc["CapDrop"] == ["ALL"]
+    assert proxy.attrs["Config"]["User"] == "10003"
+
+    term = client.containers.get(f"cl-sbx-{sid}-terminal")
+    assert ":7690" in next(e for e in term.attrs["Config"]["Env"] if e.startswith("AWS_ENDPOINT_URL="))
+    out = term.exec_run(["bash", "-lc", "aws s3 mb s3://term-bucket"], user="10002")
+    assert out.exit_code == 0, out.output
+    # a student can't pass a call off as a console call, and can't read the log
+    forge = """python3 - <<'EOF'
+import os, urllib.request, urllib.error
+ep = os.environ["AWS_ENDPOINT_URL"]
+try:
+    urllib.request.urlopen(urllib.request.Request(ep + "/forged-bucket", headers={"X-CloudLabs-Source": "console"}), timeout=10)
+except urllib.error.HTTPError:
+    pass  # no such bucket: only the log entry matters
+try:
+    urllib.request.urlopen(ep + "/_cloudlabs/audit", timeout=10)
+    print("LOG-READABLE")
+except urllib.error.HTTPError as e:
+    print("LOG-STATUS", e.code)
+EOF"""
+    out = term.exec_run(["bash", "-c", forge], user="10002")
+    assert b"LOG-STATUS 403" in out.output, out.output
+
+    job = _bundle({"run.sh": "aws s3 mb s3://job-bucket\n"})
+    job.audited = True
+    assert driver.run_job(sid, job).exit_code == 0
+    assert driver.run_job(sid, _bundle({"run.sh": "aws s3 mb s3://direct-bucket\n"})).exit_code == 0
+
+    log = _log(driver, sid)
+    seen = [(e["method"], e["path"], e["source"], e["status"]) for e in log["events"]]
+    assert ("PUT", "/term-bucket", "cli", 200) in seen, seen
+    assert ("PUT", "/job-bucket", "cli", 200) in seen, seen
+    assert any(p == "/forged-bucket" and src == "cli" for _, p, src, _ in seen), seen
+    paths = {p for _, p, _, _ in seen}
+    assert "/seeded-bucket" not in paths and "/direct-bucket" not in paths  # setup + unaudited jobs bypass it
+    assert all(e["service"] in ("s3", "") for e in log["events"])
+
+    # Reset: a new proxy with an empty log; destroy removes it with the rest
+    info = driver.reset(sid, ResetSandbox(terminal_credential="student:secretpass2"))
+    assert info.audit_endpoint and _log(driver, sid)["events"] == []
+    driver.destroy(sid)
+    assert not client.containers.list(all=True, filters={"label": f"cloudlabs.session={sid}"})

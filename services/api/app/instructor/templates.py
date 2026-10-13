@@ -118,6 +118,16 @@ TEMPLATES: tuple[Template, ...] = (
         highlights=("Public subnet and internet route", "Security group in your VPC", "Launch into your subnet"),
     ),
     Template(
+        id="s3-versioning-order",
+        title="S3 audit trail (graded by API calls)",
+        summary="Version a bucket before the first upload, and upload from the CLI: graded from the recorded "
+                "AWS calls, not only the end state.",
+        services=("s3",),
+        difficulty="intermediate",
+        source_lab_id="s3-versioning-order",
+        highlights=("Enable versioning first", "Upload with the AWS CLI", "Checks the order of API calls"),
+    ),
+    Template(
         id="sqs-basics",
         title="SQS order queue",
         summary="Create a queue, set a real retention policy and send the first order.",

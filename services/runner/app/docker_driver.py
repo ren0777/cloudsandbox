@@ -3,6 +3,10 @@
 Labels on every object: cloudlabs.session / cloudlabs.runner / cloudlabs.env / cloudlabs.component.
 Control-plane containers (label cloudlabs.role=control-plane, same cloudlabs.env) are connected to the
 sandbox network so the API can reach the emulator and ttyd (STATUS.md decision D1).
+
+A sandbox created with `audit=True` also runs an `audit` container: the API-audit proxy from the terminal image,
+inside the emulator's network namespace on AUDIT_PORT. The terminal (and audited jobs) use it as their endpoint;
+setup jobs and the control plane's grading reads keep the emulator's own port (docs/NEXT.md milestone 50).
 """
 
 from __future__ import annotations
@@ -50,10 +54,14 @@ L_ROLE = "cloudlabs.role"
 L_EMULATOR = "cloudlabs.engine"
 L_GW_TOKEN = "cloudlabs.gateway_token"  # gateway mode: per-sandbox access token for the control plane
 L_CREATED = "cloudlabs.created_at"  # unix seconds; lets the control plane age orphan candidates
+L_AUDIT = "cloudlabs.audit"  # "1" on the network of a sandbox with an audit proxy (a Reset keeps it)
 
 TTYD_PORT = 7681
 EMULATOR_UID = "10001"
 STUDENT_UID = "10002"
+AUDIT_UID = "10003"
+AUDIT_PORT = 7690
+AUDIT_RESOURCES = Resources(cpus=0.25, memory_mib=96, pids=64)
 
 
 class DriverError(Exception):
@@ -208,6 +216,8 @@ class DockerDriver:
         out = {}
         if emu_c is not None:
             out["emulator"] = f"http://{self._ip_on(emu_c, name)}:{spec.port}"
+            if self._get_container(sandbox_id, "audit") is not None:
+                out["audit"] = f"http://{self._ip_on(emu_c, name)}:{AUDIT_PORT}"
         if term_c is not None:
             out["terminal"] = f"ws://{self._ip_on(term_c, name)}:{TTYD_PORT}/ws"
         return out
@@ -235,10 +245,15 @@ class DockerDriver:
     def _net_spec(self, net: Network) -> tuple[str, EmulatorSpec]:
         return self._spec(net.attrs.get("Labels", {}).get(L_EMULATOR))
 
-    def _client_endpoint(self, spec: EmulatorSpec, emu_c: Container, net: str) -> str:
-        """Endpoint that in-sandbox clients (terminal, jobs) use to reach the emulator."""
+    def _client_endpoint(self, spec: EmulatorSpec, emu_c: Container, net: str, audited: bool = False) -> str:
+        """Endpoint that in-sandbox clients (terminal, jobs) use to reach the emulator — through the audit proxy
+        (same address, AUDIT_PORT: it shares the emulator's network namespace) when `audited`."""
         host = self._ip_on(emu_c, net) if spec.endpoint_by_ip else "emulator"
-        return f"http://{host}:{spec.port}"
+        return f"http://{host}:{AUDIT_PORT if audited else spec.port}"
+
+    @staticmethod
+    def _audited(net: Network) -> bool:
+        return (net.attrs.get("Labels") or {}).get(L_AUDIT) == "1"
 
     def _image_id(self, ref: str) -> str:
         return self.client.images.get(ref).id
@@ -262,6 +277,31 @@ class DockerDriver:
         )
         c.start()
         self._wait_healthy(c, "emulator")
+        return c
+
+    def _start_audit(self, sandbox_id: str, env: str, emu_c: Container, spec: EmulatorSpec) -> Container:
+        """The API-audit proxy: terminal image, its own uid, joined to the emulator's network namespace so it
+        forwards to 127.0.0.1 and is reachable at the emulator's address. Removed with the emulator."""
+        c = self.client.containers.create(
+            self.s.terminal_image,
+            command=["audit-proxy"],
+            name=container_name(sandbox_id, "audit"),
+            labels=self._labels(sandbox_id, env, "audit"),
+            user=AUDIT_UID,
+            read_only=True,
+            tmpfs={"/tmp": "size=8m"},
+            environment={"AUDIT_PORT": str(AUDIT_PORT), "AUDIT_UPSTREAM": f"127.0.0.1:{spec.port}",
+                         "AUDIT_TERMINAL_HOST": "terminal", "HOME": "/tmp"},
+            healthcheck={
+                "test": ["CMD", "bash", "-c", f"exec 3<>/dev/tcp/127.0.0.1/{AUDIT_PORT}"],
+                "interval": 1_000_000_000, "timeout": 1_000_000_000, "retries": 60,
+            },
+            network_mode=f"container:{emu_c.id}",
+            detach=True,
+            **self._limits(AUDIT_RESOURCES),
+        )
+        c.start()
+        self._wait_healthy(c, "audit proxy")
         return c
 
     def _start_terminal(self, sandbox_id: str, env: str, r: Resources, net: str,
@@ -334,16 +374,18 @@ class DockerDriver:
 
     # ------------------------------------------------------------------ public
     def _info(self, sid: str, env: str, emu: str, spec: EmulatorSpec, emu_c: Container, term_c: Container,
-              net: str, token: str | None = None) -> SandboxInfo:
+              net: str, token: str | None = None, audited: bool = False) -> SandboxInfo:
         if self.s.access_mode == "gateway":
             base = f"{(self.s.public_url or '').rstrip('/')}/gw/{sid}/{token}"
             emulator_endpoint = f"{base}/emulator"
             terminal_endpoint = base.replace("http://", "ws://", 1).replace("https://", "wss://", 1) + "/terminal/ws"
+            audit_endpoint = f"{base}/audit"
         else:
             emulator_endpoint = f"http://{self._ip_on(emu_c, net)}:{spec.port}"
             terminal_endpoint = f"ws://{self._ip_on(term_c, net)}:{TTYD_PORT}/ws"
+            audit_endpoint = f"http://{self._ip_on(emu_c, net)}:{AUDIT_PORT}"
         return SandboxInfo(
-            sandbox_id=sid, env=env, engine=emu,
+            sandbox_id=sid, env=env, engine=emu, audit_endpoint=audit_endpoint if audited else None,
             emulator_endpoint=emulator_endpoint, terminal_endpoint=terminal_endpoint,
             emulator_image_id=self._image_id(spec.image),
             terminal_image_id=self._image_id(self.s.terminal_image),
@@ -362,7 +404,7 @@ class DockerDriver:
             net = self.client.networks.create(
                 name, driver="bridge", internal=True, check_duplicate=True,
                 labels={**self._labels(sid, req.env, "network"), L_EMULATOR: emu, L_CREATED: str(int(time.time())),
-                        **({L_GW_TOKEN: token} if token else {})},
+                        **({L_GW_TOKEN: token} if token else {}), **({L_AUDIT: "1"} if req.audit else {})},
             )
             try:
                 self._attach_access(net, req.env)
@@ -372,8 +414,11 @@ class DockerDriver:
                     res = self._run_job(sid, req.env, name, req.setup, ep)
                     if res.exit_code != 0:
                         raise DriverError("setup_failed", f"setup exited {res.exit_code}: {res.output[-500:]}")
+                if req.audit:  # after setup, so the lab's starting state is not in the student's log
+                    self._start_audit(sid, req.env, emu_c, spec)
+                    ep = self._client_endpoint(spec, emu_c, name, audited=True)
                 term = self._start_terminal(sid, req.env, req.terminal, name, req.terminal_credential, ep)
-                info = self._info(sid, req.env, emu, spec, emu_c, term, name, token)
+                info = self._info(sid, req.env, emu, spec, emu_c, term, name, token, req.audit)
                 log.info("sandbox.create.succeeded", sandbox_id=sid, env=req.env, engine=emu,
                          duration_ms=int((time.monotonic() - t0) * 1000))
                 return info
@@ -389,7 +434,8 @@ class DockerDriver:
             env = net.attrs["Labels"][L_ENV]
             emu, spec = self._net_spec(net)  # a reset keeps the sandbox's emulator
             name = net_name(sandbox_id)
-            for comp in ("terminal", "emulator"):
+            audited = self._audited(net)
+            for comp in ("terminal", "audit", "emulator"):
                 self._remove_container(self._get_container(sandbox_id, comp))
             self._attach_access(net, env)
             emu_c = self._start_emulator(sandbox_id, env, req.emulator, name, emu, spec)
@@ -398,16 +444,22 @@ class DockerDriver:
                 res = self._run_job(sandbox_id, env, name, req.setup, ep)
                 if res.exit_code != 0:
                     raise DriverError("setup_failed", f"setup exited {res.exit_code}")
+            if audited:  # a fresh proxy: the reset sandbox's log starts empty, like its resources
+                self._start_audit(sandbox_id, env, emu_c, spec)
+                ep = self._client_endpoint(spec, emu_c, name, audited=True)
             term = self._start_terminal(sandbox_id, env, req.terminal, name, req.terminal_credential, ep)
-            return self._info(sandbox_id, env, emu, spec, emu_c, term, name, net.attrs["Labels"].get(L_GW_TOKEN))
+            return self._info(sandbox_id, env, emu, spec, emu_c, term, name, net.attrs["Labels"].get(L_GW_TOKEN),
+                              audited)
 
     def destroy(self, sandbox_id: str) -> None:
         with self._lock(sandbox_id):
             self._destroy_unlocked(sandbox_id)
 
     def _destroy_unlocked(self, sandbox_id: str) -> None:
-        for c in self.client.containers.list(all=True, filters={"label": [f"{L_SESSION}={sandbox_id}",
-                                                                          f"{L_RUNNER}={self.s.id}"]}):
+        found = self.client.containers.list(all=True, filters={"label": [f"{L_SESSION}={sandbox_id}",
+                                                                          f"{L_RUNNER}={self.s.id}"]})
+        # the audit proxy lives in the emulator's network namespace: remove it first
+        for c in sorted(found, key=lambda c: c.labels.get(L_COMPONENT) != "audit"):
             self._remove_container(c)
         try:
             net = self.client.networks.get(net_name(sandbox_id))
@@ -499,8 +551,9 @@ class DockerDriver:
             emu_c = self._get_container(sandbox_id, "emulator")
             if emu_c is None:
                 raise DriverError("not_found", "sandbox emulator not found", 404)
+            audited = job.audited and self._audited(net) and self._get_container(sandbox_id, "audit") is not None
             return self._run_job(sandbox_id, net.attrs["Labels"][L_ENV], net_name(sandbox_id), job,
-                                 self._client_endpoint(spec, emu_c, net_name(sandbox_id)))
+                                 self._client_endpoint(spec, emu_c, net_name(sandbox_id), audited))
 
     def stats(self, env: str | None) -> RunnerStats:
         """Memory per sandbox (Docker stats snapshot of this runner's own containers, in parallel)."""
