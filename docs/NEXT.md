@@ -184,6 +184,8 @@ DEPLOYMENT.md was executed end to end on one machine (TLS, first admin, gateway 
 start); three gaps fixed (lab import step, hard-coded `server_name`, reused Postgres volume) and a production smoke
 test added (`apps/web/e2e-prod`, DEPLOYMENT §11). **Next: the real server.** Needs from the owner: a Linux host
 (32 GB / 8 cores for ≈15 concurrent labs), a DNS name and certificate (or certbot), and who the pilot students are.
+**No server yet?** Start with the laptop pilot (milestone 52, DEPLOYMENT §12): `scripts/pilot.sh up --lan` serves
+≈8 concurrent labs from the instructor's laptop on the classroom network.
 Then: DEPLOYMENT §1–§2, import the packs, run the smoke test, pilot with one class, collect feedback.
 
 ## Verification

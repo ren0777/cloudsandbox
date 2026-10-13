@@ -169,6 +169,16 @@ function RosterImport({ courseId, onDone }: { courseId: string; onDone: () => Pr
         <div className="banner warn" style={{ display: "block" }} data-testid="roster-credentials">
           <strong>Temporary passwords are shown only now.</strong>
           <p className="small" style={{ margin: "4px 0 8px" }}>Give each new student their password. They must choose their own at first sign-in.</p>
+          {/* Also on screen, not only as a download: a browser may block the download (e.g. Chrome on a site with a
+              self-signed certificate), and these passwords can't be shown again. */}
+          <table className="data" style={{ margin: "0 0 8px", background: "var(--surface)" }}>
+            <thead><tr><th>Email</th><th>Name</th><th>Temporary password</th></tr></thead>
+            <tbody>{creds.map((x) => (
+              <tr key={x.email} data-testid="credential-row">
+                <td className="small">{x.email}</td><td className="small">{x.name}</td>
+                <td><code data-testid="credential-password">{x.temporary_password}</code></td>
+              </tr>))}</tbody>
+          </table>
           <button className="small" onClick={() => downloadText("cloudlabs-new-accounts.csv", toCsv([["email", "name", "temporary_password"], ...creds.map((x) => [x.email, x.name, x.temporary_password])]))}
             data-testid="download-credentials">Download credentials CSV</button>
         </div>)}

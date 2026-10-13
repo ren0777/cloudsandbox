@@ -1,5 +1,4 @@
 import { expect, type Page, test } from "@playwright/test";
-import { readFileSync } from "node:fs";
 
 // Production smoke test: the first hour of a real deployment, through the browser only, over HTTPS.
 // admin (first sign-in) → creates an instructor → instructor: course, roster, assignment of Mission 16 →
@@ -86,10 +85,9 @@ test("production: admin → instructor → course → student lab over HTTPS →
   await expect(ins.getByTestId("roster-error-count")).toHaveText("0 with errors");
   await ins.getByTestId("roster-import-commit").click();
   await expect(ins.getByTestId("roster-result")).toContainText("1 new account created");
-  const download = ins.waitForEvent("download");
-  await ins.getByTestId("download-credentials").click();
-  const csv = readFileSync((await (await download).path())!, "utf-8");
-  const tmpStudent = csv.split(/\r?\n/).find((l) => l.includes(student))!.split(",")[2].replace(/"/g, "");
+  // read from the screen: a browser may block the CSV download on a self-signed site (the dev E2E covers the CSV)
+  const tmpStudent = (await ins.getByTestId("credential-row").filter({ hasText: student })
+    .getByTestId("credential-password").innerText()).trim();
   await ins.getByTestId("new-assignment").click();
   const option = ins.getByTestId("asg-lab").locator("option", { hasText: LAB });
   await ins.getByTestId("asg-lab").selectOption((await option.first().getAttribute("value"))!);
