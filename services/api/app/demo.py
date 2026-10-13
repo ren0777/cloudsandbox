@@ -38,7 +38,9 @@ DEMO_LABS = [("s3-basics", "Mission 1: CloudCafé goes online"),
              ("sqs-basics", "Mission 10: CloudCafé's order queue"),
              ("sqs-breakfix", "Mission 11: The orders queue is stuck (break-fix)"),
              ("sns-basics", "Mission 12: CloudCafé's order alerts"),
-             ("sns-breakfix", "Mission 13: The alerts stopped (break-fix)")]
+             ("sns-breakfix", "Mission 13: The alerts stopped (break-fix)"),
+             ("lambda-sqs-dynamodb", "Mission 14: CloudCafé's order pipeline"),
+             ("vpc-ec2-web", "Mission 15: CloudCafé's web server in its own network")]
 DEMO_USERS = [
     ("demo-admin", "Dana Admin", Role.admin, "dadmin"),
     ("demo-instructor", "Dr. Ira Instructor", Role.instructor, "dinstr"),

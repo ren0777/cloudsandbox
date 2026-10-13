@@ -1,0 +1,104 @@
+schema_version: 1
+id: vpc-ec2-web
+version: 1.0.0
+title: "Mission 15: CloudCafé's web server in its own network"
+summary: Build a public subnet in your own VPC and launch the web server into it, not into the default network.
+story: |
+  CloudCafé's web server is moving out of the shared **default VPC**. It needs its own network: a **VPC**
+  with a **public subnet** routed to the internet, a **security group** that lets customers in over HTTP,
+  and the **EC2 instance** itself, launched into that subnet.
+
+  The usual mistake is a perfect network with the server still running in the default VPC. Where an
+  instance runs is chosen at launch, under **Network settings**.
+
+  Your names: VPC **{{ vpc_name }}** ({{ vpc_cidr }}), subnet **{{ subnet_name }}** ({{ subnet_cidr }}),
+  internet gateway **{{ igw_name }}**, route table **{{ route_table_name }}**, security group
+  **{{ sg_name }}** and instance **{{ instance }}**.
+
+  Work in the **VPC** and **EC2 consoles**, with the **AWS CLI**, or both. The **Architecture** tab shows
+  which subnet your instance is in.
+services: [vpc, ec2]
+runtime: {emulator: default}   # platform default engine; labs must not depend on one engine
+duration_minutes: 60
+idle_minutes: 20
+max_attempts: 3
+variables:
+  vpc_name: "cafe-vpc-{{ student_short_id }}"
+  subnet_name: "cafe-public-{{ student_short_id }}"
+  igw_name: "cafe-igw-{{ student_short_id }}"
+  route_table_name: "cafe-public-rtb-{{ student_short_id }}"
+  sg_name: "cafe-web-sg-{{ student_short_id }}"
+  instance: "cafe-web-{{ student_short_id }}"
+  vpc_cidr: "10.0.0.0/16"
+  subnet_cidr: "10.0.1.0/24"
+requires:
+  - vpc:CreateVpc
+  - vpc:CreateSubnet
+  - vpc:ModifySubnetAttribute
+  - vpc:CreateInternetGateway
+  - vpc:AttachInternetGateway
+  - vpc:CreateRouteTable
+  - vpc:CreateRoute
+  - vpc:AssociateRouteTable
+  - ec2:CreateSecurityGroup
+  - ec2:AuthorizeSecurityGroupIngress
+  - ec2:RunInstances
+  - ec2:CreateTags
+tasks:
+  - id: create-network
+    title: "Create the VPC {{ vpc_name }} and the public subnet {{ subnet_name }}"
+    description: >-
+      Give the VPC the CIDR block {{ vpc_cidr }}. Put the subnet {{ subnet_cidr }} inside it and turn on
+      auto-assign public IPv4 addresses.
+    hints:
+      - "In the **VPC** console, create the VPC first, then a subnet in it from the **Subnets** tab."
+      - "CLI: `aws ec2 create-vpc`, `aws ec2 create-subnet`, `aws ec2 create-tags` for the names, and `aws ec2 modify-subnet-attribute --map-public-ip-on-launch`."
+    marks: 20
+    checks:
+      - {type: vpc.exists, name: "{{ vpc_name }}", cidr: "{{ vpc_cidr }}"}
+      - {type: vpc.subnet, name: "{{ subnet_name }}", cidr: "{{ subnet_cidr }}", vpc: "{{ vpc_name }}", public: true}
+  - id: internet-route
+    title: Route the subnet to the internet
+    description: >-
+      Attach the internet gateway {{ igw_name }} to your VPC, route 0.0.0.0/0 to it in the route table
+      {{ route_table_name }}, and associate that route table with {{ subnet_name }}.
+    hints:
+      - "The association is what makes the subnet public: the VPC's main route table has no internet route."
+      - "CLI: `aws ec2 create-route --destination-cidr-block 0.0.0.0/0 --gateway-id ...` and `aws ec2 associate-route-table`."
+    marks: 20
+    checks:
+      - {type: vpc.internet_gateway_attached, internet_gateway: "{{ igw_name }}", vpc: "{{ vpc_name }}"}
+      - {type: vpc.route, route_table: "{{ route_table_name }}", destination: "0.0.0.0/0", target: "igw:{{ igw_name }}"}
+      - {type: vpc.subnet_route_table, subnet: "{{ subnet_name }}", route_table: "{{ route_table_name }}"}
+  - id: web-security-group
+    title: "Create the security group {{ sg_name }} in your VPC"
+    description: Allow HTTP (TCP port 80) from anywhere. Customers don't need SSH, so don't open it to the internet.
+    hints:
+      - "In **EC2 → Security Groups → Create security group**, choose your VPC, not the default one."
+      - "CLI: `aws ec2 create-security-group --vpc-id ...`, then `aws ec2 authorize-security-group-ingress`."
+    marks: 15
+    checks:
+      - {type: ec2.security_group_rule, group: "{{ sg_name }}", protocol: tcp, port: 80, cidr: 0.0.0.0/0}
+      - {type: ec2.security_group_rule, group: "{{ sg_name }}", protocol: tcp, port: 22, cidr: 0.0.0.0/0,
+         expect: absent, hidden: true}
+  - id: launch-in-subnet
+    title: "Launch {{ instance }} into {{ subnet_name }}"
+    description: >-
+      A running t3.micro instance named {{ instance }}, in your public subnet, using {{ sg_name }}.
+    hints:
+      - "In **Launch instance → Network settings**, choose your VPC, then your subnet, then **Select existing security group**."
+      - "The security group must be in the same VPC as the subnet."
+      - "CLI: `aws ec2 run-instances --subnet-id ... --security-group-ids ...`. Find an image with `aws ec2 describe-images --owners amazon`."
+    marks: 35
+    checks:
+      - {type: ec2.instance, name: "{{ instance }}", state: running, instance_type: t3.micro}
+      - {type: ec2.instance_network, name: "{{ instance }}", vpc: "{{ vpc_name }}", subnet: "{{ subnet_name }}", weight: 2}
+      - {type: ec2.instance_security_group, name: "{{ instance }}", group: "{{ sg_name }}"}
+  - id: one-server
+    title: Keep exactly one instance running
+    description: If you launched a server into the wrong network while practising, terminate it.
+    hints:
+      - "Select extra instances and use **Instance state → Terminate instance**."
+    marks: 10
+    checks:
+      - {type: ec2.running_instance_count, min: 1, max: 1}

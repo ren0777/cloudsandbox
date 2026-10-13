@@ -1,0 +1,123 @@
+schema_version: 1
+id: lambda-sqs-dynamodb
+version: 1.0.0
+title: "Mission 14: CloudCafé's order pipeline"
+summary: Queue orders in SQS and let a Lambda trigger save each one to DynamoDB, retrying only the bad messages.
+story: |
+  Lunch rush: the website sends orders faster than the kitchen can take them. CloudCafé wants an
+  **order pipeline**: the website drops each order into an **SQS queue**, and a **Lambda** function
+  triggered by the queue saves it in a **DynamoDB** table. One malformed order must never hold up the rest.
+
+  Your table is **{{ table }}**, your queue is **{{ queue }}** and your function is **{{ function }}**.
+  Use the Region **us-east-1**.
+
+  Work in the **DynamoDB**, **SQS** and **Lambda consoles**, with the **AWS CLI**, or both. Functions run
+  inside the simulator, so a test or a triggered run takes a few seconds.
+services: [dynamodb, sqs, lambda]
+runtime: {emulator: ministack}   # MiniStack executes Lambda code and runs SQS triggers in-process
+duration_minutes: 60
+max_attempts: 3
+variables:
+  table: "cafe-{{ student_short_id }}-orders"
+  queue: "cafe-{{ student_short_id }}-incoming"
+  function: "cafe-{{ student_short_id }}-worker"
+requires:
+  - dynamodb:CreateTable
+  - dynamodb:DescribeTable
+  - sqs:CreateQueue
+  - sqs:SetQueueAttributes
+  - lambda:CreateFunction
+  - lambda:UpdateFunctionCode
+  - lambda:UpdateFunctionConfiguration
+  - lambda:Invoke
+  - lambda:CreateEventSourceMapping
+  - lambda:UpdateEventSourceMapping
+tasks:
+  - id: create-table
+    title: "Create the orders table {{ table }}"
+    description: Make orderId (a String) the partition key, add no sort key, and choose the capacity mode
+      for spiky, small traffic.
+    hints:
+      - "In the console, open **DynamoDB** and create a table. The partition key is part of the primary key."
+      - "Name the partition key exactly `orderId`, keep its type String, and choose **On-demand** capacity."
+    marks: 15
+    checks:
+      - {type: dynamodb.table_exists, table: "{{ table }}"}
+      - {type: dynamodb.key_schema, table: "{{ table }}", partition_key: orderId, partition_type: S}
+      - {type: dynamodb.billing_mode, table: "{{ table }}", mode: PAY_PER_REQUEST}
+  - id: create-queue
+    title: "Create the queue {{ queue }}"
+    description: >-
+      A standard queue is fine: the kitchen doesn't need strict ordering. While the function works on a
+      message, SQS hides it from other consumers for the visibility timeout. AWS recommends at least six
+      times the function's timeout, so set it to 60 seconds.
+    hints:
+      - "In the console, open **SQS** and create a **Standard** queue."
+      - "The visibility timeout is in the queue's configuration: 60 seconds."
+      - "CLI: `aws sqs create-queue --attributes VisibilityTimeout=60`."
+    marks: 15
+    checks:
+      - {type: sqs.queue_exists, name: "{{ queue }}", fifo: false}
+      - {type: sqs.queue_attribute, queue: "{{ queue }}", attribute: visibility_timeout, value: 60}
+  - id: create-function
+    title: "Create the function {{ function }}"
+    description: >-
+      Author it from scratch with the Python 3.12 runtime and the handler
+      lambda_function.lambda_handler. Put the table name in the environment variable TABLE_NAME, and give
+      the function a 10-second timeout.
+    hints:
+      - "In the console, open **Lambda** and create a function with **Author from scratch**."
+      - "The environment variable and the timeout are on the function's **Configuration** tab."
+    marks: 15
+    checks:
+      - {type: lambda.function, name: "{{ function }}", runtime: python3.12,
+         handler: lambda_function.lambda_handler, env: {TABLE_NAME: "{{ table }}"}, timeout_min: 10}
+  - id: process-batch
+    title: Save every order in a batch, and report only the bad ones
+    description: |
+      SQS hands your function a **batch** of messages in `event["Records"]`. Each record's `body` is the
+      order as a JSON string, like `{"orderId": "1001", "items": [{"price": 3, "qty": 2}]}`.
+      Save each order in the table with its `total`: the sum of price × qty plus 8% tax, rounded to 2
+      decimal places.
+
+      A message that isn't a valid order (not JSON, or no `orderId`) must not fail the whole batch, or
+      every good order in it is retried too. Return
+      `{"batchItemFailures": [{"itemIdentifier": "<messageId>"}]}` listing just the bad messages (an empty
+      list when all succeed).
+    hints:
+      - "Loop over `event[\"Records\"]` and `json.loads(record[\"body\"])`; wrap each record in try/except."
+      - "On a failure, append `{\"itemIdentifier\": record[\"messageId\"]}` to the list you return."
+      - "Test with an event holding two records, one of them with the body `not json`."
+    marks: 25
+    checks:
+      - {type: lambda.invoke_returns, name: "{{ function }}", weight: 2,
+         payload: {Records: [
+           {messageId: msg-1, eventSource: "aws:sqs", body: "{\"orderId\": \"3001\", \"items\": [{\"price\": 2.5, \"qty\": 4}]}"},
+           {messageId: msg-2, eventSource: "aws:sqs", body: "not json"}]},
+         expect: {batchItemFailures: [{itemIdentifier: msg-2}]}}
+      - {type: dynamodb.item, table: "{{ table }}", key: {orderId: "3001"}, attributes: {total: 10.8}, hidden: true}
+  - id: connect-trigger
+    title: "Trigger {{ function }} from {{ queue }}"
+    description: >-
+      Add the queue as the function's trigger, with a batch size of 5. Turn on **report batch item
+      failures**, so SQS retries only the messages your function lists.
+    hints:
+      - "In the Lambda console, open the function's **Triggers** tab and add an SQS trigger."
+      - "CLI: `aws lambda create-event-source-mapping help` covers --batch-size and --function-response-types."
+    marks: 10
+    checks:
+      - {type: lambda.event_source, name: "{{ function }}", queue: "{{ queue }}", batch_size: 5,
+         report_batch_item_failures: true}
+  - id: end-to-end
+    title: An order sent to the queue lands in the table
+    description: >-
+      Prove the pipeline: send an order to {{ queue }} and watch it appear in {{ table }} a few seconds
+      later. When you submit, a test order is sent to your queue the same way.
+    hints:
+      - "In the SQS console, **Send message** with an order body, then open the table's items."
+      - "Nothing arrives? Check that the trigger is enabled and that **Test** with an SQS event succeeds."
+    marks: 20
+    checks:
+      - {type: sqs.delivers_item, queue: "{{ queue }}", table: "{{ table }}",
+         body: {orderId: "9001", items: [{price: 5, qty: 3}]}, key: {orderId: "9001"},
+         attributes: {total: 16.2}}

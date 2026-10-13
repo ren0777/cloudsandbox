@@ -1,6 +1,8 @@
 """Lambda checks. Evidence shape (collector 'lambda'):
 {"functions": {name: {"runtime", "handler", "role_name", "memory", "timeout", "env": {k: v}}},
- "invocations": {probe_key: {"status": int|None, "error": str|None, "payload": json|str|None}}}
+ "invocations": {probe_key: {"status": int|None, "error": str|None, "payload": json|str|None}},
+ "event_sources": [{"function", "service", "source", "batch_size", "enabled", "report_batch_item_failures"}]}
+(`event_sources` is present only on engines where ListEventSourceMappings is usable.)
 
 `lambda.invoke_returns` declares a *probe*: during evidence capture the collector invokes the function
 with the lab's payload (before other collectors run) and stores the result in the evidence. Grading then
@@ -97,3 +99,38 @@ def invoke_returns(p: InvokeParams, ev: dict) -> CheckOutcome:
     actual = json.dumps(inv.get("payload"), sort_keys=True)[:300]
     return CheckOutcome(ok, exp, actual, f"Function {p.name} returned the expected result" if ok
                         else f"Function {p.name} returned {actual} for input {json.dumps(p.payload)}")
+
+
+class EventSourceParams(Params):
+    name: str = NAME
+    queue: str = Field(min_length=1, max_length=80)
+    batch_size: int | None = Field(None, ge=1, le=10000)
+    enabled: bool = True
+    report_batch_item_failures: bool | None = None
+
+
+@check("lambda.event_source", EventSourceParams, "lambda", READS + ["lambda:ListEventSourceMappings"])
+def event_source(p: EventSourceParams, ev: dict) -> CheckOutcome:
+    """An SQS trigger connects the queue to the function, with the expected batch size and settings."""
+    want = [f"SQS {p.queue} → {p.name}", "enabled" if p.enabled else "disabled",
+            f"batch size {p.batch_size}" if p.batch_size else "",
+            {True: "reports batch item failures", False: "no partial batch responses", None: ""}[p.report_batch_item_failures]]
+    exp = ", ".join(x for x in want if x)
+    mappings = [m for m in _lam(ev).get("event_sources", [])
+                if m["function"] == p.name and m["service"] == "sqs" and m["source"] == p.queue]
+    if not mappings:
+        others = [m["source"] for m in _lam(ev).get("event_sources", []) if m["function"] == p.name]
+        why = f" (it is triggered by {', '.join(others)})" if others else ""
+        return CheckOutcome(False, exp, "no trigger", f"Function {p.name} has no trigger from queue {p.queue}{why}")
+    m = mappings[0]
+    problems = []
+    if m["enabled"] != p.enabled:
+        problems.append("the trigger is " + ("disabled" if p.enabled else "still enabled"))
+    if p.batch_size and m.get("batch_size") != p.batch_size:
+        problems.append(f"batch size is {m.get('batch_size')}, not {p.batch_size}")
+    if p.report_batch_item_failures is not None and m.get("report_batch_item_failures") != p.report_batch_item_failures:
+        problems.append("report batch item failures should be " + ("on" if p.report_batch_item_failures else "off"))
+    actual = (f"{'enabled' if m['enabled'] else 'disabled'}, batch size {m.get('batch_size')}, "
+              f"batch item failures {'on' if m.get('report_batch_item_failures') else 'off'}")
+    return CheckOutcome(not problems, exp, actual, f"Queue {p.queue} triggers {p.name}" if not problems
+                        else f"Trigger {p.queue} → {p.name}: " + "; ".join(problems))

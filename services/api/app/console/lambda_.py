@@ -1,6 +1,7 @@
-"""Student Lambda console API (AWS-style: Functions, Create function, Code/Test/Configuration).
-Invoking functions needs an engine that can execute code (capability `lambda:Invoke`); on other engines
-the Test tab answers 409 not_in_simulator via the central capability check."""
+"""Student Lambda console API (AWS-style: Functions, Create function, Code/Test/Triggers/Configuration).
+Invoking functions and SQS triggers need an engine that can execute code (capabilities `lambda:Invoke`,
+`lambda:*EventSourceMapping*`); on other engines those calls answer 409 not_in_simulator via the central
+capability check."""
 
 from __future__ import annotations
 
@@ -195,6 +196,81 @@ async def invoke(session_id: uuid.UUID, name: str, body: InvokeIn, user: User = 
         payload = text[:5000]
     return {"status_code": r.get("StatusCode"), "function_error": r.get("FunctionError"), "response": payload,
             "duration_ms": int((asyncio.get_running_loop().time() - t0) * 1000)}
+
+
+# ------------------------------------------------------------------------------------------- triggers
+class TriggerIn(BaseModel):
+    queue: str = Field(min_length=1, max_length=80)
+    batch_size: int = Field(10, ge=1, le=10)
+    report_batch_item_failures: bool = False
+    enabled: bool = True
+
+
+class TriggerPatch(BaseModel):
+    enabled: bool | None = None
+    batch_size: int | None = Field(None, ge=1, le=10)
+    report_batch_item_failures: bool | None = None
+
+
+def _trigger_out(m: dict[str, Any]) -> dict[str, Any]:
+    source = m.get("EventSourceArn", "")
+    return {"uuid": m["UUID"], "service": source.split(":")[2] if source.count(":") >= 5 else "",
+            "source": source.rsplit(":", 1)[-1], "batch_size": m.get("BatchSize"), "state": m.get("State"),
+            "report_batch_item_failures": "ReportBatchItemFailures" in (m.get("FunctionResponseTypes") or []),
+            "last_result": m.get("LastProcessingResult")}
+
+
+async def _own_trigger(sess: Any, name: str, uuid_: str) -> dict[str, Any]:
+    """The mapping, only if it belongs to this function (a uuid from another function answers 404)."""
+    m = await _call(sess, "get_event_source_mapping", UUID=uuid_)
+    if m.get("FunctionArn", "").rsplit(":", 1)[-1] != name:
+        raise ApiError("not_found", "trigger not found", 404)
+    return m
+
+
+@router.get("/functions/{name}/triggers")
+async def list_triggers(session_id: uuid.UUID, name: str, user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)),
+                        db: AsyncSession = Depends(get_db)):
+    sess = await console_session(session_id, user, db)
+    ms = (await _call(sess, "list_event_source_mappings", FunctionName=name)).get("EventSourceMappings", [])
+    return {"triggers": sorted((_trigger_out(m) for m in ms), key=lambda t: (t["service"], t["source"]))}
+
+
+@router.post("/functions/{name}/triggers", status_code=201)
+async def create_trigger(session_id: uuid.UUID, name: str, body: TriggerIn,
+                         user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
+    """Add trigger → SQS (the only event source in the training cloud): the queue is chosen by name."""
+    sess = await console_session(session_id, user, db)
+    url = (await aws_call(sess, "sqs", "get_queue_url", QueueName=body.queue))["QueueUrl"]
+    arn = (await aws_call(sess, "sqs", "get_queue_attributes", QueueUrl=url,
+                          AttributeNames=["QueueArn"]))["Attributes"]["QueueArn"]
+    m = await _call(sess, "create_event_source_mapping", FunctionName=name, EventSourceArn=arn,
+                    BatchSize=body.batch_size, Enabled=body.enabled,
+                    FunctionResponseTypes=["ReportBatchItemFailures"] if body.report_batch_item_failures else [])
+    return _trigger_out(m)
+
+
+@router.patch("/functions/{name}/triggers/{trigger_id}")
+async def update_trigger(session_id: uuid.UUID, name: str, trigger_id: str, body: TriggerPatch,
+                         user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
+    sess = await console_session(session_id, user, db)
+    await _own_trigger(sess, name, trigger_id)
+    kw: dict[str, Any] = {"UUID": trigger_id}
+    if body.enabled is not None:
+        kw["Enabled"] = body.enabled
+    if body.batch_size is not None:
+        kw["BatchSize"] = body.batch_size
+    if body.report_batch_item_failures is not None:
+        kw["FunctionResponseTypes"] = ["ReportBatchItemFailures"] if body.report_batch_item_failures else []
+    return _trigger_out(await _call(sess, "update_event_source_mapping", **kw))
+
+
+@router.delete("/functions/{name}/triggers/{trigger_id}", status_code=204)
+async def delete_trigger(session_id: uuid.UUID, name: str, trigger_id: str,
+                         user: User = Depends(AuthzAny(Action.session_use, Action.lab_manage)), db: AsyncSession = Depends(get_db)):
+    sess = await console_session(session_id, user, db)
+    await _own_trigger(sess, name, trigger_id)
+    await _call(sess, "delete_event_source_mapping", UUID=trigger_id)
 
 
 @router.delete("/functions/{name}", status_code=204)

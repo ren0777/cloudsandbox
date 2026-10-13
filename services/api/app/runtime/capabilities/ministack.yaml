@@ -19,6 +19,11 @@ services:
     UpdateFunctionConfiguration: {level: supported}
     DeleteFunction: {level: supported}
     Invoke: {level: supported}
+    CreateEventSourceMapping: {level: supported, note: "SQS triggers only: MiniStack polls the queue and invokes the function inside the sandbox."}
+    ListEventSourceMappings: {level: supported}
+    GetEventSourceMapping: {level: supported}
+    UpdateEventSourceMapping: {level: supported}
+    DeleteEventSourceMapping: {level: supported}
     CreateFunctionUrlConfig: {level: unsupported, note: "Function URLs are not simulated."}
     PublishLayerVersion: {level: unsupported, note: "Layers are not simulated."}
   iam:

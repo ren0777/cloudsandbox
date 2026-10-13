@@ -166,8 +166,12 @@ def _zip(src: str) -> bytes:
     return buf.getvalue()
 
 
-def lambda_contract(c, iam) -> dict:
+def lambda_contract(c, iam, sqs) -> dict:
     s: dict = {}
+
+    def queue_arn() -> str:
+        url = sqs.create_queue(QueueName="contract-q")["QueueUrl"]
+        return sqs.get_queue_attributes(QueueUrl=url, AttributeNames=["QueueArn"])["Attributes"]["QueueArn"]
     return {
         "CreateFunction": lambda: s.__setitem__("fn", c.create_function(
             FunctionName="f", Runtime="python3.12", Handler="lambda_function.lambda_handler", Timeout=10,
@@ -181,6 +185,14 @@ def lambda_contract(c, iam) -> dict:
         "UpdateFunctionCode": lambda: c.update_function_code(FunctionName="f", ZipFile=_zip(CODE)),
         "Invoke": lambda: json.loads(c.invoke(FunctionName="f", Payload=b'{"a": 1}')["Payload"].read()) ==
         {"rate": "0.5", "echo": {"a": 1}} or 1 / 0,
+        # SQS triggers (Mission 14); the delivery itself is covered in tests/test_lambda_sqs.py
+        "CreateEventSourceMapping": lambda: s.__setitem__("esm", c.create_event_source_mapping(
+            FunctionName="f", EventSourceArn=queue_arn(), BatchSize=5)["UUID"]),
+        "ListEventSourceMappings": lambda: [m["UUID"] for m in c.list_event_source_mappings(
+            FunctionName="f")["EventSourceMappings"]] == [s["esm"]] or 1 / 0,
+        "GetEventSourceMapping": lambda: c.get_event_source_mapping(UUID=s["esm"])["BatchSize"] == 5 or 1 / 0,
+        "UpdateEventSourceMapping": lambda: c.update_event_source_mapping(UUID=s["esm"], Enabled=False),
+        "DeleteEventSourceMapping": lambda: c.delete_event_source_mapping(UUID=s["esm"]),
         "DeleteFunction": lambda: c.delete_function(FunctionName="f"),
     }
 
@@ -196,7 +208,8 @@ async def test_lambda_contract_for_every_declared_supported_operation(real_runne
     try:
         adapter = emulators.get(contract_engine)
         ops = lambda_contract(adapter.client("lambda", info["emulator_endpoint"]),
-                              adapter.client("iam", info["emulator_endpoint"]))
+                              adapter.client("iam", info["emulator_endpoint"]),
+                              adapter.client("sqs", info["emulator_endpoint"]))
         assert declared <= set(ops), declared - set(ops)
         for name, op in ops.items():
             if name not in declared:

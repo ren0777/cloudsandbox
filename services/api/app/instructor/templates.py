@@ -81,6 +81,16 @@ TEMPLATES: tuple[Template, ...] = (
         highlights=("Create a DynamoDB table", "Create a Lambda function", "Save and total an order"),
     ),
     Template(
+        id="lambda-sqs-dynamodb",
+        title="Lambda + SQS + DynamoDB",
+        summary="An order pipeline: an SQS trigger runs a Lambda function that saves each order in DynamoDB.",
+        services=("lambda", "sqs", "dynamodb"),
+        difficulty="advanced",
+        source_lab_id="lambda-sqs-dynamodb",
+        highlights=("Create a queue", "Process a batch, report bad messages", "Add an SQS trigger",
+                    "Prove it end to end"),
+    ),
+    Template(
         id="vpc-basics",
         title="VPC public network",
         summary="Build a VPC with a public subnet: internet gateway, route table and a web security group.",
@@ -97,6 +107,15 @@ TEMPLATES: tuple[Template, ...] = (
         difficulty="advanced",
         source_lab_id="vpc-breakfix",
         highlights=("Diagnose the broken network", "Restore the internet route", "Keep SSH restricted"),
+    ),
+    Template(
+        id="vpc-ec2-web",
+        title="VPC + EC2 web server",
+        summary="Build a public subnet in your own VPC and launch the web server into it.",
+        services=("vpc", "ec2"),
+        difficulty="advanced",
+        source_lab_id="vpc-ec2-web",
+        highlights=("Public subnet and internet route", "Security group in your VPC", "Launch into your subnet"),
     ),
     Template(
         id="sqs-basics",

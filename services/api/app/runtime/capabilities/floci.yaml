@@ -121,6 +121,11 @@ services:
     UpdateFunctionConfiguration: {level: supported}
     DeleteFunction: {level: supported}
     Invoke: {level: unsupported, note: "Running function code needs Docker access, which sandboxes never get. Labs that run code use the MiniStack engine."}
+    CreateEventSourceMapping: {level: unsupported, note: "Triggers invoke function code, which needs an engine that runs it. Labs that run code use the MiniStack engine."}
+    ListEventSourceMappings: {level: unsupported, note: "Triggers invoke function code, which needs an engine that runs it. Labs that run code use the MiniStack engine."}
+    GetEventSourceMapping: {level: unsupported, note: "Triggers invoke function code, which needs an engine that runs it. Labs that run code use the MiniStack engine."}
+    UpdateEventSourceMapping: {level: unsupported, note: "Triggers invoke function code, which needs an engine that runs it. Labs that run code use the MiniStack engine."}
+    DeleteEventSourceMapping: {level: unsupported, note: "Triggers invoke function code, which needs an engine that runs it. Labs that run code use the MiniStack engine."}
   dynamodb:
     CreateTable: {level: supported}
     DescribeTable: {level: supported}

@@ -1,7 +1,8 @@
 "use client";
 // Student Lambda console (PLAN console fidelity principle): Functions, Create function (Author from
-// scratch), and a function page with Code (editor + Deploy), Test, Configuration and Monitor tabs.
-// Test needs an engine that executes code (feature Invoke); otherwise it is labelled unavailable.
+// scratch), and a function page with Code (editor + Deploy), Test, Triggers, Configuration and Monitor
+// tabs. Test and Triggers need an engine that executes code (features Invoke, CreateEventSourceMapping);
+// otherwise they are labelled unavailable.
 // Talks only to CloudLabs FastAPI endpoints.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
@@ -12,6 +13,8 @@ type Fn = { name: string; runtime: string | null; handler: string | null; role: 
   timeout: number | null; architecture: string; last_modified: string | null; env: Record<string, string>; code_size: number | null };
 type FnDetail = Fn & { files: Record<string, string> | null; code_available: boolean };
 type InvokeOut = { status_code: number | null; function_error: string | null; response: unknown; duration_ms: number };
+type Trigger = { uuid: string; service: string; source: string; batch_size: number | null; state: string | null;
+  report_batch_item_failures: boolean; last_result: string | null };
 type View = { page: "list" | "create" | "detail"; name?: string };
 type Ctx = { base: string; fail: (e: unknown) => void; notify: Notify; go: (v: View) => void; features: Record<string, Feature> };
 
@@ -140,7 +143,7 @@ function CreateFunction(ctx: Ctx) {
 }
 
 // -------------------------------------------------------------------------------------- function page
-type Tab = "code" | "test" | "config" | "monitor";
+type Tab = "code" | "test" | "triggers" | "config" | "monitor";
 
 function FunctionPage(ctx: Ctx & { name: string }) {
   const [fn, setFn] = useState<FnDetail | null>(null);
@@ -162,12 +165,13 @@ function FunctionPage(ctx: Ctx & { name: string }) {
         </dl>
       </div></div>
       <div className="tabs" role="tablist" aria-label="Function">
-        {(["code", "test", "config", "monitor"] as Tab[]).map((t) => (
+        {(["code", "test", "triggers", "config", "monitor"] as Tab[]).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "tab on" : "tab"} onClick={() => { setTab(t); void load(); }} data-testid={`lambda-tab-${t}`}>
-            {{ code: "Code", test: "Test", config: "Configuration", monitor: "Monitor" }[t]}</button>))}
+            {{ code: "Code", test: "Test", triggers: "Triggers", config: "Configuration", monitor: "Monitor" }[t]}</button>))}
       </div>
       {tab === "code" && <CodeTab {...ctx} fn={fn} reload={load} />}
       {tab === "test" && <TestTab {...ctx} fn={fn} />}
+      {tab === "triggers" && <TriggersTab {...ctx} fn={fn} />}
       {tab === "config" && <ConfigTab key={`${fn.last_modified}|${fn.memory}|${fn.timeout}|${JSON.stringify(fn.env)}`} {...ctx} fn={fn} reload={load} />}
       {tab === "monitor" && (
         <div className="panel disabled"><div className="panel-head"><h3>Metrics and logs</h3><SimLabel note="CloudWatch metrics and logs are not simulated." /></div>
@@ -237,10 +241,18 @@ function CodeTab(ctx: Ctx & { fn: FnDetail; reload: () => Promise<void> }) {
   );
 }
 
+const EVENT_TEMPLATES: Record<string, string> = {
+  "hello-world": '{\n  "key1": "value1",\n  "key2": "value2",\n  "key3": "value3"\n}',
+  // what an SQS trigger hands the function: a batch of records whose body is the message text
+  sqs: JSON.stringify({ Records: [
+    { messageId: "msg-1", eventSource: "aws:sqs", body: '{"orderId": "1001", "items": [{"price": 3, "qty": 2}]}' },
+    { messageId: "msg-2", eventSource: "aws:sqs", body: "not json" }] }, null, 2),
+};
+
 function TestTab(ctx: Ctx & { fn: FnDetail }) {
   const canInvoke = usable(ctx.features, "Invoke");
   const [eventName, setEventName] = useState("test-event");
-  const [event, setEvent] = useState('{\n  "key1": "value1",\n  "key2": "value2",\n  "key3": "value3"\n}');
+  const [event, setEvent] = useState(EVENT_TEMPLATES["hello-world"]);
   const [out, setOut] = useState<InvokeOut | null>(null);
   const [busy, setBusy] = useState(false);
   let parsed: unknown = null; let invalid = false;
@@ -262,6 +274,8 @@ function TestTab(ctx: Ctx & { fn: FnDetail }) {
         <div className="panel-body">
           <span className="help">Invoke your function with a JSON event. The simulator starts a fresh runtime, so the first run can take several seconds.</span>
           <label>Event name<input value={eventName} onChange={(e) => setEventName(e.target.value)} style={{ maxWidth: 320 }} /></label>
+          <label>Template<select defaultValue="hello-world" onChange={(e) => setEvent(EVENT_TEMPLATES[e.target.value])} style={{ maxWidth: 320 }} data-testid="event-template">
+            <option value="hello-world">hello-world</option><option value="sqs">SQS (a batch of 2 messages)</option></select></label>
           <label>Event JSON<textarea className="mono" rows={8} value={event} onChange={(e) => setEvent(e.target.value)} spellCheck={false} data-testid="test-event" /></label>
           {invalid && <span className="small" style={{ color: "var(--fail)" }}>The event must be valid JSON.</span>}
         </div>
@@ -273,6 +287,109 @@ function TestTab(ctx: Ctx & { fn: FnDetail }) {
           <pre className="mono small result">{JSON.stringify(out.response, null, 2)}</pre>
         </div>)}
       <style>{`.result { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 0; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; }`}</style>
+    </div>
+  );
+}
+
+function TriggersTab(ctx: Ctx & { fn: FnDetail }) {
+  const can = usable(ctx.features, "CreateEventSourceMapping") && usable(ctx.features, "ListEventSourceMappings");
+  const url = `${ctx.base}/functions/${ctx.fn.name}/triggers`;
+  const [items, setItems] = useState<Trigger[] | null>(null);
+  const [sel, setSel] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const load = useCallback(async () => {
+    if (!can) return;
+    try { setItems((await api<{ triggers: Trigger[] }>(url)).triggers); } catch (e) { ctx.fail(e); }
+  }, [can, url, ctx.fail]);
+  useEffect(() => { void load(); }, [load]);
+  if (!can) {
+    return (
+      <div className="panel disabled"><div className="panel-head"><h3>Triggers</h3><SimLabel note={ctx.features.CreateEventSourceMapping?.note} /></div>
+        <div className="panel-body small muted">Triggers run your function&apos;s code, which isn&apos;t available in this lab&apos;s training cloud.</div></div>);
+  }
+  const current = items?.find((t) => t.uuid === sel) ?? null;
+  async function act(fn: () => Promise<unknown>, msg: string) {
+    try { await fn(); ctx.notify("pass", msg); await load(); } catch (e) { ctx.fail(e); }
+  }
+  const toggle = (t: Trigger) => act(() => api(`${url}/${t.uuid}`, { method: "PATCH", body: { enabled: t.state === "Disabled" } }),
+    `The trigger ${t.source} is ${t.state === "Disabled" ? "enabled" : "disabled"}.`);
+  async function remove(t: Trigger) {
+    if (prompt(`Delete the trigger ${t.source} → ${ctx.fn.name}? To confirm, type confirm.`) !== "confirm") return;
+    await act(() => api(`${url}/${t.uuid}`, { method: "DELETE" }), `Successfully deleted the trigger ${t.source}.`);
+    setSel(null);
+  }
+  return (
+    <div>
+      {adding && <AddTrigger {...ctx} url={url} done={() => { setAdding(false); void load(); }} />}
+      <div className="panel">
+        <div className="panel-head">
+          <h3>Triggers <span className="muted">({items?.length ?? "…"})</span></h3>
+          <button className="small" onClick={() => void load()}>Refresh</button>
+          <button className="small" disabled={!current} onClick={() => current && void toggle(current)} data-testid="toggle-trigger">
+            {current?.state === "Disabled" ? "Enable" : "Disable"}</button>
+          <button className="small" disabled={!current} onClick={() => current && void remove(current)} data-testid="delete-trigger">Delete</button>
+          <button className="small primary" onClick={() => setAdding(true)} disabled={adding} data-testid="open-add-trigger">Add trigger</button>
+        </div>
+        <div className="panel-body" style={{ padding: 0, overflowX: "auto" }}>
+          <table className="data">
+            <thead><tr><th style={{ width: 36 }} /><th>Trigger</th><th>Batch size</th><th>Report batch item failures</th><th>State</th><th>Last result</th></tr></thead>
+            <tbody>
+              {items?.length === 0 && <tr><td colSpan={6} className="muted">There are no triggers. Choose <strong>Add trigger</strong>, or run <code>aws lambda create-event-source-mapping</code>.</td></tr>}
+              {items?.map((t) => (
+                <tr key={t.uuid} data-testid="trigger-row">
+                  <td><input type="radio" name="trigger" style={{ width: "auto" }} aria-label={`Select ${t.source}`} checked={sel === t.uuid} onChange={() => setSel(t.uuid)} /></td>
+                  <td><span className="pill">{t.service.toUpperCase()}</span> <span className="mono small">{t.source}</span></td>
+                  <td className="small">{t.batch_size ?? "-"}</td>
+                  <td className="small">{t.report_batch_item_failures ? "Yes" : "No"}</td>
+                  <td className="small"><span className={`pill ${t.state === "Enabled" ? "pass" : "warn"}`} data-testid="trigger-state">{t.state}</span></td>
+                  <td className="small muted">{t.last_result ?? "-"}</td>
+                </tr>))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddTrigger(ctx: Ctx & { url: string; done: () => void }) {
+  const [queues, setQueues] = useState<string[] | null>(null);
+  const [queue, setQueue] = useState("");
+  const [batch, setBatch] = useState(10);
+  const [report, setReport] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void api<{ queues: { name: string }[] }>(ctx.base.replace(/\/lambda$/, "/sqs/queues"))
+      .then((r) => { setQueues(r.queues.map((q) => q.name)); setQueue(r.queues[0]?.name ?? ""); })
+      .catch((e) => { setQueues([]); ctx.fail(e); });
+  }, [ctx.base, ctx.fail]);
+  async function add() {
+    setBusy(true);
+    try {
+      await api(ctx.url, { method: "POST", body: { queue, batch_size: batch, report_batch_item_failures: report, enabled } });
+      ctx.notify("pass", `The trigger ${queue} was successfully added to the function.`); ctx.done();
+    } catch (e) { ctx.fail(e); } finally { setBusy(false); }
+  }
+  return (
+    <div className="panel" data-testid="add-trigger">
+      <div className="panel-head"><h3>Add trigger</h3></div>
+      <div className="panel-body">
+        <label>Source<select disabled value="sqs" style={{ maxWidth: 320 }}><option value="sqs">SQS</option></select>
+          <span className="help">SQS queues are the trigger source in the training cloud.</span></label>
+        <label>SQS queue<select value={queue} onChange={(e) => setQueue(e.target.value)} style={{ maxWidth: 420 }} data-testid="trigger-queue">
+          {queues?.map((q) => <option key={q} value={q}>{q}</option>)}</select>
+          {queues?.length === 0 && <span className="help">There are no queues yet. Create one in the SQS console first.</span>}</label>
+        <label className="choice"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Activate trigger</label>
+        <label>Batch size<div className="row"><input type="number" min={1} max={10} value={batch} onChange={(e) => setBatch(Number(e.target.value))} style={{ width: 140 }} data-testid="trigger-batch" /></div>
+          <span className="help">The largest number of messages your function receives in one invocation (1–10).</span></label>
+        <label className="choice"><input type="checkbox" checked={report} onChange={(e) => setReport(e.target.checked)} data-testid="trigger-report" />
+          <span>Report batch item failures<div className="help">Your function returns the messages that failed in <span className="mono">batchItemFailures</span>; only those return to the queue.</div></span></label>
+      </div>
+      <div className="actions" style={{ padding: "0 16px 16px" }}>
+        <button onClick={ctx.done}>Cancel</button>
+        <button className="primary" disabled={!queue || batch < 1 || batch > 10 || busy} onClick={() => void add()} data-testid="add-trigger-submit">{busy ? "Adding…" : "Add"}</button>
+      </div>
     </div>
   );
 }

@@ -10,7 +10,7 @@ work in an **AWS-style console** or with the **real AWS CLI** in a browser termi
 > database identifiers and API contracts keep the `cloudlabs` codename for compatibility. Older docs and
 > release notes may say CloudLabs; they mean Stackora.
 
-**Version 0.2.0** (VPC, SQS and SNS added since). S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS; guided
+**Version 0.2.0** (VPC, SQS, SNS, SQS-triggered Lambda and EC2 in custom VPCs added since). S3, DynamoDB, IAM, EC2, Lambda, VPC, SQS and SNS; guided
 and break-fix labs; instructor and admin tools;
 multi-runner deployment. What's in the release: [RELEASE_NOTES.md](RELEASE_NOTES.md). Verified status:
 [docs/STATUS.md](docs/STATUS.md).
